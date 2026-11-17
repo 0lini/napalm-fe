@@ -195,3 +195,27 @@ def test_replace_diff():
         "+ntp server 10.0.0.2",
     ]
     assert parsers.replace_diff(candidate, candidate) == ""
+
+
+# Real output (Fabric Engine 9.4 VM): temperature sensors without a description
+SYS_INFO_VM_TEMPERATURE = """\
+Temperature Info :
+
+                        Sensor                  Warning   Critical
+                   Description   Temperature  Threshold  Threshold
+                                           0        N/A        N/A
+                                           0        N/A        N/A
+                                           0        N/A        N/A
+
+
+
+Power Supply Info :
+
+        Ps#1 Status       : UP
+"""
+
+
+def test_temperature_without_description():
+    result = parsers.parse_sys_info_temperature(SYS_INFO_VM_TEMPERATURE)
+    assert list(result) == ["Sensor 1", "Sensor 2", "Sensor 3"]
+    assert result["Sensor 1"] == {"temperature": 0.0, "is_alert": False, "is_critical": False}

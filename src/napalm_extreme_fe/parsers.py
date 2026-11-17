@@ -724,14 +724,17 @@ def parse_sys_info_temperature(output: str) -> Dict[str, Dict]:
     """Parse the ``Temperature Info`` section of ``show sys-info``.
 
     Rows: ``<description> <temperature> <warning threshold> <critical threshold>``
-    where thresholds may be ``N/A``.
+    where thresholds may be ``N/A``. Sensors without a description (seen on the
+    Fabric Engine VM) are named ``Sensor <n>`` by their position.
     """
     result: Dict[str, Dict] = {}
+    position = 0
     for line in split_sections(output).get("Temperature Info", []):
-        match = re.match(r"^\s*(.+?)\s+(\d+(?:\.\d+)?)\s+(\S+)\s+(\S+)\s*$", line)
+        match = re.match(r"^\s*(.*?)\s*(?<!\S)(\d+(?:\.\d+)?)\s+(\S+)\s+(\S+)\s*$", line)
         if not match:
             continue
-        name = match.group(1)
+        position += 1
+        name = match.group(1).strip() or f"Sensor {position}"
         temperature = float(match.group(2))
         warning = _threshold(match.group(3))
         critical = _threshold(match.group(4))
