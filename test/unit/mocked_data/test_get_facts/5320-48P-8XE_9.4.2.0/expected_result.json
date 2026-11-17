@@ -1,6 +1,6 @@
 {
     "hostname": "fe-sw-013",
-    "fqdn": "fe-sw-013",
+    "fqdn": "fe-sw-013.example.com",
     "vendor": "Extreme Networks",
     "model": "5320-48P-8XE-FabricEngine",
     "serial_number": "TB0000000-X0000",

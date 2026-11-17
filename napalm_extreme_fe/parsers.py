@@ -814,3 +814,106 @@ def parse_khi_memory(output: str) -> Dict[str, int]:
     if not found:
         return {"used_ram": -1, "available_ram": -1}
     return {"used_ram": used, "available_ram": used + free}
+
+
+def parse_domain_name(running_config: str) -> str:
+    """Extract ``ip domain-name "example.com"`` from (a part of) the config."""
+    match = re.search(r'^\s*ip domain-name\s+"?([^"\s]+)"?', running_config, re.M)
+    return match.group(1) if match else ""
+
+
+# Commands that enter a configuration context which is left with "exit".
+# "router isis enable" is a plain command, "router isis" enters a context.
+CONTEXT_RE = re.compile(
+    r"^(?:interface\s+\S+(?:\s+\S+)?|router\s+(?:isis|ospf|rip|bgp(?:\s+\d+)?|vrf\s+\S+)"
+    r"|mgmt\s+\S+(?:\s+\S+)?|logical-intf\s+.+|application|i-sid\s+\d+.*|ip\s+vrf\s+\S+)\s*$",
+    re.IGNORECASE,
+)
+IGNORED_LINES = {"exit", "end", "config terminal", "configure terminal", "enable"}
+
+
+def _normalize(line: str) -> str:
+    return " ".join(line.split()).lower()
+
+
+def _config_contexts(config: str) -> Dict[str, List[str]]:
+    """Map each context ("" for global) to its normalized lines.
+
+    Fabric Engine does not indent context blocks; a context is entered by a
+    line matching ``CONTEXT_RE`` and left by ``exit``.
+    """
+    contexts: Dict[str, List[str]] = {"": []}
+    current = ""
+    for raw in config.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        norm = _normalize(line)
+        if norm == "exit":
+            current = ""
+            continue
+        if norm in IGNORED_LINES:
+            continue
+        if not current and CONTEXT_RE.match(line):
+            current = norm
+            contexts.setdefault(current, [])
+            contexts[""].append(norm)
+            continue
+        contexts.setdefault(current, []).append(norm)
+    return contexts
+
+
+def merge_diff(running_config: str, candidate: str) -> str:
+    """Incremental diff of a merge candidate against the running config.
+
+    * a candidate line already in the running config (same context) is not shown
+    * a new line is shown as ``+line``
+    * ``no <x>`` is shown as ``-<x>`` when ``<x>`` is configured, as ``+no <x>``
+      when neither is configured, and not at all if ``no <x>`` is configured
+    * context lines (``interface ...``) are shown unprefixed before their
+      changes, or as ``+interface ...`` if the context itself is new
+    """
+    running = {ctx: set(lines) for ctx, lines in _config_contexts(running_config).items()}
+    diff: List[str] = []
+    context = ""
+    context_line = ""
+    context_shown = False
+
+    def emit(entry: str) -> None:
+        nonlocal context_shown
+        if context and not context_shown:
+            prefix = "" if context in running else "+"
+            diff.append(f"{prefix}{context_line}")
+            context_shown = True
+        diff.append(entry)
+
+    for raw in candidate.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        norm = _normalize(line)
+        if norm == "exit":
+            if context_shown:
+                diff.append("exit")
+            context, context_line, context_shown = "", "", False
+            continue
+        if norm in IGNORED_LINES:
+            continue
+        if not context and CONTEXT_RE.match(line):
+            context, context_line, context_shown = norm, line, False
+            if norm not in running:
+                diff.append(f"+{line}")
+                context_shown = True
+            continue
+        existing = running.get(context, set())
+        if norm in existing:
+            continue
+        if norm.startswith("no "):
+            positive = norm[3:]
+            if positive in existing:
+                emit(f"-{line[3:].strip()}")
+                continue
+        emit(f"+{line}")
+    if context_shown:
+        diff.append("exit")
+    return "\n".join(diff)

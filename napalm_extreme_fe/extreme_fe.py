@@ -11,13 +11,13 @@ from typing import Any, Dict, List, Optional, Union
 from napalm.base import NetworkDriver, models
 from napalm.base.exceptions import (
     CommandErrorException,
-    CommitError,
     ConnectionClosedException,
     MergeConfigException,
     ReplaceConfigException,
 )
 from napalm.base.helpers import sanitize_configs
 from napalm.base.netmiko_helpers import netmiko_args
+from netmiko.exceptions import ConfigInvalidException
 
 from napalm_extreme_fe import parsers
 
@@ -32,6 +32,20 @@ CLI_ERROR_PATTERNS = (
     r"% Cannot ",
     r"^\s*Error\s*:",
     r"% Error",
+)
+
+# Same, as a single pattern for Netmiko's send_config_set(error_pattern=...)
+CONFIG_ERROR_PATTERN = (
+    r"% (?:Invalid input|Incomplete command|Ambiguous command|Unrecognized)|% Error"
+)
+
+# Lines of "show running-config" / the saved config file that change on every
+# call; removed so that get_config() output is stable (like the IOS driver).
+CONFIG_VOLATILE_LINES = (
+    r"^\*+[ \t]*$",
+    r"^[ \t]*Command Execution Time:.*$",
+    r"^Preparing to Display Configuration.*$",
+    r"^# \w{3} \w{3} +\d+ \d+:\d+:\d+ \d{4}.*$",
 )
 
 # Filters for get_config(sanitized=True). They only match within a line
@@ -87,6 +101,7 @@ class ExtremeFEDriver(NetworkDriver):
 
         self.device: Any = None
         self.candidate_config: Optional[str] = None
+        self.profile = [self.platform]
 
     # ------------------------------------------------------------------
     # Connection handling
@@ -108,31 +123,52 @@ class ExtremeFEDriver(NetworkDriver):
         if self.device is None:
             return {"is_alive": False}
         try:
-            return {"is_alive": bool(self.device.is_alive())}
-        except (socket.error, EOFError, OSError):
+            # Send an ASCII NUL to keep the session alive, then ask the transport
+            self.device.write_channel(chr(0))
+            return {"is_alive": bool(self.device.remote_conn.transport.is_active())}
+        except (socket.error, EOFError, OSError, AttributeError):
             return {"is_alive": False}
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
-    def _send_command(self, command: str, **kwargs: Any) -> str:
+    def _send_command(self, command: Union[str, List[str]], **kwargs: Any) -> str:
+        """Send a command and return its post-processed output.
+
+        If ``command`` is a list, the commands are tried in order until one is
+        accepted by the CLI (useful when the syntax differs between releases).
+        """
         if self.device is None:
             raise ConnectionClosedException("Not connected to the device, call open() first")
+        commands = command if isinstance(command, list) else [command]
+        output = ""
         try:
-            output = self.device.send_command(command, **kwargs)
+            for cmd in commands:
+                output = self.device.send_command(cmd, **kwargs)
+                output = output if isinstance(output, str) else str(output)
+                if not self._has_cli_error(output):
+                    break
         except (socket.error, EOFError) as exc:
             raise ConnectionClosedException(str(exc)) from exc
-        return output if isinstance(output, str) else str(output)
+        return self._send_command_postprocess(output)
 
     @staticmethod
-    def _strip_banner(output: str) -> str:
-        """Remove the "Command Execution Time" banner and the
-        "Preparing to Display Configuration..." line from config output."""
-        output = re.sub(
-            r"\A\s*\*+[ \t]*\n[^\n]*Command Execution Time:[^\n]*\n\*+[ \t]*\n", "", output
-        )
-        return re.sub(r"\A\s*Preparing to Display Configuration\.*[ \t]*\n", "", output)
+    def _send_command_postprocess(output: str) -> str:
+        """Remove CLI noise from command output.
+
+        The "Command Execution Time" banner is kept: it is used to compute
+        ``last_flapped``.
+        """
+        output = re.sub(r"^Please widen the terminal.*$", "", output, flags=re.M)
+        return output.strip()
+
+    @staticmethod
+    def _clean_config(output: str) -> str:
+        """Remove banners and timestamps so configs can be compared / re-used."""
+        pattern = "|".join(f"(?:{p})" for p in CONFIG_VOLATILE_LINES)
+        output = re.sub(pattern, "", output, flags=re.M)
+        return output.strip() + "\n" if output.strip() else ""
 
     @staticmethod
     def _has_cli_error(output: str) -> bool:
@@ -145,17 +181,18 @@ class ExtremeFEDriver(NetworkDriver):
     def cli(
         self, commands: List[str], encoding: str = "text"
     ) -> Dict[str, Union[str, Dict[str, Any]]]:
-        """Execute a list of commands and return the raw output."""
+        """Execute a list of commands and return the output keyed by command.
+
+        Like the IOS driver, CLI errors are returned as output (not raised), so
+        the caller sees the device's own error message.
+        """
         if encoding != "text":
             raise NotImplementedError(f"{encoding} is not a supported encoding")
         if not isinstance(commands, list):
             raise TypeError("Please enter a valid list of commands!")
         result: Dict[str, Union[str, Dict[str, Any]]] = {}
         for command in commands:
-            output = self._send_command(command)
-            if self._has_cli_error(output):
-                raise CommandErrorException(f"Command '{command}' failed: {output.strip()}")
-            result[command] = output
+            result[command] = self._send_command(command)
         return result
 
     # ------------------------------------------------------------------
@@ -169,9 +206,12 @@ class ExtremeFEDriver(NetworkDriver):
 
         hostname = sys_info.get("SysName", "")
         model = sys_info.get("ModelName") or sys_info.get("Chassis", "")
+        domain = parsers.parse_domain_name(
+            self._send_command(["show running-config | include domain-name", "show running-config"])
+        )
         return {
             "hostname": hostname,
-            "fqdn": hostname,
+            "fqdn": f"{hostname}.{domain}" if hostname and domain else hostname,
             "vendor": "Extreme Networks",
             "model": model,
             "serial_number": sys_info.get("Serial#", ""),
@@ -350,10 +390,9 @@ class ExtremeFEDriver(NetworkDriver):
         config: models.ConfigDict = {"running": "", "startup": "", "candidate": ""}
         if retrieve in ("all", "running"):
             command = "show running-config verbose" if full else "show running-config"
-            running = self._send_command(command)
-            config["running"] = self._strip_banner(running)
+            config["running"] = self._clean_config(self._send_command(command))
         if retrieve in ("all", "startup"):
-            config["startup"] = self._strip_banner(
+            config["startup"] = self._clean_config(
                 self._send_command(f"more {self.startup_config_file}")
             )
         if sanitized:
@@ -404,39 +443,55 @@ class ExtremeFEDriver(NetworkDriver):
         )
 
     def compare_config(self) -> str:
-        """Return the lines that will be sent to the device on commit.
+        """Return an incremental diff of the merge candidate.
 
-        Without a candidate datastore on the device there is no real diff, so
-        (like other CLI based NAPALM drivers in merge mode) the pending
-        candidate is returned, prefixed with ``+``.
+        Fabric Engine has no on-box config diff, so (like the IOS driver's
+        merge mode) the candidate is compared with the running configuration:
+        only lines that would change something are returned. Lines that are
+        not present yet are prefixed with ``+``; ``no <x>`` for an existing
+        ``<x>`` is shown as ``-<x>``. Context lines (``interface ...``) are
+        shown without a prefix.
         """
         if not self.candidate_config:
             return ""
-        return "\n".join(f"+{line}" for line in self.candidate_config.splitlines())
+        running = self._send_command("show running-config")
+        return parsers.merge_diff(running, self.candidate_config)
 
     def commit_config(self, message: str = "", revert_in: Optional[int] = None) -> None:
-        """Push the merge candidate to the device."""
+        """Merge the candidate into the running configuration.
+
+        The lines are sent in configuration mode; the first rejected line
+        stops the merge and raises ``MergeConfigException`` (lines before it
+        stay applied, as Fabric Engine has no rollback). The configuration is
+        saved afterwards unless ``save_config`` is ``False``.
+        """
         if message:
-            raise NotImplementedError("Commit messages are not supported by Fabric Engine")
+            raise NotImplementedError("Commit message not implemented for this platform")
         if revert_in is not None:
-            raise NotImplementedError("Commit confirm is not supported by Fabric Engine")
+            raise NotImplementedError(
+                "Commit confirm (revert_in) not implemented for this platform"
+            )
         if not self.candidate_config:
             raise MergeConfigException("No candidate configuration loaded")
 
         lines = self.candidate_config.splitlines()
-        output = self.device.send_config_set(lines, cmd_verify=False)
-        if self._has_cli_error(output):
-            # Leave config mode cleanly before raising
+        try:
+            output = self.device.send_config_set(
+                lines, cmd_verify=False, error_pattern=CONFIG_ERROR_PATTERN
+            )
+        except ConfigInvalidException as exc:
             try:
                 self.device.exit_config_mode()
             except Exception:  # pragma: no cover - best effort
                 pass
-            raise CommitError(f"Error while applying configuration:\n{output}")
+            raise MergeConfigException(f"Configuration merge failed:\n{exc}") from exc
+        if self._has_cli_error(output):
+            raise MergeConfigException(f"Configuration merge failed:\n{output}")
 
         if self.save_on_commit:
             save_output = self.device.save_config()
             if self._has_cli_error(save_output):
-                raise CommitError(f"Error while saving configuration:\n{save_output}")
+                raise CommandErrorException(f"Saving the configuration failed:\n{save_output}")
         self.candidate_config = None
 
     def discard_config(self) -> None:

@@ -42,7 +42,7 @@ All Netmiko connection arguments (`port`, `secret`, `key_file`, `use_keys`,
 
 | Method                       | Commands used                                                         |
 |------------------------------|-----------------------------------------------------------------------|
-| `get_facts`                  | `show sys-info`, `show interfaces gigabitEthernet`                    |
+| `get_facts`                  | `show sys-info`, `show interfaces gigabitEthernet`, `show running-config \| include domain-name` |
 | `get_environment`            | `show sys-info`, `show khi performance cpu`, `... memory`             |
 | `get_interfaces`             | `show interfaces gigabitEthernet` (+ `... name` on older releases)    |
 | `get_interfaces_ip`          | `show ip interface vrfids 0-512`, `show ipv6 address interface`       |
@@ -55,7 +55,7 @@ All Netmiko connection arguments (`port`, `secret`, `key_file`, `use_keys`,
 | `get_ntp_servers`            | `show running-config`                                                 |
 | `get_snmp_information`       | `show sys-info`, `show running-config`                                |
 | `get_config`                 | `show running-config [verbose]`, `more <startup file>`                |
-| `cli`                        | any                                                                   |
+| `cli`                        | any (CLI errors are returned as output, like the IOS driver)          |
 | `is_alive`                   |                                                                       |
 
 ### Configuration management
@@ -63,8 +63,8 @@ All Netmiko connection arguments (`port`, `secret`, `key_file`, `use_keys`,
 | Method                   | Supported | Notes                                                                 |
 |--------------------------|-----------|-----------------------------------------------------------------------|
 | `load_merge_candidate`   | yes       | Candidate is kept in memory (no candidate datastore on the device)    |
-| `compare_config`         | partial   | Returns the pending lines prefixed with `+`, not a real diff          |
-| `commit_config`          | yes       | Sends the lines in config mode, then `save config` (see `save_config`) |
+| `compare_config`         | yes       | Incremental diff against running-config (IOS merge style): `+new`, `-removed` |
+| `commit_config`          | yes       | Sends the lines in config mode (stops at the first rejected line), then `save config` |
 | `discard_config`         | yes       |                                                                       |
 | `load_replace_candidate` | no        | Fabric Engine has no atomic config replace                            |
 | `rollback`               | no        |                                                                       |

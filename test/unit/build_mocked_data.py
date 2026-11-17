@@ -25,7 +25,7 @@ RUN = "show running-config"
 STARTUP = "more /intflash/config.cfg"
 
 TESTS = {
-    "test_get_facts": [SYS, INTF],
+    "test_get_facts": [SYS, INTF, "show running-config | include domain-name"],
     "test_get_environment": [SYS, "show khi performance cpu", "show khi performance memory"],
     "test_get_interfaces": [INTF, "?show interfaces gigabitEthernet name"],
     "test_get_interfaces_ip": ["show ip interface vrfids 0-512", "show ipv6 address interface"],
@@ -63,7 +63,7 @@ def sanitize(text):
 
 
 def sample_name(command):
-    return command.replace(" ", "_").replace("/", "_") + ".txt"
+    return command.replace("|", "pipe").replace(" ", "_").replace("/", "_") + ".txt"
 
 
 def main():

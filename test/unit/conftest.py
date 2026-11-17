@@ -42,15 +42,26 @@ class PatchedExtremeFEDriver(extreme_fe.ExtremeFEDriver):
         pass
 
 
+class _FakeTransport:
+    def is_active(self):
+        return True
+
+
+class _FakeRemoteConn:
+    transport = _FakeTransport()
+
+
 class FakeExtremeFEDevice(BaseTestDouble):
     """Netmiko replacement returning the content of the mocked_data files."""
+
+    remote_conn = _FakeRemoteConn()
 
     def __init__(self):
         super().__init__()
         self.sent_config = []
 
-    def is_alive(self):
-        return True
+    def write_channel(self, data):
+        pass
 
     def send_command(self, command, **kwargs):
         filename = "{}.txt".format(self.sanitize_text(command))
@@ -60,8 +71,8 @@ class FakeExtremeFEDevice(BaseTestDouble):
         self.sent_config.extend(config_commands)
         return "\n".join(config_commands)
 
-    def save_config(self, *args, **kwargs):
-        return "save config\nSave config to file /intflash/config.cfg successful."
-
     def exit_config_mode(self, *args, **kwargs):
         return ""
+
+    def save_config(self, *args, **kwargs):
+        return "save config\nSave config to file /intflash/config.cfg successful."
