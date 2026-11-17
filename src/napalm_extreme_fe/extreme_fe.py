@@ -50,6 +50,10 @@ LOG_MESSAGE_RE = re.compile(
     re.M,
 )
 
+# Commands that display the log: their output consists of log messages, so the
+# filter above must not be applied to them.
+LOG_DISPLAY_COMMAND_RE = re.compile(r"^\s*show\s+log", re.I)
+
 CLI_ERROR_PATTERNS = (
     r"% Invalid input",
     r"% Incomplete command",
@@ -206,17 +210,21 @@ class ExtremeFEDriver(NetworkDriver):
                     break
         except (socket.error, EOFError) as exc:
             raise ConnectionClosedException(str(exc)) from exc
-        return self._send_command_postprocess(output)
+        return self._send_command_postprocess(
+            output, remove_log_messages=not LOG_DISPLAY_COMMAND_RE.match(cmd)
+        )
 
     @staticmethod
-    def _send_command_postprocess(output: str) -> str:
+    def _send_command_postprocess(output: str, remove_log_messages: bool = True) -> str:
         """Remove CLI noise from command output (like the IOS driver).
 
-        Removes log messages printed into the session ("logging screen") and
+        Removes log messages printed into the session ("logging screen") -
+        except for commands that display the log ("show logging ...") - and
         the "Please widen the terminal" hint. The "Command Execution Time"
         banner is kept: it is used to compute ``last_flapped``.
         """
-        output = LOG_MESSAGE_RE.sub("", output)
+        if remove_log_messages:
+            output = LOG_MESSAGE_RE.sub("", output)
         output = re.sub(r"^Please widen the terminal.*$", "", output, flags=re.M)
         return output.strip()
 

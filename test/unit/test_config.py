@@ -571,3 +571,28 @@ def test_confirm_with_unexpected_cancel_output(reboot_driver):
     with pytest.raises(CommitConfirmException, match="cancelled"):
         reboot_driver.confirm_commit()
     assert reboot_driver.device.commands[-1] != "save config"  # nothing saved
+
+
+# Real output of "show logging file event-code 0x0003068e" (Fabric Engine 9.4 VM)
+LOG_FILE_OUTPUT = """\
+************************************************************************************
+                Command Execution Time: Tue Nov 17 16:37:13 2026 UTC
+************************************************************************************
+1 2026-11-17T16:33:05.861Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 10 minutes!
+1 2026-11-17T16:33:44.223Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 10 minutes!
+"""
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["show logging file event-code 0x0003068e", "show logging file tail", "show log file"],
+)
+def test_log_display_commands_keep_log_lines(driver, command):
+    driver.device.send_command = lambda cmd, **kw: LOG_FILE_OUTPUT
+    output = driver.cli([command])[command]
+    assert output.count("Scheduled reset enabled!") == 2
+
+
+def test_other_commands_drop_log_lines(driver):
+    driver.device.send_command = lambda cmd, **kw: f"VLAN    PORT\n{LOG_LINE}\n1       1/1"
+    assert driver.cli(["show vlan members"])["show vlan members"] == "VLAN    PORT\n1       1/1"
