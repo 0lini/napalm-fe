@@ -1,0 +1,10 @@
+Listing Directory /intflash:
+drwxr-xr-x 35 0       0           5048 Nov 16 23:58  ./
+drwxr-xr-x  3 0       0            232 Mar 28  2025  ../
+-rw-------  1 0       0            108 Nov 16 12:24  .auto_sense_key.txt
+drwxr-xr-x 15 0       0           1256 Mar 28  2025  .cert/
+-rw-r--r--  1 0       0          11900 Nov 17 11:28  CpProfiler.txt
+drwxr-xr-x  3 0       0            224 Mar 28  2025  archive/
+-rwx------  1 0       0          14385 Nov 16 12:24  config.cfg
+drwxr-xr-x  2 0       0            160 Mar 28  2025  config/
+--w-------  1 0       0             81 Nov 16 12:24  snmp_comm_moc.txt

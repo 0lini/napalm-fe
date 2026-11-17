@@ -1,0 +1,8 @@
+    Slot:1
+         Used: 1000000 (KB)
+         Free: 1000000 (KB)
+         Current utilization: 50 %
+    Slot:2
+         Used: 500000 (KB)
+         Free: 1500000 (KB)
+         Current utilization: 25 %
