@@ -347,3 +347,50 @@ def test_rollback_requires_allow_reboot(driver):
     with pytest.raises(ReplaceConfigException, match="allow_reboot"):
         driver.rollback()
     assert not driver.device.rebooted
+
+
+# Real log message printed into an SSH session ("logging screen"), Fabric Engine 9.4 VM
+LOG_LINE = (
+    "1 2026-11-17T16:11:12.756Z 5520-24T-FabricEngine CP1 - 0x000305ca - 00000000 "
+    "GlobalRouter SW INFO us"
+)
+PROMPT = "5520-24T-FabricEngine:1>"
+
+
+def test_log_messages_are_removed_from_output():
+    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+
+    output = f"VLAN    PORT\n{LOG_LINE}\n1       1/1\n{PROMPT}{LOG_LINE}\n10      1/2\n"
+    assert (
+        ExtremeFEDriver._send_command_postprocess(output)
+        == "VLAN    PORT\n1       1/1\n10      1/2"
+    )
+
+
+def test_getter_ignores_log_messages(driver):
+    """A log message in the middle of a table does not change the result."""
+    driver.device.current_test = "test_get_vlans"
+    driver.device.current_test_case = "fabric_engine_9.4"
+    expected = driver.get_vlans()
+
+    original = driver.device.send_command
+
+    def noisy(command, **kwargs):
+        lines = original(command, **kwargs).splitlines()
+        lines.insert(len(lines) // 2, LOG_LINE)
+        return "\n".join(lines)
+
+    driver.device.send_command = noisy
+    assert driver.get_vlans() == expected
+
+
+def test_config_lines_are_not_log_messages():
+    from napalm_extreme_fe.extreme_fe import LOG_MESSAGE_RE
+
+    for line in (
+        'snmp-server location "DC1"',
+        "ntp server 192.0.2.21",
+        "1 out of 1 entries displayed",
+        "10      1/2",
+    ):
+        assert not LOG_MESSAGE_RE.search(line)

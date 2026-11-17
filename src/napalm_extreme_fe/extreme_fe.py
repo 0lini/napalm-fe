@@ -34,6 +34,15 @@ NETMIKO_DEVICE_TYPES = ("extreme_fe", "extreme_voss", "extreme_vsp")
 NETMIKO_DEVICE_TYPE = next(t for t in NETMIKO_DEVICE_TYPES if t in CLASS_MAPPER)
 
 # Strings that indicate that the CLI rejected a command
+# Log messages printed into the session when "logging screen" is enabled
+# (a switch-wide setting the driver does not change), RFC 5424 format:
+# <prompt>1 2026-11-17T16:11:12.756Z <host> CP1 - 0x000305ca - 00000000 GlobalRouter SW INFO ...
+LOG_MESSAGE_RE = re.compile(
+    r"^(?:\S+:\d+[>#])?\s*\d+ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?"
+    r"(?:Z|[+-]\d{2}:?\d{2}) \S+ CP\d+ - 0x[0-9a-fA-F]+ - .*$\n?",
+    re.M,
+)
+
 CLI_ERROR_PATTERNS = (
     r"% Invalid input",
     r"% Incomplete command",
@@ -193,11 +202,13 @@ class ExtremeFEDriver(NetworkDriver):
 
     @staticmethod
     def _send_command_postprocess(output: str) -> str:
-        """Remove CLI noise from command output.
+        """Remove CLI noise from command output (like the IOS driver).
 
-        The "Command Execution Time" banner is kept: it is used to compute
-        ``last_flapped``.
+        Removes log messages printed into the session ("logging screen") and
+        the "Please widen the terminal" hint. The "Command Execution Time"
+        banner is kept: it is used to compute ``last_flapped``.
         """
+        output = LOG_MESSAGE_RE.sub("", output)
         output = re.sub(r"^Please widen the terminal.*$", "", output, flags=re.M)
         return output.strip()
 

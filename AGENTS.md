@@ -125,7 +125,11 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
    and `reset` confirmation prompts are assumed to end in `(y/n)`; check the
    real prompts and that the switch boots the copied file. Only on a lab switch
    with console access.
-6. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
+6. **Log messages in the session** (`logging screen`, switch-wide): the driver
+   removes them from every output (`LOG_MESSAGE_RE`). Only the RFC 5424 format
+   (`boot config flags syslog-rfc5424-format true`) has been seen; capture a
+   log line from a switch with that flag `false` and extend the pattern.
+7. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
    prompt / login behaviour has not been tested.
 
 Not implemented yet (NotImplementedError, skipped in tests): BGP, users,
