@@ -4,8 +4,10 @@ The driver talks to the device over SSH using Netmiko's ``extreme_vsp``
 device type and parses the CLI output.
 """
 
+import os
 import re
 import socket
+import tempfile
 from typing import Any, Dict, List, Optional, Union
 
 from napalm.base import NetworkDriver, models
@@ -21,6 +23,7 @@ from netmiko.exceptions import ConfigInvalidException
 from netmiko.ssh_dispatcher import CLASS_MAPPER
 
 from napalm_extreme_fe import parsers
+from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer
 
 # Extreme renamed VOSS (VSP Operating System Software) to Fabric Engine;
 # Netmiko still calls it "extreme_vsp". Use the newest name Netmiko provides.
@@ -91,6 +94,15 @@ class ExtremeFEDriver(NetworkDriver):
           a successful ``commit_config``.
         * ``startup_config_file`` (str, default ``/intflash/config.cfg``):
           the file returned as the ``startup`` configuration by ``get_config``.
+        * ``config_method`` (``"cli"`` or ``"file"``, default ``"cli"``): how
+          ``commit_config`` applies a merge candidate. ``"cli"`` sends the lines
+          in configuration mode. ``"file"`` works like the IOS driver: the
+          candidate is copied to the switch with SCP on load, a restore point is
+          saved with ``save config file`` and the file is applied with
+          ``source``.
+        * ``dest_file_system`` (default ``/intflash``), ``merge_cfg`` (default
+          ``napalm_merge.cfg``) and ``rollback_cfg`` (default
+          ``napalm_rollback.cfg``): files used by ``config_method="file"``.
         """
         self.hostname = hostname
         self.username = username
@@ -101,6 +113,12 @@ class ExtremeFEDriver(NetworkDriver):
         self.save_on_commit = bool(optional_args.get("save_config", True))
         self.startup_config_file = optional_args.get("startup_config_file", "/intflash/config.cfg")
         self.force_no_enable = bool(optional_args.get("force_no_enable", False))
+        self.config_method = optional_args.get("config_method", "cli")
+        if self.config_method not in ("cli", "file"):
+            raise ValueError("config_method must be 'cli' or 'file'")
+        self.dest_file_system = optional_args.get("dest_file_system", "/intflash").rstrip("/")
+        self.merge_cfg = optional_args.get("merge_cfg", "napalm_merge.cfg")
+        self.rollback_cfg = optional_args.get("rollback_cfg", "napalm_rollback.cfg")
         self.netmiko_optional_args = netmiko_args(optional_args)
 
         self.device: Any = None
@@ -436,6 +454,38 @@ class ExtremeFEDriver(NetworkDriver):
             if line.strip() and not line.strip().startswith("#")
         ]
         self.candidate_config = "\n".join(lines)
+        if self.config_method == "file":
+            self._upload_candidate(self.candidate_config)
+
+    def _gen_full_path(self, filename: str) -> str:
+        return f"{self.dest_file_system}/{filename}"
+
+    def _upload_candidate(self, candidate: str) -> None:
+        """Copy the candidate to the switch, wrapped like a saved config file."""
+        content = candidate
+        if not re.match(r"^\s*conf(?:ig(?:ure)?)?\s+t(?:erminal)?\b", content, re.I):
+            content = "config terminal\n" + content
+        if not re.search(r"^\s*end\s*$", content, re.M):
+            content += "\nend"
+        handle, tmp_file = tempfile.mkstemp(prefix="napalm_fe_", suffix=".cfg")
+        try:
+            with os.fdopen(handle, "w") as tmp:
+                tmp.write(content + "\n")
+            with ExtremeFEFileTransfer(
+                ssh_conn=self.device,
+                source_file=tmp_file,
+                dest_file=self.merge_cfg,
+                file_system=self.dest_file_system,
+            ) as transfer:
+                transfer.transfer_file()
+                if not transfer.verify_file():
+                    raise MergeConfigException("File transfer to the switch failed")
+        except MergeConfigException:
+            raise
+        except Exception as exc:
+            raise MergeConfigException(f"File transfer to the switch failed: {exc}") from exc
+        finally:
+            os.remove(tmp_file)
 
     def load_replace_candidate(
         self, filename: Optional[str] = None, config: Optional[str] = None
@@ -478,7 +528,36 @@ class ExtremeFEDriver(NetworkDriver):
         if not self.candidate_config:
             raise MergeConfigException("No candidate configuration loaded")
 
-        lines = self.candidate_config.splitlines()
+        if self.config_method == "file":
+            self._commit_from_file()
+        else:
+            self._commit_from_cli()
+
+        if self.save_on_commit:
+            save_output = self.device.save_config()
+            if self._has_cli_error(save_output):
+                raise CommandErrorException(f"Saving the configuration failed:\n{save_output}")
+        self.candidate_config = None
+
+    def _gen_rollback_cfg(self) -> None:
+        """Save the running config as a restore point (like the IOS driver)."""
+        cmd = f"save config file {self._gen_full_path(self.rollback_cfg)}"
+        output = self._send_command(cmd)
+        if self._has_cli_error(output):
+            raise MergeConfigException(f"Could not save the restore point:\n{output}")
+
+    def _commit_from_file(self) -> None:
+        self._gen_rollback_cfg()
+        cmd = f"source {self._gen_full_path(self.merge_cfg)}"
+        output = self._send_command(cmd, read_timeout=max(self.timeout, 120))
+        if self._has_cli_error(output):
+            raise MergeConfigException(
+                "Configuration merge failed; the configuration before the commit was "
+                f"saved to {self._gen_full_path(self.rollback_cfg)}:\n{output}"
+            )
+
+    def _commit_from_cli(self) -> None:
+        lines = (self.candidate_config or "").splitlines()
         try:
             output = self.device.send_config_set(
                 lines, cmd_verify=False, error_pattern=CONFIG_ERROR_PATTERN
@@ -492,11 +571,17 @@ class ExtremeFEDriver(NetworkDriver):
         if self._has_cli_error(output):
             raise MergeConfigException(f"Configuration merge failed:\n{output}")
 
-        if self.save_on_commit:
-            save_output = self.device.save_config()
-            if self._has_cli_error(save_output):
-                raise CommandErrorException(f"Saving the configuration failed:\n{save_output}")
-        self.candidate_config = None
+    def rollback(self) -> None:
+        """Not supported: Fabric Engine cannot replace the running config.
+
+        With ``config_method="file"`` the configuration before each commit is
+        saved to ``rollback_cfg`` and can be restored manually (e.g. by booting
+        from that file).
+        """
+        raise NotImplementedError(
+            "Fabric Engine has no configuration replace; restore "
+            f"{self._gen_full_path(self.rollback_cfg)} manually if needed"
+        )
 
     def discard_config(self) -> None:
         """Discard the pending candidate."""

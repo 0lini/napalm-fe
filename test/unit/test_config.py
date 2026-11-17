@@ -120,3 +120,83 @@ def test_netmiko_device_type():
 
     assert NETMIKO_DEVICE_TYPE in CLASS_MAPPER
     assert NETMIKO_DEVICE_TYPE in ("extreme_fe", "extreme_voss", "extreme_vsp")
+
+
+class FakeTransfer:
+    instances = []
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        with open(kwargs["source_file"]) as handle:
+            self.content = handle.read()
+        FakeTransfer.instances.append(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def transfer_file(self):
+        pass
+
+    def verify_file(self):
+        return True
+
+
+@pytest.fixture
+def file_driver(monkeypatch):
+    from napalm_extreme_fe import extreme_fe
+
+    FakeTransfer.instances = []
+    monkeypatch.setattr(extreme_fe, "ExtremeFEFileTransfer", FakeTransfer)
+    driver = PatchedExtremeFEDriver("host", "user", "pass", optional_args={"config_method": "file"})
+    driver.device.current_test = "test_get_config"
+    driver.device.current_test_case = "5320-48P-8XE_9.4.2.0"
+    sent = []
+    original = driver.device.send_command
+
+    def send_command(command, **kwargs):
+        sent.append(command)
+        if command.startswith(("save config file", "source ")):
+            return ""
+        return original(command, **kwargs)
+
+    driver.device.send_command = send_command
+    driver.sent_commands = sent
+    return driver
+
+
+def test_file_method_upload_and_commit(file_driver):
+    file_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    upload = FakeTransfer.instances[0]
+    assert upload.kwargs["dest_file"] == "napalm_merge.cfg"
+    assert upload.kwargs["file_system"] == "/intflash"
+    assert upload.content == "config terminal\nntp server 192.0.2.99\nend\n"
+
+    assert file_driver.compare_config() == "+ntp server 192.0.2.99"
+    file_driver.commit_config()
+    assert file_driver.sent_commands[-2:] == [
+        "save config file /intflash/napalm_rollback.cfg",
+        "source /intflash/napalm_merge.cfg",
+    ]
+    assert file_driver.device.sent_config == []  # nothing sent line by line
+
+
+def test_file_method_source_error(file_driver):
+    file_driver.load_merge_candidate(config="bogus command")
+    file_driver.device.send_command = lambda command, **kw: (
+        "% Invalid input detected at '^' marker." if command.startswith("source") else ""
+    )
+    with pytest.raises(MergeConfigException, match="napalm_rollback.cfg"):
+        file_driver.commit_config()
+
+
+def test_invalid_config_method():
+    with pytest.raises(ValueError):
+        PatchedExtremeFEDriver("host", "user", "pass", optional_args={"config_method": "x"})
+
+
+def test_rollback_not_supported(driver):
+    with pytest.raises(NotImplementedError):
+        driver.rollback()

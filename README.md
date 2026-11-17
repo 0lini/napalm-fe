@@ -36,6 +36,10 @@ with driver("192.0.2.10", "rwa", "rwa", optional_args={"port": 22}) as device:
 | `save_config`         | `True`                 | Run `save config` after a successful commit        |
 | `startup_config_file` | `/intflash/config.cfg` | File returned as `startup` by `get_config()`       |
 | `force_no_enable`     | `False`                | Do not enter privileged (`enable`) mode            |
+| `config_method`       | `cli`                  | `cli`: send merge lines in config mode. `file`: SCP the candidate to the switch, save a restore point, apply it with `source` (IOS-style) |
+| `dest_file_system`    | `/intflash`            | Where `config_method=file` stores its files        |
+| `merge_cfg`           | `napalm_merge.cfg`     | Candidate file name for `config_method=file`       |
+| `rollback_cfg`        | `napalm_rollback.cfg`  | Restore point saved before each `file` commit      |
 
 All Netmiko connection arguments (`port`, `secret`, `key_file`, `use_keys`,
 `ssh_config_file`, `conn_timeout`, ...) are passed through.
@@ -69,7 +73,14 @@ All Netmiko connection arguments (`port`, `secret`, `key_file`, `use_keys`,
 | `commit_config`          | yes       | Sends the lines in config mode (stops at the first rejected line), then `save config` |
 | `discard_config`         | yes       |                                                                       |
 | `load_replace_candidate` | no        | Fabric Engine has no atomic config replace                            |
-| `rollback`               | no        |                                                                       |
+| `rollback`               | no        | No config replace on Fabric Engine; with `config_method=file` the pre-commit config is kept in `rollback_cfg` for manual restore |
+
+### File transfer
+
+`napalm_extreme_fe.file_transfer.ExtremeFEFileTransfer` implements Netmiko's
+`BaseFileTransfer` interface for Fabric Engine (SCP via the SSH server, `ls` for
+existence/size checks, size-based verification as there is no on-box MD5). It
+is written so that it can be contributed to Netmiko.
 
 ## Development
 
