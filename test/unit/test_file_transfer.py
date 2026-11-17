@@ -1,25 +1,33 @@
 """Tests for the Fabric Engine Netmiko file transfer class."""
 
 import hashlib
-import os
 
 import pytest
 
 from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer, parse_ls
 
-SAMPLE = os.path.join(
-    os.path.dirname(__file__), "cli_samples", "5320-48P-8XE_9.4.2.0", "ls__intflash.txt"
-)
+# Real outputs of Fabric Engine 9.4 (directory listing trimmed)
+LS_INTFLASH = """\
+Listing Directory /intflash:
+drwxr-xr-x 35 0       0           5048 Nov 16 23:58  ./
+drwxr-xr-x  3 0       0            232 Mar 28  2025  ../
+-rw-------  1 0       0            108 Nov 16 12:24  .auto_sense_key.txt
+drwxr-xr-x 15 0       0           1256 Mar 28  2025  .cert/
+-rw-r--r--  1 0       0          11900 Nov 17 11:28  CpProfiler.txt
+drwxr-xr-x  3 0       0            224 Mar 28  2025  archive/
+-rwx------  1 0       0          14385 Nov 16 12:24  config.cfg
+drwxr-xr-x  2 0       0            160 Mar 28  2025  config/
+--w-------  1 0       0             81 Nov 16 12:24  snmp_comm_moc.txt
+"""
 
+LS_MISSING = """\
+Listing Directory /intflash:
+Can't open "/intflash/doesnotexist.cfg".
+"""
 
-def test_parse_ls():
-    with open(SAMPLE) as handle:
-        entries = parse_ls(handle.read())
-    assert "." not in entries and ".." not in entries
-    assert entries["config.cfg"] == {"size": 14385, "is_dir": False}
-    assert entries["archive"] == {"size": 224, "is_dir": True}
-    assert entries[".cert"]["is_dir"] is True
-    assert entries["snmp_comm_moc.txt"] == {"size": 81, "is_dir": False}
+MD5_OUTPUT = "MD5 (/intflash/config.cfg) = 5a922729bc0fa85437e7e3b8c339ea34\n"
+
+LOCAL_MD5 = hashlib.md5(b"x" * 14385).hexdigest()
 
 
 class FakeConn:
@@ -39,17 +47,27 @@ class FakeConn:
 
 @pytest.fixture
 def local_file(tmp_path):
+    """Local file with the same size as config.cfg in LS_INTFLASH."""
     path = tmp_path / "candidate.cfg"
     path.write_text("x" * 14385)
     return str(path)
 
 
-LOCAL_MD5 = hashlib.md5(b"x" * 14385).hexdigest()
+def test_parse_ls():
+    entries = parse_ls(LS_INTFLASH)
+    assert "." not in entries and ".." not in entries
+    assert entries["config.cfg"] == {"size": 14385, "is_dir": False}
+    assert entries["archive"] == {"size": 224, "is_dir": True}
+    assert entries[".cert"]["is_dir"] is True
+    assert entries["snmp_comm_moc.txt"] == {"size": 81, "is_dir": False}
+
+
+def test_process_md5_real_output():
+    assert ExtremeFEFileTransfer.process_md5(MD5_OUTPUT) == "5a922729bc0fa85437e7e3b8c339ea34"
 
 
 def test_file_exists_size_and_md5(local_file):
-    with open(SAMPLE) as handle:
-        conn = FakeConn(handle.read(), md5_output=f"{LOCAL_MD5.upper()}  /intflash/config.cfg")
+    conn = FakeConn(LS_INTFLASH, md5_output=f"MD5 (/intflash/config.cfg) = {LOCAL_MD5}")
     transfer = ExtremeFEFileTransfer(conn, source_file=local_file, dest_file="config.cfg")
     assert transfer.file_system == "/intflash"
     assert transfer.check_file_exists()
@@ -61,15 +79,13 @@ def test_file_exists_size_and_md5(local_file):
 
 
 def test_md5_mismatch(local_file):
-    with open(SAMPLE) as handle:
-        conn = FakeConn(handle.read(), md5_output="0" * 32)
+    conn = FakeConn(LS_INTFLASH, md5_output="MD5 (/intflash/config.cfg) = " + "0" * 32)
     transfer = ExtremeFEFileTransfer(conn, source_file=local_file, dest_file="config.cfg")
     assert not transfer.verify_file()
 
 
 def test_size_only_without_hash(local_file):
-    with open(SAMPLE) as handle:
-        conn = FakeConn(handle.read())
+    conn = FakeConn(LS_INTFLASH)
     transfer = ExtremeFEFileTransfer(
         conn, source_file=local_file, dest_file="config.cfg", hash_supported=False
     )
@@ -78,9 +94,7 @@ def test_size_only_without_hash(local_file):
 
 
 def test_file_missing(local_file):
-    path = os.path.join(os.path.dirname(SAMPLE), "ls__intflash_doesnotexist.cfg.txt")
-    with open(path) as handle:
-        conn = FakeConn(handle.read())  # real output of Fabric Engine 9.4.2.0
+    conn = FakeConn(LS_MISSING)
     transfer = ExtremeFEFileTransfer(conn, source_file=local_file, dest_file="doesnotexist.cfg")
     assert not transfer.check_file_exists()
     assert not transfer.verify_file()
@@ -94,10 +108,3 @@ def test_md5_unparsable(local_file):
     )
     with pytest.raises(ValueError):
         transfer.remote_md5()
-
-
-def test_process_md5_real_output():
-    path = os.path.join(os.path.dirname(SAMPLE), "file-checksum_md5__intflash_config.cfg.txt")
-    with open(path) as handle:
-        output = handle.read()
-    assert ExtremeFEFileTransfer.process_md5(output) == "5a922729bc0fa85437e7e3b8c339ea34"

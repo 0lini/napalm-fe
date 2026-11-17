@@ -10,8 +10,8 @@ and parses the CLI output. Netmiko still names the platform `extreme_vsp`; the
 driver automatically uses the newest name Netmiko provides (`extreme_fe`, then
 `extreme_voss`, then `extreme_vsp`).
 
-> **Status: beta.** The getters are tested against real device captures (see
-> `test/unit/cli_samples/`). Output formats can differ between releases - if
+> **Status: beta.** The getters are tested against real device output (see
+> `test/unit/mocked_data/`). Output formats can differ between releases - if
 > something does not parse on your switch, please open an issue with the raw
 > CLI output (see [Reporting parsing problems](#reporting-parsing-problems)).
 
@@ -126,14 +126,21 @@ ruff check . && ruff format --check .
 mypy napalm_extreme_fe
 ```
 
-Getter tests use the standard NAPALM test suite (`napalm.base.test.getters`)
-with mocked device output in `test/unit/mocked_data/`, generated from the raw
-captures in `test/unit/cli_samples/<case>/` (`normal/` holds hand-written
-samples, the other directories real, anonymised captures):
+Tests are organised like NAPALM's IOS driver tests:
 
-```bash
-python test/unit/build_mocked_data.py --expected   # then review every expected_result.json!
-```
+- `test/unit/test_getters.py` runs NAPALM's getter test suite against mocked
+  device output in `test/unit/mocked_data/<test>/<case>/` (one file per command
+  plus `expected_result.json`). `fabric_engine_9.4` cases are real, anonymised
+  output; `synthetic` cases are hand-written.
+- `test/unit/test_parsers.py`, `test_config.py` and `test_file_transfer.py`
+  are unit tests for parsers, configuration management and file transfer.
+- `test/unit/TestExtremeFEDriver.py` runs configuration tests against a live
+  lab switch (like `TestIOSDriver.py`); it is not part of the normal test run:
+
+  ```bash
+  NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<password> \
+  pytest test/unit/TestExtremeFEDriver.py
+  ```
 
 Releases: bump `version` in `pyproject.toml`, update `CHANGELOG.md`, push a tag
 `v<version>`; the release workflow tests, builds and publishes to PyPI.

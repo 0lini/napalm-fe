@@ -87,20 +87,82 @@ c 3
     assert tables[1][2] == ["c 3"]
 
 
-SAMPLES = os.path.join(os.path.dirname(__file__), "cli_samples")
+MOCKED_DATA = os.path.join(os.path.dirname(__file__), "mocked_data")
 
 
-def _sample(case, name):
-    with open(os.path.join(SAMPLES, case, name)) as handle:
+def _mocked(test, case, name):
+    with open(os.path.join(MOCKED_DATA, test, case, name)) as handle:
         return handle.read()
 
 
+# real output (Fabric Engine 9.4) of a switch without entries
+ARP_EMPTY = """\
+************************************************************************************
+                Command Execution Time: Tue Nov 17 11:13:05 2026 CET
+************************************************************************************
+
+========================================================================================================================
+                                                 IP Arp - GlobalRouter
+========================================================================================================================
+IP_ADDRESS      MAC_ADDRESS        VLAN  PORT                 TYPE    TTL(10 Sec) TUNNEL             L3 ACCESS
+------------------------------------------------------------------------------------------------------------------------
+
+========================================================================================================================
+                                               IP Arp Extn - GlobalRouter
+========================================================================================================================
+MULTICAST-MAC-FLOODING    AGING(Minutes)       ARP-THRESHOLD
+------------------------------------------------------------------------------------------------------------------------
+disable                   360                  500
+
+c: customer vid   u: untagged-traffic
+
+0 out of 0 ARP entries displayed
+
+
+ARPs on TX-NNI: Current = 0, re-ARP count = 0
+"""
+
+# real output (Fabric Engine 9.4) of a switch without entries
+IP_INTERFACE_EMPTY = """\
+************************************************************************************
+                Command Execution Time: Tue Nov 17 11:12:20 2026 CET
+************************************************************************************
+
+========================================================================================================================
+                                              IP Interface - GlobalRouter
+========================================================================================================================
+INTERFACE    IP               NET              ADMIN      OPER     VLAN  BROUTER    IPSEC   ACCESS             IP
+             ADDRESS          MASK             STATUS     STATE    ID    PORT       STATE                      NAME
+------------------------------------------------------------------------------------------------------------------------
+
+
+All 0 out of 0 Total Num of IP interfaces displayed
+
+
+Info: No VRF exists with id: 1-512
+"""
+
+# real output (Fabric Engine 9.4) of a switch without entries
+IPV6_ADDRESS_EMPTY = """\
+************************************************************************************
+                Command Execution Time: Tue Nov 17 11:12:33 2026 CET
+************************************************************************************
+========================================================================================================================
+                                           Address Information - GlobalRouter
+========================================================================================================================
+IPV6 ADDRESS/PREFIX LENGTH                   VID/BID/TID  TYPE    ORIGIN    STATUS    VALID    PREF           IPv6
+                                                                                      LIFETIME LIFETIME       NAME
+------------------------------------------------------------------------------------------------------------------------
+
+0 out of 0 Total Num of Address Entries displayed.
+"""
+
+
 def test_empty_real_outputs():
-    """Real Fabric Engine 9.4 captures without entries parse to empty results."""
-    case = "5320-48P-8XE_9.4.2.0"
-    assert parsers.parse_arp_table(_sample(case, "show_ip_arp.txt")) == []
-    assert parsers.parse_ip_interfaces(_sample(case, "show_ip_interface_vrfids_0-512.txt")) == {}
-    assert parsers.parse_ipv6_interfaces(_sample(case, "show_ipv6_address_interface.txt")) == {}
+    """Real outputs without entries parse to empty results."""
+    assert parsers.parse_arp_table(ARP_EMPTY) == []
+    assert parsers.parse_ip_interfaces(IP_INTERFACE_EMPTY) == {}
+    assert parsers.parse_ipv6_interfaces(IPV6_ADDRESS_EMPTY) == {}
 
 
 def test_header_columns():
@@ -113,7 +175,9 @@ def test_header_columns():
 
 
 def test_iter_tables_dash_before_header_and_subtables():
-    output = _sample("5320-48P-8XE_9.4.2.0", "show_interfaces_gigabitEthernet.txt")
+    output = _mocked(
+        "test_get_interfaces", "fabric_engine_9.4", "show_interfaces_gigabitEthernet.txt"
+    )
     titles = [t[0] for t in parsers.iter_tables(output)]
     assert titles.count("Port Config") == 2  # table + untitled sub-table
     autosense = parsers.tables_by_title(output, "Port Auto-sense")[0]

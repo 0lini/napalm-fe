@@ -10,9 +10,9 @@ from .conftest import PatchedExtremeFEDriver
 @pytest.fixture
 def driver():
     driver = PatchedExtremeFEDriver("host", "user", "pass")
-    # compare_config() reads the running config of the real 5320 capture
+    # compare_config() reads the running config of the real Fabric Engine 9.4 capture
     driver.device.current_test = "test_get_config"
-    driver.device.current_test_case = "5320-48P-8XE_9.4.2.0"
+    driver.device.current_test_case = "fabric_engine_9.4"
     return driver
 
 
@@ -152,7 +152,7 @@ def file_driver(monkeypatch):
     monkeypatch.setattr(extreme_fe, "ExtremeFEFileTransfer", FakeTransfer)
     driver = PatchedExtremeFEDriver("host", "user", "pass", optional_args={"config_method": "file"})
     driver.device.current_test = "test_get_config"
-    driver.device.current_test_case = "5320-48P-8XE_9.4.2.0"
+    driver.device.current_test_case = "fabric_engine_9.4"
     sent = []
     original = driver.device.send_command
 

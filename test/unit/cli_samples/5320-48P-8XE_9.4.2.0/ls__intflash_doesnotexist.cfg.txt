@@ -1,2 +1,0 @@
-Listing Directory /intflash:
-Can't open "/intflash/doesnotexist.cfg".
