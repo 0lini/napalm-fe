@@ -113,20 +113,9 @@ written so that it can be contributed to Netmiko as-is.
 
 ## Reporting parsing problems
 
-`tools/capture.py` runs every (read-only) command the driver uses and stores the
-output as a test case, optionally anonymised:
-
-```bash
-python tools/capture.py --host 192.0.2.10 --user admin --case <model>_<release> \
-    --anonymize --anonymize-ips
-```
-
-Review the files in `test/unit/cli_samples/<case>/` for anything sensitive and
-attach them to the issue (or open a pull request).
-
-`tools/smoke_test.py` calls every getter on a live switch and validates the
-results against NAPALM's data models (`--test-config` adds a reversible
-configuration test).
+Please open an issue with the Fabric Engine release and the raw output of the
+command that does not parse (the commands per getter are listed above). Remove
+anything sensitive (hostnames, IP addresses, serial numbers, keys) first.
 
 ## Development
 
@@ -134,7 +123,7 @@ configuration test).
 pip install -e ".[dev]"
 pytest --cov                 # unit tests (mocked device output), coverage >= 85 %
 ruff check . && ruff format --check .
-mypy napalm_extreme_fe tools
+mypy napalm_extreme_fe
 ```
 
 Getter tests use the standard NAPALM test suite (`napalm.base.test.getters`)

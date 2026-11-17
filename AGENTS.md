@@ -13,8 +13,6 @@ Read `README.md` first for the user-facing behaviour.
 | `test/unit/cli_samples/<case>/` | Raw CLI output, one file per command (`show sys-info` -> `show_sys-info.txt`, `|` -> `pipe`) |
 | `test/unit/build_mocked_data.py` | `TESTS`: which commands each getter test needs; builds `mocked_data/` |
 | `test/unit/mocked_data/` | Generated - never edit by hand |
-| `tools/capture.py` | Capture all commands from a switch into a new case (read-only) |
-| `tools/smoke_test.py` | Run all getters on a live switch; `--test-config` for a reversible config test |
 
 ## Commands
 
@@ -22,7 +20,7 @@ Read `README.md` first for the user-facing behaviour.
 pip install -e ".[dev]"
 pytest --cov                     # must stay green, coverage >= 85 %
 ruff check . && ruff format --check .
-mypy napalm_extreme_fe tools
+mypy napalm_extreme_fe
 python test/unit/build_mocked_data.py --expected   # after changing cli_samples or parsers
 ```
 
@@ -46,29 +44,27 @@ Run all of them before every commit, and only commit when they pass
 
 ## Working with a test switch
 
-1. **Capture** (read-only):
+1. **Capture** (read-only): run every command listed in `TESTS` in
+   `test/unit/build_mocked_data.py` (commands starting with `?` are optional;
+   use an existing VRF for `show ip arp vrf TEST` but keep the file name) and
+   save each raw output to `test/unit/cli_samples/<case>/<file>`, where
+   `<file>` is the command with `|` -> `pipe`, spaces and `/` -> `_`, plus
+   `.txt` (`show running-config | include domain-name` ->
+   `show_running-config_pipe_include_domain-name.txt`). Name the case after the
+   platform and release, e.g. `VSP-4900_8.10.0.0` (case directory names are the
+   one place a model name is fine).
 
-   ```bash
-   python tools/capture.py --host <ip> --user <user> --case <model>_<release> \
-       --anonymize --anonymize-ips [--vrf <vrf>] [--replace <name>=<placeholder> ...]
-   ```
-
-   Name the case after the platform and release, e.g. `VSP-4900_8.10.0.0`
-   (case directory names are the one place a model name is fine).
-
-2. **Review the capture for sensitive data** before anything else: hostnames of
-   neighbours (LLDP, FDB tunnel names), domain names, public IPs, serials, keys,
-   user names. Add `--replace` pairs and capture again, or edit the files.
-   Never commit unreviewed captures. Never commit credentials.
+2. **Anonymise and review** before anything else: replace hostnames (own and
+   LLDP/FDB tunnel neighbours), domain names, IP addresses (use 192.0.2.0/24,
+   198.51.100.0/24, example.com), serial numbers, keys and user names
+   consistently across all files of the case. Never commit unreviewed
+   captures. Never commit credentials.
 
 3. **Build and compare**: `python test/unit/build_mocked_data.py --expected`,
    then check every new `expected_result.json` against the raw output. If a
    value is wrong, fix the parser (not the JSON) and rebuild.
 
-4. **Live check**: `python tools/smoke_test.py --host <ip> --user <user>`.
-   Getters that fail or return empty results where the switch has data are bugs.
-
-5. NAPALM's own test suite can also run against the live switch:
+4. **Live check**: run NAPALM's getter test suite against the switch:
 
    ```bash
    NAPALM_TEST_MOCK=0 NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> \
@@ -76,19 +72,24 @@ Run all of them before every commit, and only commit when they pass
    pytest test/unit/test_getters.py
    ```
 
-   (Some getter tests require non-empty results, e.g. ARP; an empty table on the
+   Getters that fail, or return empty results where the switch has data, are
+   bugs. (Some tests require non-empty results, e.g. ARP; an empty table on the
    test switch is not a driver bug.)
+
+5. **Config check** (lab switch only): with the driver, load
+   `snmp-server location "napalm-test"`, check `compare_config()`, commit, check
+   `get_snmp_information()`, then restore the previous location the same way.
+   Use `optional_args={"save_config": False}` so nothing reaches the startup
+   config; test both `config_method="cli"` and `"file"`.
 
 ### Safety rules for the switch
 
-- `capture.py` and `smoke_test.py` (without `--test-config`) only send
-  read-only commands. Do not run other configuration commands.
-- `smoke_test.py --test-config` changes only `snmp-server location`, restores
-  it, and never saves the config (`save_config=False`). Run it only on a lab
-  switch. With `--config-method file` it leaves `napalm_merge.cfg` and
-  `napalm_rollback.cfg` in `/intflash`.
-- Never run `save config`, `boot`, `reset`, `delete`, `copy` or
-  `source` by hand on the switch.
+- Only send read-only commands (`show`, `ls`, `more`, `file-checksum`), except
+  for the config check in step 5.
+- Never save the configuration (`save_config=False`) and never run
+  `save config`, `boot`, `reset`, `delete`, `copy` or `source` by hand.
+- `config_method="file"` leaves `napalm_merge.cfg` and `napalm_rollback.cfg`
+  in `/intflash`.
 
 ## Open items (verify on a real switch)
 
@@ -97,8 +98,9 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
 
 1. **`config_method="file"` end to end**: what does `source <file>` print on
    success and on a rejected line? Does it need the `config terminal` / `end`
-   wrapper the driver adds? Run `smoke_test.py --test-config --config-method file`
-   and capture the raw `source` output into `cli_samples` + a unit test.
+   wrapper the driver adds? Run the config check (step 5) with
+   `config_method="file"` and add the raw `source` output to `cli_samples` +
+   a unit test.
 2. **Routed interfaces**: `show ip interface vrfids 0-512`,
    `show ipv6 address interface`, `show ip arp` and `show ip arp vrf <vrf>` have
    only been seen empty. Capture them from a switch with IP interfaces / ARP

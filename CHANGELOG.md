@@ -26,4 +26,3 @@ First release. Requires Python 3.10+, NAPALM 5 and Netmiko 4.
   `compare_config`, `commit_config`, `discard_config`.
 - `config_method="file"`: SCP upload, restore point and `source` (IOS-style).
 - `ExtremeFEFileTransfer`: Netmiko file transfer class for Fabric Engine.
-- `tools/capture.py` and `tools/smoke_test.py` for testing on real switches.
