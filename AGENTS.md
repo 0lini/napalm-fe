@@ -133,9 +133,10 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
    scheduled reset? (y/n) ?`) and `reset -cancel` without a scheduled reset
    (`Warning! No ongoing scheduled reset!`), successful `reset -in` (no output,
    only a log message) and `reset -cancel` (`Scheduled reset successfully
-   canceled!`). Still to find: a command that shows a scheduled reset (then
-   `has_pending_commit()` can ask the switch, like IOS), and that the switch
-   really reboots into the saved config.
+   canceled!`). A scheduled reset is not shown by `show sys-info` or
+   `show boot config general|host|sio|flags`, so `has_pending_commit()` is
+   tracked by the driver instance (IOS asks the switch). Still to check: that
+   the switch really reboots into the saved config when the timer expires.
 7. **Log messages in the session** (`logging screen`, switch-wide): the driver
    removes them from every output (`LOG_MESSAGE_RE`). Only the RFC 5424 format
    (`boot config flags syslog-rfc5424-format true`) has been seen; capture a
