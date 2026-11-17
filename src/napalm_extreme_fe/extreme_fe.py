@@ -60,8 +60,8 @@ LEGACY_LOG_MESSAGE_RE = re.compile(
     re.M,
 )
 
-# Countdown of a scheduled reset ("reset -in"), printed into the serial
-# console and SSH sessions:
+# Countdown of a scheduled reset ("reset -in"), seen on the serial console
+# only (not in SSH sessions) - removed in case it appears:
 #           20 seconds remaining until unit resets.
 RESET_COUNTDOWN_RE = re.compile(r"^[ \t]*\d+ seconds? remaining until unit resets\.[ \t]*\n?", re.M)
 

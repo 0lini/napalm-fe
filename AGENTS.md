@@ -144,8 +144,9 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
    removes them from every output (`LOG_MESSAGE_RE`, RFC 5424 format, and
    `LEGACY_LOG_MESSAGE_RE`, `CP1  [11/17/26 16:41:43.000] ...`, seen while the
    switch shuts down), as well as the `reset -in` countdown. RFC 5424 log
-   lines and the countdown appear identically on the serial console and in
-   SSH sessions; the legacy format was only seen on the serial console. Still
+   lines appear identically on the serial console and in SSH sessions; the
+   countdown (`20 seconds remaining until unit resets.`) and the legacy format
+   were only seen on the serial console. Still
    to check: whether a switch with `syslog-rfc5424-format false` prints the
    legacy format in SSH sessions.
 8. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
