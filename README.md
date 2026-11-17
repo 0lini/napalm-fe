@@ -79,7 +79,7 @@ All Netmiko connection arguments (`port`, `secret`, `key_file`, `use_keys`,
 
 `napalm_extreme_fe.file_transfer.ExtremeFEFileTransfer` implements Netmiko's
 `BaseFileTransfer` interface for Fabric Engine (SCP via the SSH server, `ls` for
-existence/size checks, size-based verification as there is no on-box MD5). It
+existence/size checks, `file-checksum md5` to verify transfers). It
 is written so that it can be contributed to Netmiko.
 
 ## Development

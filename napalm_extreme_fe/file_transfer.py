@@ -7,7 +7,7 @@ unchanged (registered as ``extreme_fe`` / ``extreme_voss`` / ``extreme_vsp``).
 Fabric Engine differences to the base (Cisco) implementation:
 
 * files are listed with ``ls <path>`` (Unix ``ls -l`` style output)
-* there is no on-box MD5 command, so files are verified by size
+* MD5 digests are calculated with ``file-checksum md5 <file>``
 * ``ls`` does not report free space, so the space check is skipped
 """
 
@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional
 from netmiko.scp_handler import BaseFileTransfer
 
 DEFAULT_FILE_SYSTEM = "/intflash"
+MD5_RE = re.compile(r"\b([0-9a-fA-F]{32})\b")
 
 # -rwx------  1 0       0          14385 Nov 16 12:24  config.cfg
 LS_LINE_RE = re.compile(
@@ -50,7 +51,7 @@ class ExtremeFEFileTransfer(BaseFileTransfer):
         dest_file: str,
         file_system: Optional[str] = DEFAULT_FILE_SYSTEM,
         direction: str = "put",
-        hash_supported: bool = False,
+        hash_supported: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -94,22 +95,40 @@ class ExtremeFEFileTransfer(BaseFileTransfer):
             raise IOError(f"Unable to find file on remote system: {remote_file}")
         return int(entry["size"])
 
-    def remote_md5(self, base_cmd: str = "", remote_file: Optional[str] = None) -> str:
-        """Fabric Engine has no on-box MD5 command."""
-        raise NotImplementedError("MD5 is not supported on Fabric Engine")
+    @staticmethod
+    def process_md5(md5_output: str, pattern: str = "") -> str:
+        """Extract the MD5 digest from the ``file-checksum md5`` output."""
+        match = MD5_RE.search(md5_output)
+        if not match:
+            raise ValueError(f"Invalid output from MD5 command: {md5_output}")
+        return match.group(1).lower()
 
-    def compare_md5(self) -> bool:
-        """No MD5 on Fabric Engine: compare the file sizes instead."""
-        return self.verify_file()
+    def remote_md5(
+        self, base_cmd: str = "file-checksum md5", remote_file: Optional[str] = None
+    ) -> str:
+        """Calculate the MD5 digest of the remote file on the switch."""
+        if remote_file is None:
+            remote_file = self.dest_file if self.direction == "put" else self.source_file
+        output = self.ssh_ctl_chan._send_command_str(
+            f"{base_cmd} {self.file_system}/{remote_file}", read_timeout=300
+        )
+        return self.process_md5(output)
 
     def verify_file(self) -> bool:
-        """Verify the transfer by comparing local and remote file sizes."""
+        """Verify the transfer: same size, and same MD5 digest if enabled."""
         if self.direction == "put":
             try:
-                return self.remote_file_size() == self.file_size
+                if self.remote_file_size() != self.file_size:
+                    return False
             except IOError:
                 return False
-        return os.path.exists(self.dest_file) and os.stat(self.dest_file).st_size == self.file_size
+        elif not (
+            os.path.exists(self.dest_file) and os.stat(self.dest_file).st_size == self.file_size
+        ):
+            return False
+        if self.source_md5 is None:  # hash_supported=False
+            return True
+        return self.compare_md5()
 
     def enable_scp(self, cmd: str = "") -> None:
         """SCP is served by the SSH server (``boot config flags sshd``)."""
