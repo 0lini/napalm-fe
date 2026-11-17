@@ -7,9 +7,9 @@ Read `README.md` first for the user-facing behaviour.
 
 | Path | What |
 |------|------|
-| `napalm_extreme_fe/extreme_fe.py` | The driver (`ExtremeFEDriver`): connection, getters, config management |
-| `napalm_extreme_fe/parsers.py` | Pure text parsers, one per CLI output; no device access |
-| `napalm_extreme_fe/file_transfer.py` | Netmiko `BaseFileTransfer` for Fabric Engine (SCP) |
+| `src/napalm_extreme_fe/extreme_fe.py` | The driver (`ExtremeFEDriver`): connection, getters, config management |
+| `src/napalm_extreme_fe/parsers.py` | Pure text parsers, one per CLI output; no device access |
+| `src/napalm_extreme_fe/file_transfer.py` | Netmiko `BaseFileTransfer` for Fabric Engine (SCP) |
 | `test/unit/mocked_data/<test>/<case>/` | Getter test data: raw output per command + `expected_result.json` (same layout as NAPALM's IOS tests) |
 | `test/unit/test_getters.py` | NAPALM's getter test suite, run for every case in `mocked_data` |
 | `test/unit/test_*.py` | Unit tests for parsers, config management, file transfer |
@@ -21,7 +21,7 @@ Read `README.md` first for the user-facing behaviour.
 pip install -e ".[dev]"
 pytest --cov                     # must stay green, coverage >= 85 %
 ruff check . && ruff format --check .
-mypy napalm_extreme_fe
+mypy src
 ```
 
 Run all of them before every commit, and only commit when they pass

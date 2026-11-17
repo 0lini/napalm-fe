@@ -19,7 +19,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
-      - run: mypy napalm_extreme_fe
+      - run: mypy src
 
   test:
     runs-on: ubuntu-latest

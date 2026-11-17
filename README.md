@@ -123,7 +123,7 @@ anything sensitive (hostnames, IP addresses, serial numbers, keys) first.
 pip install -e ".[dev]"
 pytest --cov                 # unit tests (mocked device output), coverage >= 85 %
 ruff check . && ruff format --check .
-mypy napalm_extreme_fe
+mypy src
 ```
 
 Tests are organised like NAPALM's IOS driver tests:
