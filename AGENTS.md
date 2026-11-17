@@ -125,8 +125,11 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
    State tables?), `statistics verbose`, `show vlan basic` and
    `show khi performance cpu/memory` still parse; multi-slot chassis output
    for `get_environment` (CPU per slot, memory summed).
-4. **SNMP communities**: only SNMPv3 has been seen; capture a switch with v1/v2c
-   communities and check `parse_snmp_communities`.
+4. **SNMP communities**: settled - Fabric Engine never displays community
+   strings (not in the running config, masked in `show snmp-server community`,
+   per the VOSS 9.2 user guide stored encrypted in `snmp_comm_moc.txt`), so
+   `community` is always empty. `parse_snmp_communities` only matters for
+   older releases that might still print `snmp-server community` lines.
 5. **Replace / rollback** (reboot): prompts confirmed on 9.4 (`copy` to an
    existing file asks `File [...] already existing, overwrite (y/n) ?`; the
    driver uses `reset -y`). Still to check: that the switch boots the copied

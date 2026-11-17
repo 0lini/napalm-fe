@@ -80,6 +80,10 @@ raise it for very large configurations or MAC tables.
 Values the switch does not report are returned as `-1` (NAPALM convention),
 for example `tx_errors`/`tx_discards` in `get_interfaces_counters`.
 
+`get_snmp_information` returns an empty `community`: Fabric Engine never
+displays SNMPv1/v2c community strings. They are stored encrypted outside the
+configuration file and `show snmp-server community` masks them (`********`).
+
 ## Configuration management
 
 The workflow follows NAPALM's IOS driver. Where Fabric Engine has no
