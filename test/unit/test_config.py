@@ -192,7 +192,9 @@ def test_file_method_upload_and_commit(file_driver):
 def test_file_method_source_error(file_driver):
     file_driver.load_merge_candidate(config="bogus command")
     file_driver.device.send_command = lambda command, **kw: (
-        "% Invalid input detected at '^' marker." if command.startswith("source") else ""
+        "% Invalid input detected at '^' marker."
+        if command.startswith("source")
+        else "CP-1: Save config to file /intflash/napalm_rollback.cfg successful."
     )
     with pytest.raises(MergeConfigException, match="napalm_rollback.cfg"):
         file_driver.commit_config()
