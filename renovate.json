@@ -1,0 +1,31 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommitsDisabled",
+    "helpers:pinGitHubActionDigestsToSemver"
+  ],
+  "labels": ["dependencies"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "Europe/Berlin",
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    {
+      "description": "Library: widen the napalm/netmiko ranges instead of pinning, so users keep flexibility",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.dependencies"],
+      "rangeStrategy": "widen"
+    },
+    {
+      "description": "Dev tools: one grouped PR",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.optional-dependencies"],
+      "groupName": "dev dependencies"
+    },
+    {
+      "description": "GitHub Actions: one grouped PR",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    }
+  ]
+}

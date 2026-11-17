@@ -9,7 +9,7 @@ description = "NAPALM community driver for Extreme Networks Fabric Engine (forme
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 authors = [{ name = "Oliver Elsner" }]
 keywords = ["napalm", "netmiko", "extreme", "fabric engine", "voss", "vsp", "network automation"]
 classifiers = [
@@ -19,11 +19,11 @@ classifiers = [
     "Topic :: System :: Networking",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Typing :: Typed",
 ]
@@ -62,7 +62,7 @@ ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B"]

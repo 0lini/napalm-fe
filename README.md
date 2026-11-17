@@ -21,7 +21,7 @@ driver automatically uses the newest name Netmiko provides (`extreme_fe`, then
 pip install napalm-extreme-fe
 ```
 
-Requires Python 3.9+, NAPALM 5 and Netmiko 4.
+Requires Python 3.10+, NAPALM 5 and Netmiko 4.
 
 ## Usage
 

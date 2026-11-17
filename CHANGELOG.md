@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.1.0]
 
-First release.
+First release. Requires Python 3.10+, NAPALM 5 and Netmiko 4.
 
 ### Added
 

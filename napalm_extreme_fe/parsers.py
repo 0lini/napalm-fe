@@ -462,7 +462,7 @@ def parse_interface_counters(output: str) -> Dict[str, Dict[str, int]]:
                 continue
             counters = result.setdefault(tokens[0], {k: -1 for k in COUNTER_KEYS})
             has_total_rx_errors = any(COUNTER_COLUMNS.get(c) == "rx_errors" for c in columns)
-            for column, value in zip(columns[1:], tokens[1:]):
+            for column, value in zip(columns[1:], tokens[1:], strict=True):
                 if not value.isdigit():
                     continue
                 key = COUNTER_COLUMNS.get(column)
