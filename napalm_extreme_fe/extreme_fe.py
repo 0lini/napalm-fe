@@ -22,9 +22,10 @@ from netmiko.ssh_dispatcher import CLASS_MAPPER
 
 from napalm_extreme_fe import parsers
 
-# Extreme renamed VOSS to Fabric Engine; Netmiko still calls it "extreme_vsp".
-# Prefer an "extreme_fe" device type once Netmiko provides one.
-NETMIKO_DEVICE_TYPE = "extreme_fe" if "extreme_fe" in CLASS_MAPPER else "extreme_vsp"
+# Extreme renamed VOSS (VSP Operating System Software) to Fabric Engine;
+# Netmiko still calls it "extreme_vsp". Use the newest name Netmiko provides.
+NETMIKO_DEVICE_TYPES = ("extreme_fe", "extreme_voss", "extreme_vsp")
+NETMIKO_DEVICE_TYPE = next(t for t in NETMIKO_DEVICE_TYPES if t in CLASS_MAPPER)
 
 # Strings that indicate that the CLI rejected a command
 CLI_ERROR_PATTERNS = (

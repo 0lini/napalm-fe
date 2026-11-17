@@ -119,4 +119,4 @@ def test_netmiko_device_type():
     from napalm_extreme_fe.extreme_fe import NETMIKO_DEVICE_TYPE
 
     assert NETMIKO_DEVICE_TYPE in CLASS_MAPPER
-    assert NETMIKO_DEVICE_TYPE in ("extreme_fe", "extreme_vsp")
+    assert NETMIKO_DEVICE_TYPE in ("extreme_fe", "extreme_voss", "extreme_vsp")
