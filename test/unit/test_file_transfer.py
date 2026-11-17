@@ -92,3 +92,10 @@ def test_md5_unparsable(local_file):
     )
     with pytest.raises(ValueError):
         transfer.remote_md5()
+
+
+def test_process_md5_real_output():
+    path = os.path.join(os.path.dirname(SAMPLE), "file-checksum_md5__intflash_config.cfg.txt")
+    with open(path) as handle:
+        output = handle.read()
+    assert ExtremeFEFileTransfer.process_md5(output) == "5a922729bc0fa85437e7e3b8c339ea34"
