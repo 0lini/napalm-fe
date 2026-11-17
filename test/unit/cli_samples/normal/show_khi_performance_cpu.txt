@@ -1,0 +1,8 @@
+    Slot:1
+         Current utilization: 12
+         5-minute average utilization: 10
+         5-minute high water mark: 40 (11/16/26 08:00:00)
+    Slot:2
+         Current utilization: 3
+         5-minute average utilization: 4
+         5-minute high water mark: 9 (11/16/26 08:00:00)

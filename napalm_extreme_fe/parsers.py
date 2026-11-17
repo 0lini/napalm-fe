@@ -774,3 +774,43 @@ def parse_sys_info_power(output: str) -> Dict[str, Dict]:
             "output": -1.0,
         }
     return result
+
+
+def parse_khi_cpu(output: str) -> Dict[int, Dict[str, float]]:
+    """Parse ``show khi performance cpu``.
+
+    Returns ``{slot: {"%usage": current utilization}}``.
+    """
+    result: Dict[int, Dict[str, float]] = {}
+    slot: Optional[int] = None
+    for line in output.splitlines():
+        slot_match = re.match(r"^\s*Slot\s*:\s*(\d+)", line)
+        if slot_match:
+            slot = int(slot_match.group(1))
+            continue
+        usage = re.match(r"^\s*Current utilization\s*:\s*(\d+(?:\.\d+)?)", line)
+        if usage and slot is not None:
+            result[slot] = {"%usage": float(usage.group(1))}
+    return result
+
+
+def parse_khi_memory(output: str) -> Dict[str, int]:
+    """Parse ``show khi performance memory`` (summed over all slots).
+
+    Returns NAPALM's memory dict in bytes: ``used_ram`` and ``available_ram``
+    (total = used + free).
+    """
+    used = free = 0
+    found = False
+    for line in output.splitlines():
+        match = re.match(r"^\s*(Used|Free)\s*:\s*(\d+)\s*\(KB\)", line)
+        if not match:
+            continue
+        found = True
+        if match.group(1) == "Used":
+            used += int(match.group(2)) * 1024
+        else:
+            free += int(match.group(2)) * 1024
+    if not found:
+        return {"used_ram": -1, "available_ram": -1}
+    return {"used_ram": used, "available_ram": used + free}

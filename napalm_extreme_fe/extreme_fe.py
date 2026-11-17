@@ -181,18 +181,20 @@ class ExtremeFEDriver(NetworkDriver):
         }
 
     def get_environment(self) -> models.EnvironmentDict:
-        """Return fans, temperature sensors and power supplies.
+        """Return fans, temperatures, power supplies, CPU and memory.
 
-        CPU and memory utilisation are not part of ``show sys-info`` and are
-        not reported yet.
+        CPU is reported per slot (current utilization), memory in bytes summed
+        over all slots (``available_ram`` is the total, used + free).
         """
         output = self._send_command("show sys-info")
+        cpu_output = self._send_command("show khi performance cpu")
+        memory_output = self._send_command("show khi performance memory")
         return {
             "fans": parsers.parse_sys_info_fans(output),
             "temperature": parsers.parse_sys_info_temperature(output),
             "power": parsers.parse_sys_info_power(output),
-            "cpu": {},
-            "memory": {"available_ram": -1, "used_ram": -1},
+            "cpu": parsers.parse_khi_cpu(cpu_output),  # type: ignore[typeddict-item]
+            "memory": parsers.parse_khi_memory(memory_output),  # type: ignore[typeddict-item]
         }
 
     def get_interfaces(self) -> Dict[str, models.InterfaceDict]:

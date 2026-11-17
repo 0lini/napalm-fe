@@ -2,9 +2,16 @@
     "fans": {},
     "temperature": {},
     "power": {},
-    "cpu": {},
+    "cpu": {
+        "1": {
+            "%usage": 12.0
+        },
+        "2": {
+            "%usage": 3.0
+        }
+    },
     "memory": {
-        "available_ram": -1,
-        "used_ram": -1
+        "used_ram": 1536000000,
+        "available_ram": 4096000000
     }
 }

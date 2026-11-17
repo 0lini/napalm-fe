@@ -1,0 +1,19 @@
+************************************************************************************
+                Command Execution Time: Tue Nov 17 11:22:22 2026 CET
+************************************************************************************
+    Slot:1
+         Used: 825960 (KB)
+         Free: 175216 (KB)
+         Current utilization: 82 %
+         5-minute average utilization: 82 %
+         5-minute high water mark: 88 (%)
+         10-minute average utilization: 82 %
+         10-minute high water mark: 88 (%)
+         1-Hour average utilization: 82 %
+         1-Hour high water mark: 88 (%)
+         1-Day average utilization: 82 %
+         1-Day high water mark: 86 (%)
+         1-Month average utilization: 0 %
+         1-Year average utilization: 0 %
+
+SMLT socket buffer memory usage 0 KB on 0 blocks

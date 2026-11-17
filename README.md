@@ -43,7 +43,7 @@ All Netmiko connection arguments (`port`, `secret`, `key_file`, `use_keys`,
 | Method                       | Commands used                                                         |
 |------------------------------|-----------------------------------------------------------------------|
 | `get_facts`                  | `show sys-info`, `show interfaces gigabitEthernet`                    |
-| `get_environment`            | `show sys-info` (fans, temperatures, PSUs; no CPU/memory yet)         |
+| `get_environment`            | `show sys-info`, `show khi performance cpu`, `... memory`             |
 | `get_interfaces`             | `show interfaces gigabitEthernet` (+ `... name` on older releases)    |
 | `get_interfaces_ip`          | `show ip interface vrfids 0-512`, `show ipv6 address interface`       |
 | `get_interfaces_counters`    | `show interfaces gigabitEthernet statistics [verbose]`, `... error`   |

@@ -77,9 +77,13 @@
             "output": -1.0
         }
     },
-    "cpu": {},
+    "cpu": {
+        "1": {
+            "%usage": 7.0
+        }
+    },
     "memory": {
-        "available_ram": -1,
-        "used_ram": -1
+        "used_ram": 845783040,
+        "available_ram": 1025204224
     }
 }
