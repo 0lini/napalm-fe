@@ -111,3 +111,12 @@ def test_commit_no_save(driver):
 def test_replace_not_supported(driver):
     with pytest.raises(ReplaceConfigException):
         driver.load_replace_candidate(config="foo")
+
+
+def test_netmiko_device_type():
+    from netmiko.ssh_dispatcher import CLASS_MAPPER
+
+    from napalm_extreme_fe.extreme_fe import NETMIKO_DEVICE_TYPE
+
+    assert NETMIKO_DEVICE_TYPE in CLASS_MAPPER
+    assert NETMIKO_DEVICE_TYPE in ("extreme_fe", "extreme_vsp")

@@ -4,11 +4,13 @@
 **Extreme Networks Fabric Engine** (formerly VOSS / VSP operating system),
 running on the 5000/7000 series universal hardware and the VSP 4900/7400/8000 platforms.
 
-The driver connects over SSH using Netmiko's `extreme_vsp` device type and parses
-CLI output.
+The driver connects over SSH using Netmiko and parses CLI output. Netmiko still
+names the platform after VOSS (`extreme_vsp`); the driver switches to an
+`extreme_fe` device type automatically once Netmiko provides one.
 
-> **Status: alpha.** Parsers are developed against sample CLI output; please open
-> an issue with the raw output if something does not parse on your platform/release.
+> **Status: alpha.** Parsers are tested against real captures from a 5320 running
+> Fabric Engine 9.4.2.0; please open an issue with the raw output if something
+> does not parse on your platform/release.
 
 ## Installation
 

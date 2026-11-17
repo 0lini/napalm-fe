@@ -18,10 +18,13 @@ from napalm.base.exceptions import (
 from napalm.base.helpers import sanitize_configs
 from napalm.base.netmiko_helpers import netmiko_args
 from netmiko.exceptions import ConfigInvalidException
+from netmiko.ssh_dispatcher import CLASS_MAPPER
 
 from napalm_extreme_fe import parsers
 
-NETMIKO_DEVICE_TYPE = "extreme_vsp"
+# Extreme renamed VOSS to Fabric Engine; Netmiko still calls it "extreme_vsp".
+# Prefer an "extreme_fe" device type once Netmiko provides one.
+NETMIKO_DEVICE_TYPE = "extreme_fe" if "extreme_fe" in CLASS_MAPPER else "extreme_vsp"
 
 # Strings that indicate that the CLI rejected a command
 CLI_ERROR_PATTERNS = (
