@@ -1,0 +1,146 @@
+************************************************************************************
+                Command Execution Time: Tue Nov 17 11:09:48 2026 CET
+************************************************************************************
+
+General Info :
+
+        SysDescr     : 5320-48P-8XE-FabricEngine (9.4.2.0)
+        SysName      : fe-sw-013
+        SysUpTime    : 7 day(s), 18:52:50
+        SysContact   : http://www.extremenetworks.com/contact/
+        SysLocation  :
+
+Chassis Info:
+
+        Chassis            : 5320-48P-8XE-FabricEngine
+        ModelName          : 5320-48P-8XE-FabricEngine
+        BrandName          : Extreme Networks.
+        Serial#            : TB0000000-X0000
+        H/W Revision       : AD
+        H/W Config         :
+        Part Number        : 801106-00-AD
+        SysBuildTime       : Fri Sep 18 12:03:19 EDT 2026
+        NumSlots           : 2
+        NumPorts           : 53
+        BaseMacAddr        : ac:4d:d9:43:d8:00
+        MacAddrCapacity    : 1024
+        System MTU         : 9600
+
+Card Info :
+
+        Slot#                    CardType          Serial#            Part#             Oper   Admin  Power
+                                                                                      Status  Status Status
+            1   5320-48P-8XE-FabricEngine  TB0000000-X0000     801106-00-AD               up      up     on
+
+Temperature Info :
+
+                        Sensor                  Warning   Critical
+                   Description   Temperature  Threshold  Threshold
+                         PSU 0            42         70        N/A
+                         MAC 0            44         68        N/A
+                     AMBIENT 0            30         65        N/A
+                         PSU 1            42        N/A         71
+                         MAC 1            44        N/A         69
+                     AMBIENT 1            30        N/A         66
+                  INTERNAL MAC            57        100        110
+                          PHY1            42        100        110
+                          PHY2            45        100        110
+                          PHY3            45        100        110
+
+
+Power Supply Info :
+
+        Ps#1 Status       : UP
+        Ps#1 Type         : AC
+        Ps#1 Description  : Internal PSU
+        Ps#1 Serial Number: --
+        Ps#1 Version      : --
+        Ps#1 Part Number  : --
+
+        Ps#2 Status       : empty
+
+        Total Power Available : 950 watts
+        Total Power Usage     : 80 watts
+
+Fan Info :
+
+            Description   OperStatus       OperSpeed OperSpeed(Rpm)   AirflowDir
+           Tray 1 Fan 1           up        lowSpeed           1793   left-right
+           Tray 1 Fan 2           up        lowSpeed           1861   left-right
+           Tray 1 Fan 3           up        lowSpeed           1868   left-right
+           Tray 1 Fan 4           up        lowSpeed           1847   left-right
+
+LED Info :
+
+        LED#1 Label  : SYS
+        LED#1 Status : GreenSteady
+
+        LED#2 Label  : SPD
+        LED#2 Status : Off
+
+        LED#3 Label  : STK
+        LED#3 Status : Off
+
+        LED#4 Label  : BT
+        LED#4 Status : Off
+
+        LED#5 Label  : P1
+        LED#5 Status : GreenSteady
+
+        LED#6 Label  : F1
+        LED#6 Status : GreenSteady
+
+        LED#7 Label  : LOC
+        LED#7 Status : Off
+
+System Error Info :
+
+        Send Login Success Trap   : false
+        Send Authentication Trap  : true
+        Error Code                : 0
+        Error Severity            : 0
+
+Port Lock Info :
+
+        Status       : off
+        LockedPorts  :
+
+Message Control Info :
+
+        Action                 : suppress-msg
+        Control-Interval       : 5
+        Max-msg-num            : 5
+        Status                 : disable
+
+
+Configuration Operation Info Since Boot Up:
+         Last Change: 6 day(s), 20:06:55   (0 day(s), 22:45:55 ago)
+    Last Vlan Change: 6 day(s), 20:06:55   (0 day(s), 22:45:55 ago)
+Last Statistic Reset: 0 day(s), 00:00:00
+
+U-Boot Info :
+-----------------------------------------------------------------------------------------------------------
+
+        Default Version         : 3.4.2.11
+
+        Alternate Version       : 3.4.2.11
+
+        Boot Version Used       : Default
+
+        Trusted Delivery Status : Secure Boot Not Supported
+
+
+
+Advanced Feature Bandwidth Reservation:
+-----------------------------------------------------------------------------------------------------------
+
+        Reservation Mode : low
+        Port Usage Info  : 1/49-1/51 are not available to use
+
+
+Current CPLD Info :
+
+         MODULE                  VERSION
+
+         uC APP Image            : 1.0.17
+         uC BOOT Image           : 0.0.01

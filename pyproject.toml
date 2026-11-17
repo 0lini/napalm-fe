@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "napalm-extreme-fe"
+version = "0.1.0"
+description = "NAPALM community driver for Extreme Networks Fabric Engine (VOSS)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+authors = [{ name = "Oliver Elsner" }]
+keywords = ["napalm", "extreme", "fabric engine", "voss", "vsp", "network automation"]
+classifiers = [
+    "Topic :: Utilities",
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+]
+dependencies = [
+    "napalm>=5.0.0",
+    "netmiko>=4.1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov", "ruff"]
+
+[project.urls]
+Homepage = "https://github.com/napalm-automation-community/napalm-extreme-fe"
+
+[tool.setuptools.packages.find]
+include = ["napalm_extreme_fe*"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]

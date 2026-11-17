@@ -1,0 +1,10 @@
+{
+    "fans": {},
+    "temperature": {},
+    "power": {},
+    "cpu": {},
+    "memory": {
+        "available_ram": -1,
+        "used_ram": -1
+    }
+}

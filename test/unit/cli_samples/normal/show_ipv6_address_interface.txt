@@ -1,0 +1,9 @@
+====================================================================================================
+                                        Address Information
+====================================================================================================
+IPV6 ADDRESS/PREFIX LENGTH                    INTERFACE  TYPE      ORIGIN    STATUS
+----------------------------------------------------------------------------------------------------
+2001:db8:10::1/64                             Vlan10     UNICAST   MANUAL    PREFERRED
+fe80::251:ff:fece:2081/64                     Vlan10     UNICAST   LINKLAYER PREFERRED
+
+2 out of 2 Total Num of Address Entries displayed.

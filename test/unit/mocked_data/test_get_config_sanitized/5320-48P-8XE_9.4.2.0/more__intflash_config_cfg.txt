@@ -1,0 +1,246 @@
+#
+# Mon Nov 16 12:24:00 2026 CET
+# box type             : 5320-48P-8XE-FabricEngine
+# software version     : 9.4.2.0
+# cli mode             : ECLI
+#
+
+#Card Info :
+
+#  Slot 1 :
+#       CardType          : 5320-48P-8XE-FabricEngine
+#       CardDescription   : 5320-48P-8XE-FabricEngine
+#       CardSerial#       : TB0000000-X0000
+#       CardPart#         : 801106-00-AD
+#       CardAssemblyDate  : 20230720
+#       CardHWRevision    : AD
+#       CardHWConfig      :
+#       AdminStatus       : up
+#       OperStatus        : up
+
+#
+#!end
+#
+config terminal
+
+#
+# BOOT CONFIGURATION
+#
+
+boot config flags spbm-node-scaling
+boot config flags sshd
+#boot config sio console baud 115200 1
+# end boot flags
+
+#
+# SPBM CONFIGURATION
+#
+
+spbm
+spbm ethertype 0x8100
+
+#
+# CLI CONFIGURATION
+#
+
+prompt "fe-sw-013"
+password hash sha2
+
+#
+# CLOCK TIME-ZONE CONFIGURATION
+#
+
+clock time-zone Europe Berlin
+
+#
+# SYSTEM CONFIGURATION
+#
+
+ip domain-name "example.com"
+ip name-server primary 192.0.2.21
+ip name-server secondary 192.0.2.22
+sys mtu 9600
+no syslog enable
+
+#
+# SSH CONFIGURATION
+#
+
+ssh
+
+#
+# SNMP V3 GLOBAL CONFIGURATION
+#
+
+snmp-server authentication-trap enable
+
+#
+# SNMP V3 GROUP MEMBERSHIP CONFIGURATION
+#
+
+snmp-server user xiqse group "initial"
+
+#
+# SNMP V3 GROUP CONFIGURATION
+#
+
+snmp-server group "xiqse" "" no-auth-no-priv read-view root write-view root
+snmp-server group "xiqse" "" auth-priv
+snmp-server group "xiqse" "vrf512" no-auth-no-priv read-view vrf write-view vrf
+snmp-server group "xiqse" "vrf512" auth-priv
+snmp-server group "xiqse" "isisRemote" no-auth-no-priv read-view isis write-view isis
+snmp-server group "xiqse" "isisRemote" auth-priv
+
+#
+# ISIS SPBM CONFIGURATION
+#
+
+router isis
+spbm 1 multicast enable
+exit
+
+#
+# GLOBAL AUTO-SENSE CONFIGURATION - PHASE I
+#
+
+auto-sense isis hello-auth type hmac-sha-256
+
+#
+# VLAN CONFIGURATION
+#
+
+vlan members remove 1 1/1-1/56 portmember
+vlan create 1006 name "extreme" type port-mstprstp 0
+vlan i-sid 1006 12011006
+interface vlan 1006
+ip igmp proxy
+
+exit
+vlan create 4048 name "onboarding-vlan" type pvlan-mstprstp 0 secondary 4049
+vlan i-sid 4048 15999999
+
+#
+# NLS CONFIGURATION
+#
+
+mgmt vlan 1006
+mac-offset 0
+ip address 198.51.100.220/24
+ip route 0.0.0.0/0 next-hop 198.51.100.254 weight 200
+enable
+exit
+
+#
+# DHCP SNOOPING CONFIGURATION
+#
+
+ip dhcp-snooping enable
+
+#
+# PORT CONFIGURATION - PHASE II
+#
+
+interface GigabitEthernet 1/1
+auto-sense enable
+name "Default settings for auto-sense port"
+no shutdown
+exit
+interface GigabitEthernet 1/2
+auto-sense enable
+name "Default settings for auto-sense port"
+no shutdown
+exit
+interface GigabitEthernet 1/52
+no auto-negotiate
+auto-sense enable
+name "Default settings for auto-sense port"
+no shutdown
+exit
+interface GigabitEthernet 1/56
+no auto-negotiate
+auto-sense enable
+name "Default settings for auto-sense port"
+no shutdown
+exit
+
+#
+# ISIS CONFIGURATION
+#
+
+router isis
+is-type l1
+exit
+router isis enable
+
+#
+# QOS CONFIGURATION - PHASE II
+#
+
+qos queue-profile 1 member add 1/1-1/56
+
+#
+# CFM CONFIGURATION - PHASE II
+#
+
+cfm spbm enable
+
+#
+# NTP CONFIGURATION
+#
+
+no ntp
+ntp server 192.0.2.21
+ntp server 192.0.2.22
+ntp interval 6
+ntp
+
+#
+# I-SID NAME CONFIGURATION
+#
+
+i-sid name 12011006 "extreme"
+i-sid name 15999999 "Onboarding I-SID"
+
+#
+# GLOBAL AUTO-SENSE CONFIGURATION - PHASE II
+#
+
+auto-sense onboarding i-sid 15999999
+
+#
+# RADIUS CONFIGURATION
+#
+
+radius server host 198.51.100.202 key ******  used-by eapol  priority 1
+radius server host 198.51.100.203 key ******  used-by eapol  priority 2
+radius enable
+radius accounting enable
+radius secure-flag
+radius dynamic-server client 198.51.100.202 secret ****** enable
+radius dynamic-server client 198.51.100.203 secret ****** enable
+
+#
+# EAP  CONFIGURATION
+#
+
+eapol enable
+
+#
+# FABRIC ATTACH CONFIGURATION
+#
+
+no fa enable
+
+end
+
+
+
+#
+# IP REDISTRIBUTE APPLY CONFIGURATIONS
+
+#
+#
+
+
+#
+# IP ECMP APPLY CONFIGURATIONS

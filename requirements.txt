@@ -1,0 +1,2 @@
+napalm>=5.0.0
+netmiko>=4.1.0

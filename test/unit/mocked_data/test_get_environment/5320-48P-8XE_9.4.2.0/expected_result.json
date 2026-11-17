@@ -1,0 +1,85 @@
+{
+    "fans": {
+        "Tray 1 Fan 1": {
+            "status": true
+        },
+        "Tray 1 Fan 2": {
+            "status": true
+        },
+        "Tray 1 Fan 3": {
+            "status": true
+        },
+        "Tray 1 Fan 4": {
+            "status": true
+        }
+    },
+    "temperature": {
+        "PSU 0": {
+            "temperature": 42.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "MAC 0": {
+            "temperature": 44.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "AMBIENT 0": {
+            "temperature": 30.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "PSU 1": {
+            "temperature": 42.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "MAC 1": {
+            "temperature": 44.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "AMBIENT 1": {
+            "temperature": 30.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "INTERNAL MAC": {
+            "temperature": 57.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "PHY1": {
+            "temperature": 42.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "PHY2": {
+            "temperature": 45.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "PHY3": {
+            "temperature": 45.0,
+            "is_alert": false,
+            "is_critical": false
+        }
+    },
+    "power": {
+        "Ps#1": {
+            "status": true,
+            "capacity": -1.0,
+            "output": -1.0
+        },
+        "Ps#2": {
+            "status": false,
+            "capacity": -1.0,
+            "output": -1.0
+        }
+    },
+    "cpu": {},
+    "memory": {
+        "available_ram": -1,
+        "used_ram": -1
+    }
+}

@@ -1,0 +1,34 @@
+{
+    "1": {
+        "name": "Default",
+        "interfaces": []
+    },
+    "865": {
+        "name": "voice_gw",
+        "interfaces": [
+            "1/1"
+        ]
+    },
+    "1006": {
+        "name": "extreme",
+        "interfaces": []
+    },
+    "4048": {
+        "name": "onboarding-vlan",
+        "interfaces": [
+            "1/1"
+        ]
+    },
+    "4051": {
+        "name": "VLAN-4051",
+        "interfaces": [
+            "1/56"
+        ]
+    },
+    "4052": {
+        "name": "VLAN-4052",
+        "interfaces": [
+            "1/56"
+        ]
+    }
+}

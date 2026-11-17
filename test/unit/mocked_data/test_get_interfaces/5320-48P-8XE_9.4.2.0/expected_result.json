@@ -1,0 +1,38 @@
+{
+    "1/1": {
+        "is_up": true,
+        "is_enabled": true,
+        "description": "Default settings for auto-sense port",
+        "last_flapped": 82690.0,
+        "speed": 100.0,
+        "mtu": 9600,
+        "mac_address": "ac:4d:d9:43:d8:00"
+    },
+    "1/2": {
+        "is_up": false,
+        "is_enabled": true,
+        "description": "Default settings for auto-sense port",
+        "last_flapped": 672656.0,
+        "speed": 0.0,
+        "mtu": 9600,
+        "mac_address": "ac:4d:d9:43:d8:01"
+    },
+    "1/52": {
+        "is_up": false,
+        "is_enabled": true,
+        "description": "Default settings for auto-sense port",
+        "last_flapped": 672656.0,
+        "speed": 0.0,
+        "mtu": 9600,
+        "mac_address": "ac:4d:d9:43:d8:33"
+    },
+    "1/56": {
+        "is_up": true,
+        "is_enabled": true,
+        "description": "Default settings for auto-sense port",
+        "last_flapped": 672655.0,
+        "speed": 10000.0,
+        "mtu": 9600,
+        "mac_address": "ac:4d:d9:43:d8:37"
+    }
+}
