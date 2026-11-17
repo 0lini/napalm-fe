@@ -103,7 +103,8 @@ Run all of them before every commit, and only commit when they pass
 ## Open items (verify on a real switch)
 
 Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
-`file-checksum md5`, `save config file`, `show running-config | include`, SCP.
+`file-checksum md5`, `save config file`, `show running-config | include`, SCP,
+`terminal more disable` (sent by Netmiko at login; accepted without output).
 
 1. **`config_method="file"` end to end**: what does `source <file>` print on
    success and on a rejected line? Does it need the `config terminal` / `end`
