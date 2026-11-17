@@ -46,9 +46,11 @@ with driver("192.0.2.10", "admin", "secret", optional_args={"port": 22}) as devi
 | `startup_config_file` | `/intflash/config.cfg` | File returned as `startup` by `get_config()` |
 | `force_no_enable`     | `False`                | Do not enter privileged (`enable`) mode |
 | `config_method`       | `cli`                  | How a merge is applied, see [Configuration management](#configuration-management) |
-| `dest_file_system`    | `/intflash`            | Where `config_method="file"` stores its files |
-| `merge_cfg`           | `napalm_merge.cfg`     | Candidate file name for `config_method="file"` |
-| `rollback_cfg`        | `napalm_rollback.cfg`  | Restore point saved before each `config_method="file"` commit |
+| `allow_reboot`        | `False`                | Allow replace commits and `rollback()`, which reboot the switch |
+| `dest_file_system`    | `/intflash`            | Where the driver stores its files on the switch |
+| `candidate_cfg`       | `napalm_candidate.cfg` | Replace candidate |
+| `merge_cfg`           | `napalm_merge.cfg`     | Merge candidate for `config_method="file"` |
+| `rollback_cfg`        | `napalm_rollback.cfg`  | Running configuration saved before every commit |
 
 All Netmiko connection arguments (`port`, `secret`, `key_file`, `use_keys`,
 `ssh_config_file`, `conn_timeout`, ...) are passed through. The driver
@@ -80,29 +82,35 @@ for example `tx_errors`/`tx_discards` in `get_interfaces_counters`.
 
 ## Configuration management
 
-Fabric Engine has no candidate datastore and no configuration replace, so the
-driver supports **merge** operations:
+The workflow follows NAPALM's IOS driver. Where Fabric Engine has no
+equivalent of an IOS feature (`configure replace`), the driver does what
+ExtremeCloud IQ Site Engine's configuration restore does: install the file as
+the boot configuration and reboot the switch.
 
-| Method                   | Supported | Notes |
-|--------------------------|-----------|-------|
-| `load_merge_candidate`   | yes       | From `filename` or `config` |
-| `compare_config`         | yes       | Incremental diff against the running config: `+line` will be added, `-line` will be removed (`no ...`), already configured lines are omitted |
-| `commit_config`          | yes       | Applies the candidate, then `save config` (unless `save_config=False`). `message` and `revert_in` are not supported |
-| `discard_config`         | yes       | |
-| `load_replace_candidate` | no        | Raises `ReplaceConfigException` |
-| `rollback`               | no        | Raises `NotImplementedError` |
+| Method                   | Notes |
+|--------------------------|-------|
+| `load_merge_candidate`   | From `filename` or `config` |
+| `load_replace_candidate` | Copies the full configuration to `candidate_cfg` on the switch (SCP) |
+| `compare_config`         | Merge: incremental diff against the running config (`+line` added, `-line` removed by `no ...`, configured lines omitted). Replace: `-`/`+` for every differing line |
+| `commit_config`          | Saves the running config to `rollback_cfg` first (like IOS), then applies the candidate, see below. `message` and `revert_in` are not supported |
+| `discard_config`         | Drops the candidate |
+| `rollback`               | Installs `rollback_cfg` as the boot configuration and reboots (needs `allow_reboot=True`) |
 
-Two ways to apply a merge (`config_method`):
+**Merge** (`config_method`), saved with `save config` afterwards unless
+`save_config=False`:
 
 * **`cli`** (default): the lines are sent in configuration mode. The first line
   the switch rejects stops the merge and raises `MergeConfigException`; lines
   before it stay applied.
 * **`file`** (IOS-style): `load_merge_candidate` copies the candidate to the
-  switch with SCP (verified with `file-checksum md5`). `commit_config` first
-  saves the current configuration as a restore point
-  (`save config file /intflash/napalm_rollback.cfg`) and then applies the file
-  with `source`. Requires SCP (`boot config flags sshd`). The restore point is
-  not applied automatically - Fabric Engine cannot replace the running config.
+  switch with SCP (verified with `file-checksum md5`); `commit_config` applies
+  it with `source`. Requires SCP (`boot config flags sshd`).
+
+**Replace and rollback** reboot the switch and therefore require
+`allow_reboot=True`; otherwise they raise `ReplaceConfigException`. The file is
+copied over the boot configuration (`startup_config_file`, default
+`/intflash/config.cfg`) and the switch is reset. The driver closes the
+connection; call `open()` again once the switch is back.
 
 ### File transfer
 

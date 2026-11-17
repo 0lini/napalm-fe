@@ -6,8 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `load_replace_candidate`, replace `commit_config` and `rollback()`: the file
+  is installed as the boot configuration and the switch is rebooted, like
+  ExtremeCloud IQ Site Engine's configuration restore. Requires
+  `allow_reboot=True`.
+
 ### Changed
 
+- Like the IOS driver, the running configuration is saved to `rollback_cfg`
+  before every commit (not only with `config_method="file"`).
 - CI: test on Python 3.15; update GitHub Actions (checkout v7,
   setup-python v7, upload-artifact v7, download-artifact v8).
 

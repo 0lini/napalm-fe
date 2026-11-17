@@ -24,7 +24,7 @@ from netmiko.exceptions import ConfigInvalidException
 from netmiko.ssh_dispatcher import CLASS_MAPPER
 
 from napalm_extreme_fe import parsers
-from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer
+from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer, parse_ls
 
 logger = logging.getLogger(__name__)
 
@@ -100,12 +100,18 @@ class ExtremeFEDriver(NetworkDriver):
         * ``config_method`` (``"cli"`` or ``"file"``, default ``"cli"``): how
           ``commit_config`` applies a merge candidate. ``"cli"`` sends the lines
           in configuration mode. ``"file"`` works like the IOS driver: the
-          candidate is copied to the switch with SCP on load, a restore point is
-          saved with ``save config file`` and the file is applied with
+          candidate is copied to the switch with SCP on load and applied with
           ``source``.
-        * ``dest_file_system`` (default ``/intflash``), ``merge_cfg`` (default
+        * ``allow_reboot`` (bool, default ``False``): allow replace commits and
+          ``rollback()``. Fabric Engine has no ``configure replace``; like
+          ExtremeCloud IQ Site Engine's configuration restore, the driver
+          installs the file as the boot configuration and reboots the switch.
+        * ``dest_file_system`` (default ``/intflash``), ``candidate_cfg``
+          (default ``napalm_candidate.cfg``), ``merge_cfg`` (default
           ``napalm_merge.cfg``) and ``rollback_cfg`` (default
-          ``napalm_rollback.cfg``): files used by ``config_method="file"``.
+          ``napalm_rollback.cfg``): files on the switch. Like the IOS driver, the
+          running configuration is saved to ``rollback_cfg`` before every
+          commit.
         """
         self.hostname = hostname
         self.username = username
@@ -120,12 +126,15 @@ class ExtremeFEDriver(NetworkDriver):
         if self.config_method not in ("cli", "file"):
             raise ValueError("config_method must be 'cli' or 'file'")
         self.dest_file_system = optional_args.get("dest_file_system", "/intflash").rstrip("/")
+        self.candidate_cfg = optional_args.get("candidate_cfg", "napalm_candidate.cfg")
         self.merge_cfg = optional_args.get("merge_cfg", "napalm_merge.cfg")
+        self.allow_reboot = bool(optional_args.get("allow_reboot", False))
         self.rollback_cfg = optional_args.get("rollback_cfg", "napalm_rollback.cfg")
         self.netmiko_optional_args = netmiko_args(optional_args)
 
         self.device: Any = None
         self.candidate_config: Optional[str] = None
+        self.config_replace = False
         self.profile = [self.platform]
 
     # ------------------------------------------------------------------
@@ -442,10 +451,11 @@ class ExtremeFEDriver(NetworkDriver):
     def load_merge_candidate(
         self, filename: Optional[str] = None, config: Optional[str] = None
     ) -> None:
-        """Store configuration lines to be merged on commit.
+        """Load configuration lines to be merged on commit.
 
-        Fabric Engine does not provide a candidate configuration datastore, so
-        the candidate is kept in memory and sent line by line on commit.
+        With ``config_method="cli"`` the candidate is kept in memory and sent
+        line by line on commit; with ``config_method="file"`` it is also copied
+        to ``merge_cfg`` on the switch (like the IOS driver).
         """
         try:
             candidate = self._read_candidate(filename, config)
@@ -456,17 +466,40 @@ class ExtremeFEDriver(NetworkDriver):
             for line in candidate.splitlines()
             if line.strip() and not line.strip().startswith("#")
         ]
+        self.config_replace = False
         self.candidate_config = "\n".join(lines)
         if self.config_method == "file":
-            self._upload_candidate(self.candidate_config)
+            try:
+                self._upload_config(self.candidate_config, self.merge_cfg)
+            except CommandErrorException as exc:
+                raise MergeConfigException(str(exc)) from exc
+
+    def load_replace_candidate(
+        self, filename: Optional[str] = None, config: Optional[str] = None
+    ) -> None:
+        """Copy a full configuration to ``candidate_cfg`` on the switch.
+
+        ``commit_config`` installs it as the boot configuration and reboots the
+        switch (requires ``allow_reboot``), see ``commit_config``.
+        """
+        try:
+            candidate = self._read_candidate(filename, config)
+            self.config_replace = True
+            self.candidate_config = candidate.strip()
+            self._upload_config(self.candidate_config, self.candidate_cfg)
+        except (OSError, ValueError, CommandErrorException) as exc:
+            self.discard_config()
+            raise ReplaceConfigException(str(exc)) from exc
 
     def _gen_full_path(self, filename: str) -> str:
+        if filename.startswith("/"):
+            return filename
         return f"{self.dest_file_system}/{filename}"
 
-    def _upload_candidate(self, candidate: str) -> None:
-        """Copy the candidate to the switch, wrapped like a saved config file."""
-        content = candidate
-        if not re.match(r"^\s*conf(?:ig(?:ure)?)?\s+t(?:erminal)?\b", content, re.I):
+    def _upload_config(self, config: str, dest_file: str) -> None:
+        """Copy a configuration to the switch with SCP, as a config file."""
+        content = config
+        if not re.search(r"^\s*conf(?:ig(?:ure)?)?\s+t(?:erminal)?\b", content, re.I | re.M):
             content = "config terminal\n" + content
         if not re.search(r"^\s*end\s*$", content, re.M):
             content += "\nend"
@@ -477,50 +510,54 @@ class ExtremeFEDriver(NetworkDriver):
             with ExtremeFEFileTransfer(
                 ssh_conn=self.device,
                 source_file=tmp_file,
-                dest_file=self.merge_cfg,
+                dest_file=dest_file,
                 file_system=self.dest_file_system,
             ) as transfer:
                 transfer.transfer_file()
                 if not transfer.verify_file():
-                    raise MergeConfigException("File transfer to the switch failed")
-        except MergeConfigException:
+                    raise CommandErrorException("File transfer to the switch failed")
+        except CommandErrorException:
             raise
         except Exception as exc:
-            raise MergeConfigException(f"File transfer to the switch failed: {exc}") from exc
+            raise CommandErrorException(f"File transfer to the switch failed: {exc}") from exc
         finally:
             os.remove(tmp_file)
 
-    def load_replace_candidate(
-        self, filename: Optional[str] = None, config: Optional[str] = None
-    ) -> None:
-        """Configuration replace is not supported by Fabric Engine."""
-        raise ReplaceConfigException(
-            "Fabric Engine does not support an atomic configuration replace; "
-            "use load_merge_candidate instead."
-        )
-
     def compare_config(self) -> str:
-        """Return an incremental diff of the merge candidate.
+        """Return the difference between the candidate and the running config.
 
-        Fabric Engine has no on-box config diff, so (like the IOS driver's
-        merge mode) the candidate is compared with the running configuration:
-        only lines that would change something are returned. Lines that are
-        not present yet are prefixed with ``+``; ``no <x>`` for an existing
-        ``<x>`` is shown as ``-<x>``. Context lines (``interface ...``) are
-        shown without a prefix.
+        Fabric Engine has no on-box config diff, so the driver compares:
+
+        * merge: only lines that would change something (like the IOS driver's
+          incremental diff): ``+line`` is added, ``-line`` removed (``no ...``);
+          context lines (``interface ...``) are shown without a prefix
+        * replace: ``-line`` / ``+line`` for every line that differs between the
+          running configuration and the candidate
         """
         if not self.candidate_config:
             return ""
         running = self._send_command("show running-config")
+        if self.config_replace:
+            return parsers.replace_diff(running, self.candidate_config)
         return parsers.merge_diff(running, self.candidate_config)
 
     def commit_config(self, message: str = "", revert_in: Optional[int] = None) -> None:
-        """Merge the candidate into the running configuration.
+        """Apply the candidate (like the IOS driver).
 
-        The lines are sent in configuration mode; the first rejected line
-        stops the merge and raises ``MergeConfigException`` (lines before it
-        stay applied, as Fabric Engine has no rollback). The configuration is
-        saved afterwards unless ``save_config`` is ``False``.
+        The running configuration is always saved to ``rollback_cfg`` first.
+
+        * merge, ``config_method="cli"``: the lines are sent in configuration
+          mode; the first rejected line stops the merge and raises
+          ``MergeConfigException`` (lines before it stay applied)
+        * merge, ``config_method="file"``: the uploaded file is applied with
+          ``source``
+        * replace (requires ``allow_reboot``): Fabric Engine cannot replace the
+          running configuration. Like ExtremeCloud IQ Site Engine's
+          configuration restore, the candidate is copied over the boot
+          configuration (``startup_config_file``) and the switch is rebooted.
+          The connection is closed; call ``open()`` again once the switch is up.
+
+        A merge is saved with ``save config`` unless ``save_config`` is ``False``.
         """
         if message:
             raise NotImplementedError("Commit message not implemented for this platform")
@@ -529,14 +566,25 @@ class ExtremeFEDriver(NetworkDriver):
                 "Commit confirm (revert_in) not implemented for this platform"
             )
         if not self.candidate_config:
-            raise MergeConfigException("No candidate configuration loaded")
+            exc_class = ReplaceConfigException if self.config_replace else MergeConfigException
+            raise exc_class("No candidate configuration loaded")
+
+        if self.config_replace:
+            self._check_reboot_allowed("A replace commit")
+            logger.info("%s: replacing the configuration (reboot)", self.hostname)
+            self._gen_rollback_cfg(ReplaceConfigException)
+            self._install_and_reboot(self._gen_full_path(self.candidate_cfg))
+            self.candidate_config = None
+            self.config_replace = False
+            return
 
         logger.info(
-            "%s: committing %d line(s) (config_method=%s)",
+            "%s: merging %d line(s) (config_method=%s)",
             self.hostname,
             len(self.candidate_config.splitlines()),
             self.config_method,
         )
+        self._gen_rollback_cfg(MergeConfigException)
         if self.config_method == "file":
             self._commit_from_file()
         else:
@@ -548,12 +596,12 @@ class ExtremeFEDriver(NetworkDriver):
                 raise CommandErrorException(f"Saving the configuration failed:\n{save_output}")
         self.candidate_config = None
 
-    def _gen_rollback_cfg(self) -> None:
-        """Save the running config as a restore point (like the IOS driver)."""
+    def _gen_rollback_cfg(self, exc_class: type = MergeConfigException) -> None:
+        """Save the running config to ``rollback_cfg`` (like the IOS driver)."""
         cmd = f"save config file {self._gen_full_path(self.rollback_cfg)}"
         output = self._send_command(cmd)
         if not self._save_successful(output):
-            raise MergeConfigException(f"Could not save the restore point:\n{output}")
+            raise exc_class(f"Could not save the rollback configuration:\n{output}")
 
     @classmethod
     def _save_successful(cls, output: str) -> bool:
@@ -569,7 +617,6 @@ class ExtremeFEDriver(NetworkDriver):
         )
 
     def _commit_from_file(self) -> None:
-        self._gen_rollback_cfg()
         cmd = f"source {self._gen_full_path(self.merge_cfg)}"
         output = self._send_command(cmd, read_timeout=max(self.timeout, 120))
         if self._has_cli_error(output):
@@ -593,18 +640,51 @@ class ExtremeFEDriver(NetworkDriver):
         if self._has_cli_error(output):
             raise MergeConfigException(f"Configuration merge failed:\n{output}")
 
-    def rollback(self) -> None:
-        """Not supported: Fabric Engine cannot replace the running config.
+    def _check_reboot_allowed(self, what: str) -> None:
+        if not self.allow_reboot:
+            raise ReplaceConfigException(
+                f"{what} reboots the switch (Fabric Engine has no configuration "
+                "replace); set optional_args allow_reboot=True to allow it"
+            )
 
-        With ``config_method="file"`` the configuration before each commit is
-        saved to ``rollback_cfg`` and can be restored manually (e.g. by booting
-        from that file).
+    def _confirm(self, command: str) -> str:
+        """Run a command and answer its (y/n) confirmation prompt."""
+        output = self.device.send_command_timing(command, read_timeout=self.timeout)
+        if re.search(r"\(y/n\)|\[y/n\]|y/n\s*\??\s*$", output, re.I):
+            output += self.device.send_command_timing("y", read_timeout=self.timeout)
+        return output
+
+    def _file_exists(self, path: str) -> bool:
+        output = self._send_command(f"ls {path}")
+        return path.rsplit("/", 1)[-1] in parse_ls(output)
+
+    def _install_and_reboot(self, config_file: str) -> None:
+        """Make ``config_file`` the boot configuration and reboot the switch."""
+        if not self._file_exists(config_file):
+            raise ReplaceConfigException(f"{config_file} does not exist on the switch")
+        output = self._confirm(f"copy {config_file} {self.startup_config_file}")
+        if self._has_cli_error(output):
+            raise ReplaceConfigException(
+                f"Could not copy {config_file} to {self.startup_config_file}:\n{output}"
+            )
+        logger.warning("%s: rebooting to load %s", self.hostname, config_file)
+        try:
+            self._confirm("reset")
+        except Exception:  # noqa: BLE001 - the session ends when the switch reboots
+            pass
+        self.close()
+
+    def rollback(self) -> None:
+        """Restore the configuration saved before the last commit.
+
+        Like ExtremeCloud IQ Site Engine's configuration restore, the saved
+        ``rollback_cfg`` is copied over the boot configuration and the switch
+        is rebooted (requires ``allow_reboot``). The connection is closed.
         """
-        raise NotImplementedError(
-            "Fabric Engine has no configuration replace; restore "
-            f"{self._gen_full_path(self.rollback_cfg)} manually if needed"
-        )
+        self._check_reboot_allowed("rollback()")
+        self._install_and_reboot(self._gen_full_path(self.rollback_cfg))
 
     def discard_config(self) -> None:
         """Discard the pending candidate."""
         self.candidate_config = None
+        self.config_replace = False

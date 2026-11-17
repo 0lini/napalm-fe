@@ -52,20 +52,74 @@ class _FakeRemoteConn:
 
 
 class FakeExtremeFEDevice(BaseTestDouble):
-    """Netmiko replacement returning the content of the mocked_data files."""
+    """Netmiko replacement.
+
+    ``show`` commands return the content of the mocked_data files. File and
+    configuration commands (``save config file``, ``ls``, ``copy``, ``source``,
+    ``reset``) are simulated on an in-memory flash; their output follows real
+    Fabric Engine 9.4 output where it is known.
+    """
 
     remote_conn = _FakeRemoteConn()
 
     def __init__(self):
         super().__init__()
         self.sent_config = []
+        self.commands = []
+        self.flash = {"/intflash/config.cfg": "startup config"}
+        self.rebooted = False
+        self._pending = None
 
     def write_channel(self, data):
         pass
 
     def send_command(self, command, **kwargs):
+        self.commands.append(command)
+        if command.startswith("save config file "):
+            path = command.split()[-1]
+            self.flash[path] = "running config"
+            return (
+                f"CP-1: Save config to file {path} successful.\n"
+                'WARNING: Choice Primary Node Config file is "/intflash/config.cfg".'
+            )
+        if command.startswith("ls "):
+            path = command.split()[-1]
+            directory, _, name = path.rpartition("/")
+            if path not in self.flash:
+                return f'Listing Directory {directory}:\nCan\'t open "{path}".'
+            size = len(self.flash[path])
+            return (
+                f"Listing Directory {directory}:\n"
+                f"-rwx------  1 0       0          {size:5d} Nov 16 12:24  {name}"
+            )
+        if command.startswith("source "):
+            return ""
         filename = "{}.txt".format(self.sanitize_text(command))
         return self.read_txt_file(self.find_file(filename))
+
+    def send_command_timing(self, command, **kwargs):
+        self.commands.append(command)
+        if command == "y" and self._pending:
+            action, self._pending = self._pending, None
+            return action()
+        if command.startswith("copy "):
+            _, src, dst = command.split()
+
+            def copy():
+                self.flash[dst] = self.flash[src]
+                return ""
+
+            self._pending = copy
+            return f"File {dst} already exists. Overwrite (y/n) ?"
+        if command == "reset":
+
+            def reset():
+                self.rebooted = True
+                raise OSError("Socket is closed")
+
+            self._pending = reset
+            return "Are you sure you want to reset the switch (y/n) ?"
+        return ""
 
     def send_config_set(self, config_commands, **kwargs):
         self.sent_config.extend(config_commands)

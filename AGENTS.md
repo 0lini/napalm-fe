@@ -88,7 +88,8 @@ Run all of them before every commit, and only commit when they pass
 
    Runs merge, typo and discard tests for `config_method="cli"` and `"file"`.
    It only changes `snmp-server location`, restores it, and never saves the
-   configuration.
+   configuration. It does not test replace / `rollback()` (they reboot the
+   switch).
 
 ### Safety rules for the switch
 
@@ -120,7 +121,11 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
    for `get_environment` (CPU per slot, memory summed).
 4. **SNMP communities**: only SNMPv3 has been seen; capture a switch with v1/v2c
    communities and check `parse_snmp_communities`.
-5. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
+5. **Replace / rollback** (reboot): the `copy <file> /intflash/config.cfg`
+   and `reset` confirmation prompts are assumed to end in `(y/n)`; check the
+   real prompts and that the switch boots the copied file. Only on a lab switch
+   with console access.
+6. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
    prompt / login behaviour has not been tested.
 
 Not implemented yet (NotImplementedError, skipped in tests): BGP, users,

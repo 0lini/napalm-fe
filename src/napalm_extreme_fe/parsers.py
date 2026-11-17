@@ -917,3 +917,27 @@ def merge_diff(running_config: str, candidate: str) -> str:
     if context_shown:
         diff.append("exit")
     return "\n".join(diff)
+
+
+def _config_lines(config: str) -> List[str]:
+    """Configuration lines without comments, blank lines and banners."""
+    lines = []
+    for raw in config.splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or set(stripped) == {"*"}:
+            continue
+        if stripped.startswith(("Command Execution Time:", "Preparing to Display Configuration")):
+            continue
+        lines.append(line)
+    return lines
+
+
+def replace_diff(running_config: str, candidate: str) -> str:
+    """Line diff for a replace: ``-line`` (removed) / ``+line`` (added)."""
+    import difflib
+
+    diff = difflib.unified_diff(
+        _config_lines(running_config), _config_lines(candidate), lineterm="", n=0
+    )
+    return "\n".join(line for line in diff if not line.startswith(("---", "+++", "@@")))

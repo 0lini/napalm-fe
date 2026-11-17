@@ -182,3 +182,16 @@ def test_iter_tables_dash_before_header_and_subtables():
     assert titles.count("Port Config") == 2  # table + untitled sub-table
     autosense = parsers.tables_by_title(output, "Port Auto-sense")[0]
     assert autosense[2][0].split()[:3] == ["1/1", "Enable", "VOICE"]
+
+
+def test_replace_diff():
+    running = (
+        "*****\nCommand Execution Time: x\n*****\nPreparing to Display Configuration...\n"
+        "#\n# comment\nconfig terminal\nsys mtu 9600\nntp server 10.0.0.1\nend\n"
+    )
+    candidate = "config terminal\nsys mtu 9600\nntp server 10.0.0.2\nend\n"
+    assert parsers.replace_diff(running, candidate).splitlines() == [
+        "-ntp server 10.0.0.1",
+        "+ntp server 10.0.0.2",
+    ]
+    assert parsers.replace_diff(candidate, candidate) == ""
