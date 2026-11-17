@@ -4,6 +4,7 @@ The driver talks to the device over SSH using Netmiko's ``extreme_vsp``
 device type and parses the CLI output.
 """
 
+import logging
 import os
 import re
 import socket
@@ -24,6 +25,8 @@ from netmiko.ssh_dispatcher import CLASS_MAPPER
 
 from napalm_extreme_fe import parsers
 from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer
+
+logger = logging.getLogger(__name__)
 
 # Extreme renamed VOSS (VSP Operating System Software) to Fabric Engine;
 # Netmiko still calls it "extreme_vsp". Use the newest name Netmiko provides.
@@ -164,9 +167,13 @@ class ExtremeFEDriver(NetworkDriver):
         if self.device is None:
             raise ConnectionClosedException("Not connected to the device, call open() first")
         commands = command if isinstance(command, list) else [command]
+        # Large tables (running-config, FDB on a chassis) can take longer than
+        # Netmiko's 10 second default; use the driver timeout instead.
+        kwargs.setdefault("read_timeout", self.timeout)
         output = ""
         try:
             for cmd in commands:
+                logger.debug("%s: sending %r", self.hostname, cmd)
                 output = self.device.send_command(cmd, **kwargs)
                 output = output if isinstance(output, str) else str(output)
                 if not self._has_cli_error(output):
@@ -255,8 +262,8 @@ class ExtremeFEDriver(NetworkDriver):
             "fans": parsers.parse_sys_info_fans(output),
             "temperature": parsers.parse_sys_info_temperature(output),
             "power": parsers.parse_sys_info_power(output),
-            "cpu": parsers.parse_khi_cpu(cpu_output),  # type: ignore[typeddict-item]
-            "memory": parsers.parse_khi_memory(memory_output),  # type: ignore[typeddict-item]
+            "cpu": parsers.parse_khi_cpu(cpu_output),
+            "memory": parsers.parse_khi_memory(memory_output),
         }
 
     def get_interfaces(self) -> Dict[str, models.InterfaceDict]:
@@ -299,7 +306,7 @@ class ExtremeFEDriver(NetworkDriver):
         if not self._has_cli_error(ipv6_output):
             for intf, data in parsers.parse_ipv6_interfaces(ipv6_output).items():
                 result.setdefault(intf, {}).setdefault("ipv6", {}).update(data["ipv6"])
-        return result  # type: ignore[return-value]
+        return result
 
     def get_interfaces_counters(self) -> Dict[str, models.InterfaceCounterDict]:
         """Return interface counters.
@@ -322,7 +329,7 @@ class ExtremeFEDriver(NetworkDriver):
         ):
             outputs.append(self._send_command("show interfaces gigabitEthernet statistics"))
         output = "\n".join(outputs)
-        return parsers.parse_interface_counters(output)  # type: ignore[return-value]
+        return parsers.parse_interface_counters(output)
 
     def get_lldp_neighbors(self) -> Dict[str, List[models.LLDPNeighborDict]]:
         """Return LLDP neighbors."""
@@ -346,9 +353,7 @@ class ExtremeFEDriver(NetworkDriver):
         for raw in parsers.parse_lldp_neighbors(self._send_command(command)):
             if interface and raw["local_port"] != interface:
                 continue
-            result.setdefault(raw["local_port"], []).append(
-                parsers.lldp_neighbor_to_napalm(raw)  # type: ignore[arg-type]
-            )
+            result.setdefault(raw["local_port"], []).append(parsers.lldp_neighbor_to_napalm(raw))
         return result
 
     def get_arp_table(self, vrf: str = "") -> List[models.ARPTableDict]:
@@ -366,9 +371,7 @@ class ExtremeFEDriver(NetworkDriver):
 
     def get_mac_address_table(self) -> List[models.MACAdressTable]:
         """Return the MAC address table."""
-        return parsers.parse_mac_address_table(  # type: ignore[return-value]
-            self._send_command("show vlan mac-address-entry")
-        )
+        return parsers.parse_mac_address_table(self._send_command("show vlan mac-address-entry"))
 
     def get_vlans(self) -> Dict[str, models.VlanDict]:
         """Return the configured VLANs and their member ports."""
@@ -528,6 +531,12 @@ class ExtremeFEDriver(NetworkDriver):
         if not self.candidate_config:
             raise MergeConfigException("No candidate configuration loaded")
 
+        logger.info(
+            "%s: committing %d line(s) (config_method=%s)",
+            self.hostname,
+            len(self.candidate_config.splitlines()),
+            self.config_method,
+        )
         if self.config_method == "file":
             self._commit_from_file()
         else:

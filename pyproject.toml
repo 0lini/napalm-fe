@@ -5,34 +5,60 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "napalm-extreme-fe"
 version = "0.1.0"
-description = "NAPALM community driver for Extreme Networks Fabric Engine (VOSS)"
+description = "NAPALM community driver for Extreme Networks Fabric Engine (formerly VOSS)"
 readme = "README.md"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.9"
 authors = [{ name = "Oliver Elsner" }]
-keywords = ["napalm", "extreme", "fabric engine", "voss", "vsp", "network automation"]
+keywords = ["napalm", "netmiko", "extreme", "fabric engine", "voss", "vsp", "network automation"]
 classifiers = [
-    "Topic :: Utilities",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Telecommunications Industry",
+    "Topic :: System :: Networking",
     "Programming Language :: Python :: 3",
-    "Operating System :: POSIX :: Linux",
-    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
 dependencies = [
-    "napalm>=5.0.0",
-    "netmiko>=4.1.0",
+    "napalm>=5.0.0,<6",
+    "netmiko>=4.1.0,<5",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov", "ruff"]
+dev = ["pytest>=7", "pytest-cov", "ruff", "mypy", "build", "twine"]
 
 [project.urls]
-Homepage = "https://github.com/napalm-automation-community/napalm-extreme-fe"
+Homepage = "https://github.com/0lini/napalm-fe"
+Issues = "https://github.com/0lini/napalm-fe/issues"
+Changelog = "https://github.com/0lini/napalm-fe/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["napalm_extreme_fe*"]
 
+[tool.setuptools.package-data]
+napalm_extreme_fe = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["test"]
+
+[tool.coverage.run]
+source = ["napalm_extreme_fe"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 100
