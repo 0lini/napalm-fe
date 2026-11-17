@@ -158,7 +158,13 @@ def file_driver(monkeypatch):
 
     def send_command(command, **kwargs):
         sent.append(command)
-        if command.startswith(("save config file", "source ")):
+        if command.startswith("save config file"):
+            # real output of Fabric Engine 9.4.2.0
+            return (
+                f"CP-1: Save config to file {command.split()[-1]} successful.\n"
+                'WARNING: Choice Primary Node Config file is "/intflash/config.cfg".'
+            )
+        if command.startswith("source "):
             return ""
         return original(command, **kwargs)
 
@@ -200,3 +206,19 @@ def test_invalid_config_method():
 def test_rollback_not_supported(driver):
     with pytest.raises(NotImplementedError):
         driver.rollback()
+
+
+def test_file_method_restore_point_failure(file_driver):
+    file_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    file_driver.device.send_command = lambda command, **kw: "Error: flash is full"
+    with pytest.raises(MergeConfigException, match="restore point"):
+        file_driver.commit_config()
+
+
+def test_save_failure_detected(driver):
+    from napalm.base.exceptions import CommandErrorException
+
+    driver.device.save_config = lambda *a, **kw: "save config\nSave config failed."
+    driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    with pytest.raises(CommandErrorException):
+        driver.commit_config()

@@ -535,7 +535,7 @@ class ExtremeFEDriver(NetworkDriver):
 
         if self.save_on_commit:
             save_output = self.device.save_config()
-            if self._has_cli_error(save_output):
+            if not self._save_successful(save_output):
                 raise CommandErrorException(f"Saving the configuration failed:\n{save_output}")
         self.candidate_config = None
 
@@ -543,8 +543,21 @@ class ExtremeFEDriver(NetworkDriver):
         """Save the running config as a restore point (like the IOS driver)."""
         cmd = f"save config file {self._gen_full_path(self.rollback_cfg)}"
         output = self._send_command(cmd)
-        if self._has_cli_error(output):
+        if not self._save_successful(output):
             raise MergeConfigException(f"Could not save the restore point:\n{output}")
+
+    @classmethod
+    def _save_successful(cls, output: str) -> bool:
+        """Check the output of ``save config [file ...]``.
+
+        Success looks like::
+
+            CP-1: Save config to file /intflash/test2.cfg successful.
+            WARNING: Choice Primary Node Config file is "/intflash/config.cfg".
+        """
+        return not cls._has_cli_error(output) and bool(
+            re.search(r"Save config to file \S+ successful", output, re.I)
+        )
 
     def _commit_from_file(self) -> None:
         self._gen_rollback_cfg()
