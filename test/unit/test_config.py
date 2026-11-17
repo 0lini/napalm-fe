@@ -740,3 +740,35 @@ def test_not_pending_after_real_revert_reboot(driver):
     )
     _log_switch(driver, banner, banner, boot)
     assert not driver.has_pending_commit()
+
+
+# Real output of a rejected config line (Fabric Engine 9.4 VM)
+COMMUNITY_EXISTS = """\
+snmp-server community "napalm-ro" index first secname readgrp
+
+Error: The community entry already exists.
+"""
+
+
+def test_config_error_pattern_matches_real_errors():
+    import re
+
+    from napalm_extreme_fe.extreme_fe import CONFIG_ERROR_PATTERN
+
+    assert re.search(CONFIG_ERROR_PATTERN, COMMUNITY_EXISTS, flags=re.M)
+    assert re.search(CONFIG_ERROR_PATTERN, "% Invalid input detected at '^' marker.", flags=re.M)
+    # log lines with severity ERROR are not config errors
+    log = (
+        "1 2026-11-17T15:51:40.608Z 5520-24T-FabricEngine CP1 - 0x00030606 - 00000000 "
+        "GlobalRouter SW ERROR Could not open primary config file /intflash/config.cfg"
+    )
+    assert not re.search(CONFIG_ERROR_PATTERN, log, flags=re.M)
+
+
+def test_merge_fails_on_error_without_percent(driver):
+    driver.device.send_config_set = lambda lines, **kw: COMMUNITY_EXISTS
+    driver.load_merge_candidate(
+        config='snmp-server community "napalm-ro" index first secname readgrp'
+    )
+    with pytest.raises(MergeConfigException, match="already exists"):
+        driver.commit_config()

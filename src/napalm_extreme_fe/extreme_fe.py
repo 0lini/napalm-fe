@@ -85,8 +85,11 @@ CLI_ERROR_PATTERNS = (
 )
 
 # Same, as a single pattern for Netmiko's send_config_set(error_pattern=...)
+# Fabric Engine 9.4 also reports errors as e.g. "Error: The community entry
+# already exists." (no "%"); Netmiko applies the pattern with re.M.
 CONFIG_ERROR_PATTERN = (
     r"% (?:Invalid input|Incomplete command|Ambiguous command|Unrecognized)|% Error"
+    r"|^\s*Error\s*:"
 )
 
 # Lines of "show running-config" / the saved config file that change on every
