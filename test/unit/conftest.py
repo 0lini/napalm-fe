@@ -68,6 +68,7 @@ class FakeExtremeFEDevice(BaseTestDouble):
         self.commands = []
         self.flash = {"/intflash/config.cfg": "startup config"}
         self.rebooted = False
+        self.scheduled_reset = None
         self._pending = None
 
     def write_channel(self, data):
@@ -120,6 +121,20 @@ class FakeExtremeFEDevice(BaseTestDouble):
         if command == "reset -y":
             self.rebooted = True
             raise OSError("Socket is closed")
+        if command.startswith("reset -in "):
+            when = command.split()[-1]
+
+            def schedule():
+                self.scheduled_reset = when
+                return ""  # real success output not seen yet
+
+            self._pending = schedule
+            return "Are you sure you want to perform a scheduled reset? (y/n) ? "
+        if command == "reset -cancel":
+            if self.scheduled_reset is None:
+                return "Warning! No ongoing scheduled reset!"
+            self.scheduled_reset = None
+            return "PLACEHOLDER: real output of a successful cancel not seen yet"
         return ""
 
     def send_config_set(self, config_commands, **kwargs):
@@ -130,4 +145,5 @@ class FakeExtremeFEDevice(BaseTestDouble):
         return ""
 
     def save_config(self, *args, **kwargs):
+        self.commands.append("save config")
         return "save config\nSave config to file /intflash/config.cfg successful."

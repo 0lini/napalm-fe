@@ -174,9 +174,10 @@ def test_file_method_upload_and_commit(file_driver):
 
     assert file_driver.compare_config() == "+ntp server 192.0.2.99"
     file_driver.commit_config()
-    assert file_driver.device.commands[-2:] == [
+    assert file_driver.device.commands[-3:] == [
         "save config file /intflash/napalm_rollback.cfg",
         "source /intflash/napalm_merge.cfg",
+        "save config",
     ]
     assert file_driver.device.sent_config == []  # nothing sent line by line
 
@@ -461,4 +462,101 @@ def test_file_method_real_source_output(file_driver):
     file_driver.device.send_command = send_command
     file_driver.load_merge_candidate(config='snmp-server location "napalm-test"')
     file_driver.commit_config()
-    assert file_driver.device.commands[-1] == "source /intflash/napalm_merge.cfg"
+    assert file_driver.device.commands[-2:] == ["source /intflash/napalm_merge.cfg", "save config"]
+
+
+# --- commit confirm (revert_in), like Site Engine: scheduled reset ----------
+
+
+@pytest.mark.parametrize(
+    "seconds, expected",
+    [(60, "1"), (300, "5"), (359, "5"), (3600, "01:00"), (5400, "01:30"), (90000, "1:01:00")],
+)
+def test_revert_time(seconds, expected):
+    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+
+    assert ExtremeFEDriver._revert_time(seconds) == expected
+
+
+@pytest.mark.parametrize("seconds", [0, 59, 10 * 86400])
+def test_revert_time_out_of_range(seconds):
+    from napalm.base.exceptions import CommitConfirmException
+
+    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+
+    with pytest.raises(CommitConfirmException):
+        ExtremeFEDriver._revert_time(seconds)
+
+
+def test_commit_with_revert_and_confirm(reboot_driver):
+    device = reboot_driver.device
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    reboot_driver.commit_config(revert_in=300)
+    # saved before the change, reset scheduled before applying, not saved after
+    assert device.commands == [
+        "save config file /intflash/napalm_rollback.cfg",
+        "save config",
+        "reset -in 5",
+        "y",
+    ]
+    assert device.sent_config == ["ntp server 192.0.2.99"]
+    assert device.scheduled_reset == "5"
+    assert reboot_driver.has_pending_commit()
+
+    reboot_driver.confirm_commit()
+    assert device.commands[-2:] == ["reset -cancel", "save config"]
+    assert device.scheduled_reset is None
+    assert not reboot_driver.has_pending_commit()
+
+
+def test_confirm_after_the_switch_reverted(reboot_driver):
+    from napalm.base.exceptions import CommitConfirmException
+
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    reboot_driver.commit_config(revert_in=60)
+    reboot_driver.device.scheduled_reset = None  # the reset already happened
+    with pytest.raises(CommitConfirmException, match="No ongoing scheduled reset"):
+        reboot_driver.confirm_commit()
+    assert "save config" not in reboot_driver.device.commands[-1:]
+
+
+def test_rollback_while_pending_reverts_now(reboot_driver):
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    reboot_driver.commit_config(revert_in=300)
+    reboot_driver.rollback()
+    assert reboot_driver.device.commands[-1] == "reset -y"
+    assert reboot_driver.device.rebooted
+    assert not reboot_driver.has_pending_commit()
+
+
+def test_no_new_commit_while_pending(reboot_driver):
+    from napalm.base.exceptions import CommitConfirmException
+
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    reboot_driver.commit_config(revert_in=300)
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.98")
+    with pytest.raises(CommitConfirmException):
+        reboot_driver.commit_config()
+
+
+def test_revert_requires_allow_reboot(driver):
+    from napalm.base.exceptions import CommitConfirmException
+
+    driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    with pytest.raises(CommitConfirmException, match="allow_reboot"):
+        driver.commit_config(revert_in=300)
+    assert driver.device.sent_config == []
+    assert driver.device.scheduled_reset is None
+
+
+def test_confirm_without_pending_commit(driver):
+    from napalm.base.exceptions import CommitConfirmException
+
+    with pytest.raises(CommitConfirmException, match="No pending"):
+        driver.confirm_commit()
+
+
+def test_revert_not_for_replace(reboot_driver):
+    reboot_driver.load_replace_candidate(config=FULL_CONFIG)
+    with pytest.raises(NotImplementedError):
+        reboot_driver.commit_config(revert_in=300)

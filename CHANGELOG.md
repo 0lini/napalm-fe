@@ -12,6 +12,12 @@ All notable changes to this project are documented here. The format follows
   is installed as the boot configuration and the switch is rebooted, like
   ExtremeCloud IQ Site Engine's configuration restore. Requires
   `allow_reboot=True`.
+- Commit confirm like ExtremeCloud IQ Site Engine: `commit_config(revert_in=...)`
+  schedules a reset (`reset -in`) that reboots into the saved configuration
+  unless `confirm_commit()` cancels it; `has_pending_commit()`. Requires
+  `allow_reboot=True`.
+- Log messages printed into the session (`logging screen`) are removed from all
+  output.
 
 ### Changed
 

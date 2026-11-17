@@ -128,11 +128,19 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
    existing file asks `File [...] already existing, overwrite (y/n) ?`; the
    driver uses `reset -y`). Still to check: that the switch boots the copied
    file. Only on a lab switch with console access.
-6. **Log messages in the session** (`logging screen`, switch-wide): the driver
+6. **Commit confirm** (`revert_in`): confirmed on 9.4: `reset -in` syntax
+   (`d:hh:mm | hh:mm | mm`), its prompt (`Are you sure you want to perform a
+   scheduled reset? (y/n) ?`) and `reset -cancel` without a scheduled reset
+   (`Warning! No ongoing scheduled reset!`). Still to capture: the output of a
+   successful `reset -in` and `reset -cancel` (the fake switch uses a
+   placeholder), a command that shows a scheduled reset (then
+   `has_pending_commit()` can ask the switch, like IOS), and that the switch
+   really reboots into the saved config.
+7. **Log messages in the session** (`logging screen`, switch-wide): the driver
    removes them from every output (`LOG_MESSAGE_RE`). Only the RFC 5424 format
    (`boot config flags syslog-rfc5424-format true`) has been seen; capture a
    log line from a switch with that flag `false` and extend the pattern.
-7. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
+8. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
    prompt / login behaviour has not been tested.
 
 Not implemented yet (NotImplementedError, skipped in tests): BGP, users,

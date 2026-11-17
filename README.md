@@ -92,9 +92,11 @@ the boot configuration and reboot the switch.
 | `load_merge_candidate`   | From `filename` or `config` |
 | `load_replace_candidate` | Copies the full configuration to `candidate_cfg` on the switch (SCP) |
 | `compare_config`         | Merge: incremental diff against the running config (`+line` added, `-line` removed by `no ...`, configured lines omitted). Replace: `-`/`+` for every differing line |
-| `commit_config`          | Saves the running config to `rollback_cfg` first (like IOS), then applies the candidate, see below. `message` and `revert_in` are not supported |
+| `commit_config`          | Saves the running config to `rollback_cfg` first (like IOS), then applies the candidate, see below. `revert_in` see [Commit confirm](#commit-confirm-revert_in); `message` is not supported |
+| `confirm_commit`         | Cancels the scheduled revert reset and saves the configuration |
+| `has_pending_commit`     | Whether a `revert_in` commit waits for `confirm_commit()` (tracked by the driver instance) |
 | `discard_config`         | Drops the candidate |
-| `rollback`               | Installs `rollback_cfg` as the boot configuration and reboots (needs `allow_reboot=True`) |
+| `rollback`               | Installs `rollback_cfg` as the boot configuration and reboots; while a `revert_in` commit is pending it reverts that commit now (`reset -y`). Needs `allow_reboot=True` |
 
 **Merge** (`config_method`), saved with `save config` afterwards unless
 `save_config=False`:
@@ -111,6 +113,27 @@ the boot configuration and reboot the switch.
 copied over the boot configuration (`startup_config_file`, default
 `/intflash/config.cfg`) and the switch is reset. The driver closes the
 connection; call `open()` again once the switch is back.
+
+### Commit confirm (`revert_in`)
+
+Like ExtremeCloud IQ Site Engine, `commit_config(revert_in=<seconds>)` protects
+a merge against changes that make the switch unreachable:
+
+1. the current configuration is saved (`save config`)
+2. a reset is scheduled with `reset -in` (rounded down to whole minutes, like
+   IOS; 1 minute to 9 days 23:59)
+3. the change is applied **without** saving
+
+`confirm_commit()` cancels the reset (`reset -cancel`) and saves. If it is not
+called in time, the switch reboots into the configuration saved in step 1.
+Requires `allow_reboot=True`. Note that step 1 also saves earlier unsaved
+changes.
+
+```python
+device.load_merge_candidate(config="vlan create 100 type port-mstprstp 0")
+device.commit_config(revert_in=300)   # reboots into the old config in 5 minutes ...
+device.confirm_commit()               # ... unless confirmed
+```
 
 ### File transfer
 
