@@ -238,13 +238,26 @@ class ExtremeFEDriver(NetworkDriver):
         return result  # type: ignore[return-value]
 
     def get_interfaces_counters(self) -> Dict[str, models.InterfaceCounterDict]:
-        """Return interface counters."""
-        output = "\n".join(
-            [
-                self._send_command("show interfaces gigabitEthernet statistics"),
-                self._send_command("show interfaces gigabitEthernet error"),
-            ]
-        )
+        """Return interface counters.
+
+        ``statistics verbose`` holds the unicast/multicast/broadcast counters,
+        ``error`` the discards and errors. Octets are only in the plain
+        ``statistics`` output on 9.x, which is fetched if they are missing.
+        """
+        outputs = []
+        for command in (
+            "show interfaces gigabitEthernet statistics verbose",
+            "show interfaces gigabitEthernet error",
+        ):
+            output = self._send_command(command)
+            if not self._has_cli_error(output):
+                outputs.append(output)
+        if not any(
+            c["rx_octets"] >= 0
+            for c in parsers.parse_interface_counters("\n".join(outputs)).values()
+        ):
+            outputs.append(self._send_command("show interfaces gigabitEthernet statistics"))
+        output = "\n".join(outputs)
         return parsers.parse_interface_counters(output)  # type: ignore[return-value]
 
     def get_lldp_neighbors(self) -> Dict[str, List[models.LLDPNeighborDict]]:

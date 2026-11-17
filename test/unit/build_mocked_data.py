@@ -30,8 +30,9 @@ TESTS = {
     "test_get_interfaces": [INTF, "?show interfaces gigabitEthernet name"],
     "test_get_interfaces_ip": ["show ip interface vrfids 0-512", "show ipv6 address interface"],
     "test_get_interfaces_counters": [
-        "show interfaces gigabitEthernet statistics",
+        "show interfaces gigabitEthernet statistics verbose",
         "show interfaces gigabitEthernet error",
+        "show interfaces gigabitEthernet statistics",
     ],
     "test_get_lldp_neighbors": ["show lldp neighbor"],
     "test_get_lldp_neighbors_detail": ["show lldp neighbor"],

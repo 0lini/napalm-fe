@@ -6,12 +6,12 @@
         "rx_discards": 5,
         "tx_octets": 273406294,
         "rx_octets": 247788745,
-        "tx_unicast_packets": -1,
-        "rx_unicast_packets": -1,
-        "tx_multicast_packets": -1,
-        "rx_multicast_packets": -1,
-        "tx_broadcast_packets": -1,
-        "rx_broadcast_packets": -1
+        "tx_unicast_packets": 903425,
+        "rx_unicast_packets": 793186,
+        "tx_multicast_packets": 1278301,
+        "rx_multicast_packets": 416661,
+        "tx_broadcast_packets": 168043,
+        "rx_broadcast_packets": 922850
     },
     "1/2": {
         "tx_errors": -1,
@@ -20,12 +20,12 @@
         "rx_discards": 0,
         "tx_octets": 0,
         "rx_octets": 0,
-        "tx_unicast_packets": -1,
-        "rx_unicast_packets": -1,
-        "tx_multicast_packets": -1,
-        "rx_multicast_packets": -1,
-        "tx_broadcast_packets": -1,
-        "rx_broadcast_packets": -1
+        "tx_unicast_packets": 0,
+        "rx_unicast_packets": 0,
+        "tx_multicast_packets": 0,
+        "rx_multicast_packets": 0,
+        "tx_broadcast_packets": 0,
+        "rx_broadcast_packets": 0
     },
     "1/52": {
         "tx_errors": -1,
@@ -34,12 +34,12 @@
         "rx_discards": 0,
         "tx_octets": 0,
         "rx_octets": 0,
-        "tx_unicast_packets": -1,
-        "rx_unicast_packets": -1,
-        "tx_multicast_packets": -1,
-        "rx_multicast_packets": -1,
-        "tx_broadcast_packets": -1,
-        "rx_broadcast_packets": -1
+        "tx_unicast_packets": 0,
+        "rx_unicast_packets": 0,
+        "tx_multicast_packets": 0,
+        "rx_multicast_packets": 0,
+        "tx_broadcast_packets": 0,
+        "rx_broadcast_packets": 0
     },
     "1/56": {
         "tx_errors": -1,
@@ -48,11 +48,11 @@
         "rx_discards": 434,
         "tx_octets": 1729012458,
         "rx_octets": 1697095054,
-        "tx_unicast_packets": -1,
-        "rx_unicast_packets": -1,
-        "tx_multicast_packets": -1,
-        "rx_multicast_packets": -1,
-        "tx_broadcast_packets": -1,
-        "rx_broadcast_packets": -1
+        "tx_unicast_packets": 3742926,
+        "rx_unicast_packets": 3210833,
+        "tx_multicast_packets": 1313827,
+        "rx_multicast_packets": 2168685,
+        "tx_broadcast_packets": 0,
+        "rx_broadcast_packets": 0
     }
 }

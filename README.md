@@ -46,7 +46,7 @@ All Netmiko connection arguments (`port`, `secret`, `key_file`, `use_keys`,
 | `get_environment`            | `show sys-info` (fans, temperatures, PSUs; no CPU/memory yet)         |
 | `get_interfaces`             | `show interfaces gigabitEthernet` (+ `... name` on older releases)    |
 | `get_interfaces_ip`          | `show ip interface vrfids 0-512`, `show ipv6 address interface`       |
-| `get_interfaces_counters`    | `show interfaces gigabitEthernet statistics`, `... error`             |
+| `get_interfaces_counters`    | `show interfaces gigabitEthernet statistics [verbose]`, `... error`   |
 | `get_lldp_neighbors`         | `show lldp neighbor`                                                  |
 | `get_lldp_neighbors_detail`  | `show lldp neighbor`                                                  |
 | `get_arp_table`              | `show ip arp [vrf <name>]`                                            |
