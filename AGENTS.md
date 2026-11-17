@@ -141,9 +141,11 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
    the timer expires, and the log on a switch whose clock/time zone differs
    (all three entries come from the same clock, so only the order matters).
 7. **Log messages in the session** (`logging screen`, switch-wide): the driver
-   removes them from every output (`LOG_MESSAGE_RE`). Only the RFC 5424 format
-   (`boot config flags syslog-rfc5424-format true`) has been seen; capture a
-   log line from a switch with that flag `false` and extend the pattern.
+   removes them from every output (`LOG_MESSAGE_RE`, RFC 5424 format, and
+   `LEGACY_LOG_MESSAGE_RE`, `CP1  [11/17/26 16:41:43.000] ...`, seen while the
+   switch shuts down), as well as the `reset -in` countdown. Still to check:
+   whether a switch with `syslog-rfc5424-format false` prints exactly the
+   legacy format.
 8. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
    prompt / login behaviour has not been tested.
 

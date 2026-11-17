@@ -50,6 +50,18 @@ LOG_MESSAGE_RE = re.compile(
     re.M,
 )
 
+# The same, in the older format (also printed while the switch shuts down):
+#   CP1  [11/17/26 16:41:43.000] LifeCycle: INFO: Stopping all  processes
+LEGACY_LOG_MESSAGE_RE = re.compile(
+    r"(?:^\S+:\d+(?:\([^)\s]*\))?[>#])?"
+    r"(?:CP|IO)\d+\s+\[\d{2}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\][^\n]*\n?",
+    re.M,
+)
+
+# Countdown of a scheduled reset ("reset -in"), printed into every session:
+#           20 seconds remaining until unit resets.
+RESET_COUNTDOWN_RE = re.compile(r"^[ \t]*\d+ seconds? remaining until unit resets\.[ \t]*\n?", re.M)
+
 # Commands that display the log: their output consists of log messages, so the
 # filter above must not be applied to them.
 LOG_DISPLAY_COMMAND_RE = re.compile(r"^\s*show\s+log", re.I)
@@ -224,12 +236,15 @@ class ExtremeFEDriver(NetworkDriver):
         """Remove CLI noise from command output (like the IOS driver).
 
         Removes log messages printed into the session ("logging screen") -
-        except for commands that display the log ("show logging ...") - and
-        the "Please widen the terminal" hint. The "Command Execution Time"
+        except for commands that display the log ("show logging ...") - the
+        countdown of a scheduled reset and the "Please widen the terminal"
+        hint. The "Command Execution Time"
         banner is kept: it is used to compute ``last_flapped``.
         """
         if remove_log_messages:
             output = LOG_MESSAGE_RE.sub("", output)
+            output = LEGACY_LOG_MESSAGE_RE.sub("", output)
+        output = RESET_COUNTDOWN_RE.sub("", output)
         output = re.sub(r"^Please widen the terminal.*$", "", output, flags=re.M)
         return output.strip()
 

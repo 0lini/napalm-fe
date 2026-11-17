@@ -686,3 +686,41 @@ def test_not_pending_after_real_cancel(driver):
     )
     _log_switch(driver, SCHEDULED, canceled, BOOT)
     assert not driver.has_pending_commit()
+
+
+# Real output while a "reset -in 1" runs out (Fabric Engine 9.4 VM)
+RESET_IN_1_OUTPUT = """\
+        60 seconds remaining until unit resets.
+5520-24T-FabricEngine:1(config)#1 2026-11-17T16:40:36.907Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 1 minute!
+        20 seconds remaining until unit resets.
+        15 seconds remaining until unit resets.
+        10 seconds remaining until unit resets.
+        5 seconds remaining until unit resets.
+1 2026-11-17T16:41:41.037Z 5520-24T-FabricEngine CP1 - 0x0027458a - 00000000 GlobalRouter SW INFO Chassis reset initiated from CLI
+CP1  [11/17/26 16:41:43.000] LifeCycle: INFO: Stopping all  processes
+"""
+
+
+def test_reset_countdown_and_legacy_log_removed():
+    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+
+    assert ExtremeFEDriver._send_command_postprocess(RESET_IN_1_OUTPUT) == ""
+    output = "VLAN    PORT\n" + RESET_IN_1_OUTPUT + "1       1/1"
+    assert ExtremeFEDriver._send_command_postprocess(output) == "VLAN    PORT\n1       1/1"
+
+
+def test_schedule_with_countdown_output(reboot_driver):
+    """'reset -in 1' prints a countdown right away; scheduling still succeeds."""
+    device = reboot_driver.device
+    original = device.send_command_timing
+
+    def with_countdown(command, **kwargs):
+        output = original(command, **kwargs)
+        if command == "y" and device.scheduled_reset:
+            output = "        60 seconds remaining until unit resets.\n" + output
+        return output
+
+    device.send_command_timing = with_countdown
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    reboot_driver.commit_config(revert_in=60)
+    assert device.scheduled_reset == "1"
