@@ -78,8 +78,10 @@ def test_size_only_without_hash(local_file):
 
 
 def test_file_missing(local_file):
-    conn = FakeConn("Listing Directory /intflash/missing.cfg:\nls: no such file or directory")
-    transfer = ExtremeFEFileTransfer(conn, source_file=local_file, dest_file="missing.cfg")
+    path = os.path.join(os.path.dirname(SAMPLE), "ls__intflash_doesnotexist.cfg.txt")
+    with open(path) as handle:
+        conn = FakeConn(handle.read())  # real output of Fabric Engine 9.4.2.0
+    transfer = ExtremeFEFileTransfer(conn, source_file=local_file, dest_file="doesnotexist.cfg")
     assert not transfer.check_file_exists()
     assert not transfer.verify_file()
     with pytest.raises(IOError):
