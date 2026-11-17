@@ -44,7 +44,7 @@ with driver("192.0.2.10", "admin", "secret", optional_args={"port": 22}) as devi
 |-----------------------|------------------------|-------------|
 | `save_config`         | `True`                 | Run `save config` after a successful commit |
 | `startup_config_file` | `/intflash/config.cfg` | File returned as `startup` by `get_config()` |
-| `force_no_enable`     | `False`                | Do not enter privileged (`enable`) mode |
+| `force_no_enable`     | `False`                | Do not enter privileged (`enable`) mode. `show running-config` needs it, so `get_config`, `get_ntp_servers`, `get_snmp_information`, the `fqdn` of `get_facts` and configuration changes do not work without it |
 | `config_method`       | `cli`                  | How a merge is applied, see [Configuration management](#configuration-management) |
 | `allow_reboot`        | `False`                | Allow replace commits and `rollback()`, which reboot the switch |
 | `dest_file_system`    | `/intflash`            | Where the driver stores its files on the switch |

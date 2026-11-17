@@ -42,6 +42,9 @@ Run all of them before every commit, and only commit when they pass
 - Values the switch does not report are `-1` / `-1.0` / `""`, never guessed.
 - Do not name hardware models in code or docs; the driver targets the OS.
 - Python 3.10+ (CI tests 3.10 - 3.15).
+- `show running-config` (and so most config related commands) needs
+  privileged mode; the driver enters it after login (`enable`), as Netmiko /
+  the IOS driver do. `show logging file` also works in user mode.
 
 ## Working with a test switch
 
@@ -137,9 +140,11 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
    `has_pending_commit()` reads the log (`show logging file event-code`,
    oldest entry first): pending if the newest `0x0003068e` (enabled) is newer
    than the newest `0x0003068f` (canceled) and `0x00034594` (System boot).
-   Still to check: that the switch really reboots into the saved config when
-   the timer expires, and the log on a switch whose clock/time zone differs
-   (all three entries come from the same clock, so only the order matters).
+   Confirmed on the 9.4 VM: an expired `reset -in` reboots the switch, and the
+   log afterwards holds only the new `System boot` entry (the VM starts with an
+   empty log), so nothing is reported pending. Still to check: that an unsaved
+   change is really gone after the revert reboot, and the log on hardware
+   (does it keep entries across a reboot?).
 7. **Log messages in the session** (`logging screen`, switch-wide): the driver
    removes them from every output (`LOG_MESSAGE_RE`, RFC 5424 format, and
    `LEGACY_LOG_MESSAGE_RE`, `CP1  [11/17/26 16:41:43.000] ...`, seen while the

@@ -724,3 +724,19 @@ def test_schedule_with_countdown_output(reboot_driver):
     reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
     reboot_driver.commit_config(revert_in=60)
     assert device.scheduled_reset == "1"
+
+
+def test_not_pending_after_real_revert_reboot(driver):
+    """Real outputs after a 'reset -in 1' ran out: the VM's log starts empty after
+    the reboot, apart from the new 'System boot' entry."""
+    banner = (
+        "*" * 84
+        + "\n                Command Execution Time: Tue Nov 17 16:47:12 2026 UTC\n"
+        + "*" * 84
+    )
+    boot = banner + (
+        "\n1 2026-11-17T16:42:58.329Z 5520-24T-FabricEngine CP1 - 0x00034594 - 00000000 "
+        "GlobalRouter SW INFO System boot"
+    )
+    _log_switch(driver, banner, banner, boot)
+    assert not driver.has_pending_commit()
