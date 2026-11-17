@@ -106,10 +106,12 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
 `file-checksum md5`, `save config file`, `show running-config | include`, SCP,
 `terminal more disable` (sent by Netmiko at login; accepted without output).
 
-1. **`config_method="file"` end to end**: what does `source <file>` print on
-   success and on a rejected line? Does it need the `config terminal` / `end`
-   wrapper the driver adds? Run `TestExtremeFEDriver.py` (step 5) and add
-   the raw `source` output to a unit test in `test_config.py`.
+1. **`config_method="file"` end to end**: on success `source <file>` prints
+   nothing (only log messages, seen on 9.4 when run in config mode). Still to
+   check: the output for a rejected line, that it works from privileged EXEC
+   mode (where the driver runs it), and whether the `config terminal` / `end`
+   wrapper the driver adds is needed. Run `TestExtremeFEDriver.py` (step 5)
+   and add the raw output to a unit test in `test_config.py`.
 2. **Routed interfaces**: `show ip interface vrfids 0-512`,
    `show ipv6 address interface`, `show ip arp` and `show ip arp vrf <vrf>` have
    only been seen empty. Capture them from a switch with IP interfaces / ARP

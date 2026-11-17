@@ -435,3 +435,30 @@ def test_config_lines_are_not_log_messages():
         "10      1/2",
     ):
         assert not LOG_MESSAGE_RE.search(line)
+
+
+# Real output of "source /intflash/test1.cfg" (Fabric Engine 9.4 VM): no output
+# of its own on success, only log messages printed after the prompt
+SOURCE_OUTPUT = """\
+1 2026-11-17T16:28:54.149Z 5520-24T-FabricEngine CP1 - 0x001dc70e - 00000000 GlobalRouter ISIS INFO Loading ISIS Md5 config key file with size 0 bytes.
+1 2026-11-17T16:28:54.149Z 5520-24T-FabricEngine CP1 - 0x001dc70e - 00000000 GlobalRouter ISIS INFO Loading ISIS simple config key file with size 0 bytes.
+1 2026-11-17T16:28:54.149Z 5520-24T-FabricEngine CP1 - 0x001dc70e - 00000000 GlobalRouter ISIS INFO Loading ISIS sha256 config key file with size 0 bytes.
+"""
+
+
+def test_file_method_real_source_output(file_driver):
+    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+
+    assert ExtremeFEDriver._send_command_postprocess(SOURCE_OUTPUT) == ""
+    original = file_driver.device.send_command
+
+    def send_command(command, **kwargs):
+        if command.startswith("source "):
+            file_driver.device.commands.append(command)
+            return SOURCE_OUTPUT
+        return original(command, **kwargs)
+
+    file_driver.device.send_command = send_command
+    file_driver.load_merge_candidate(config='snmp-server location "napalm-test"')
+    file_driver.commit_config()
+    assert file_driver.device.commands[-1] == "source /intflash/napalm_merge.cfg"
