@@ -676,3 +676,13 @@ def test_parse_log_entries():
     )
     assert parsers.latest_log_time(SCHEDULED) == datetime(2026, 11, 17, 16, 36, 19, 303000)
     assert parsers.latest_log_time("") is None
+
+
+def test_not_pending_after_real_cancel(driver):
+    # real output a few minutes later: cancelled at 16:38:16, after the last enable
+    canceled = CANCELED + (
+        "1 2026-11-17T16:38:16.606Z 5520-24T-FabricEngine CP1 - 0x0003068f - 00000000 "
+        "GlobalRouter SW INFO Scheduled reset canceled!\n"
+    )
+    _log_switch(driver, SCHEDULED, canceled, BOOT)
+    assert not driver.has_pending_commit()
