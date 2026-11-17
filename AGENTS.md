@@ -122,10 +122,10 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
    for `get_environment` (CPU per slot, memory summed).
 4. **SNMP communities**: only SNMPv3 has been seen; capture a switch with v1/v2c
    communities and check `parse_snmp_communities`.
-5. **Replace / rollback** (reboot): the `copy <file> /intflash/config.cfg`
-   and `reset` confirmation prompts are assumed to end in `(y/n)`; check the
-   real prompts and that the switch boots the copied file. Only on a lab switch
-   with console access.
+5. **Replace / rollback** (reboot): prompts confirmed on 9.4 (`copy` to an
+   existing file asks `File [...] already existing, overwrite (y/n) ?`; the
+   driver uses `reset -y`). Still to check: that the switch boots the copied
+   file. Only on a lab switch with console access.
 6. **Log messages in the session** (`logging screen`, switch-wide): the driver
    removes them from every output (`LOG_MESSAGE_RE`). Only the RFC 5424 format
    (`boot config flags syslog-rfc5424-format true`) has been seen; capture a

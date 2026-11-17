@@ -104,21 +104,22 @@ class FakeExtremeFEDevice(BaseTestDouble):
             return action()
         if command.startswith("copy "):
             _, src, dst = command.split()
+            if dst not in self.flash:  # real switch: no output for a new file
+                self.flash[dst] = self.flash[src]
+                return ""
 
             def copy():
                 self.flash[dst] = self.flash[src]
                 return ""
 
             self._pending = copy
-            return f"File {dst} already exists. Overwrite (y/n) ?"
+            return f"File [{dst}] already existing, overwrite (y/n) ? "
         if command == "reset":
-
-            def reset():
-                self.rebooted = True
-                raise OSError("Socket is closed")
-
-            self._pending = reset
-            return "Are you sure you want to reset the switch (y/n) ?"
+            self._pending = None  # real prompt; the driver must not need it
+            return "Are you sure you want to reset the switch (y/n) ? "
+        if command == "reset -y":
+            self.rebooted = True
+            raise OSError("Socket is closed")
         return ""
 
     def send_config_set(self, config_commands, **kwargs):

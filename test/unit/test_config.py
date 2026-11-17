@@ -285,8 +285,7 @@ def test_replace_compare_and_commit(reboot_driver):
         "ls /intflash/napalm_candidate.cfg",
         "copy /intflash/napalm_candidate.cfg /intflash/config.cfg",
         "y",
-        "reset",
-        "y",
+        "reset -y",
     ]
     assert device.flash["/intflash/config.cfg"] == FULL_CONFIG
     assert device.rebooted
@@ -330,8 +329,7 @@ def test_rollback_after_merge(reboot_driver):
         "ls /intflash/napalm_rollback.cfg",
         "copy /intflash/napalm_rollback.cfg /intflash/config.cfg",
         "y",
-        "reset",
-        "y",
+        "reset -y",
     ]
     assert device.flash["/intflash/config.cfg"] == "running config"
     assert device.rebooted

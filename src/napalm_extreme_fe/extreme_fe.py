@@ -665,7 +665,11 @@ class ExtremeFEDriver(NetworkDriver):
             )
 
     def _confirm(self, command: str) -> str:
-        """Run a command and answer its (y/n) confirmation prompt."""
+        """Run a command and answer its (y/n) confirmation prompt.
+
+        e.g. ``copy`` to an existing file asks
+        ``File [/intflash/test2.cfg] already existing, overwrite (y/n) ?``
+        """
         # a log message may arrive after the prompt: remove it before looking
         output = LOG_MESSAGE_RE.sub(
             "", self.device.send_command_timing(command, read_timeout=self.timeout)
@@ -690,7 +694,8 @@ class ExtremeFEDriver(NetworkDriver):
             )
         logger.warning("%s: rebooting to load %s", self.hostname, config_file)
         try:
-            self._confirm("reset")
+            # "-y" skips "Are you sure you want to reset the switch (y/n) ?"
+            self.device.send_command_timing("reset -y", read_timeout=self.timeout)
         except Exception:  # noqa: BLE001 - the session ends when the switch reboots
             pass
         self.close()
