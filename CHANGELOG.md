@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- CI: test on Python 3.15; update GitHub Actions (checkout v7,
+  setup-python v7, upload-artifact v7, download-artifact v8).
+
 ## [0.1.0]
 
 First release. Requires Python 3.10+, NAPALM 5 and Netmiko 4.

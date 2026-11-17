@@ -42,7 +42,7 @@ Run all of them before every commit, and only commit when they pass
   device output (trimming rows is fine, inventing content is not).
 - Values the switch does not report are `-1` / `-1.0` / `""`, never guessed.
 - Do not name hardware models in code or docs; the driver targets the OS.
-- Python 3.10+ (CI tests 3.10 - 3.14).
+- Python 3.10+ (CI tests 3.10 - 3.15).
 
 ## Working with a test switch
 
