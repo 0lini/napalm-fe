@@ -402,6 +402,31 @@ def test_log_message_formats(line):
     assert LOG_MESSAGE_RE.fullmatch(line)
 
 
+def test_log_message_in_the_middle_of_a_line():
+    """A message that interrupts a line is removed and the line is joined again."""
+    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+
+    row = "1/1      192   10GbNone         true  false    1950  00:51:00:ce:20:00 up     up"
+    split = row.index("1950") + 4  # interrupted right after a number
+    output = f"PORT\n{row[:split]}{LOG_LINE}\n{row[split:]}\n1/2      193"
+    assert ExtremeFEDriver._send_command_postprocess(output) == f"PORT\n{row}\n1/2      193"
+
+
+def test_confirm_prompt_followed_by_log_message(reboot_driver):
+    device = reboot_driver.device
+    original = device.send_command_timing
+
+    def noisy(command, **kwargs):
+        output = original(command, **kwargs)
+        return f"{output}\n{LOG_LINE}" if output else output
+
+    device.send_command_timing = noisy
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    reboot_driver.commit_config()
+    reboot_driver.rollback()
+    assert device.rebooted  # both (y/n) prompts were answered
+
+
 def test_config_lines_are_not_log_messages():
     from napalm_extreme_fe.extreme_fe import LOG_MESSAGE_RE
 
