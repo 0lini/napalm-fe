@@ -384,6 +384,24 @@ def test_getter_ignores_log_messages(driver):
     assert driver.get_vlans() == expected
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        # real output (Fabric Engine 9.4 VM), after a config mode prompt and on its own
+        "5520-24T-FabricEngine:1(config)#1 2026-11-17T16:19:52.492Z 5520-24T-FabricEngine "
+        "CP1 - 0x00088544 - 00000000 Mgmt SW INFO ZTP+ discovery started",
+        "1 2026-11-17T16:19:52.495Z 5520-24T-FabricEngine CP1 - 0x00088544 - 00000000 "
+        "Mgmt SW INFO ZTP+ discovery failed -  No DNS server configured.",
+        f"{PROMPT}{LOG_LINE}",
+        LOG_LINE,
+    ],
+)
+def test_log_message_formats(line):
+    from napalm_extreme_fe.extreme_fe import LOG_MESSAGE_RE
+
+    assert LOG_MESSAGE_RE.fullmatch(line)
+
+
 def test_config_lines_are_not_log_messages():
     from napalm_extreme_fe.extreme_fe import LOG_MESSAGE_RE
 

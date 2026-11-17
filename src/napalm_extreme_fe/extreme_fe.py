@@ -37,8 +37,9 @@ NETMIKO_DEVICE_TYPE = next(t for t in NETMIKO_DEVICE_TYPES if t in CLASS_MAPPER)
 # Log messages printed into the session when "logging screen" is enabled
 # (a switch-wide setting the driver does not change), RFC 5424 format:
 # <prompt>1 2026-11-17T16:11:12.756Z <host> CP1 - 0x000305ca - 00000000 GlobalRouter SW INFO ...
+# The prompt may be in any mode, e.g. "switch:1>", "switch:1#", "switch:1(config)#".
 LOG_MESSAGE_RE = re.compile(
-    r"^(?:\S+:\d+[>#])?\s*\d+ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?"
+    r"^(?:\S+:\d+(?:\([^)\s]*\))?[>#])?\s*\d+ \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?"
     r"(?:Z|[+-]\d{2}:?\d{2}) \S+ CP\d+ - 0x[0-9a-fA-F]+ - .*$\n?",
     re.M,
 )
