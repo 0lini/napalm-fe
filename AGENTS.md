@@ -143,11 +143,11 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
 7. **Log messages in the session** (`logging screen`, switch-wide): the driver
    removes them from every output (`LOG_MESSAGE_RE`, RFC 5424 format, and
    `LEGACY_LOG_MESSAGE_RE`, `CP1  [11/17/26 16:41:43.000] ...`, seen while the
-   switch shuts down), as well as the `reset -in` countdown. All of these were
-   seen on the **serial console**; the driver uses SSH. Still to check over
-   SSH: which of them appear at all (e.g. schedule `reset -in 5` and run
-   `show sys-info` a few times, then `reset -cancel`), and whether a switch
-   with `syslog-rfc5424-format false` prints the legacy format.
+   switch shuts down), as well as the `reset -in` countdown. RFC 5424 log
+   lines and the countdown appear identically on the serial console and in
+   SSH sessions; the legacy format was only seen on the serial console. Still
+   to check: whether a switch with `syslog-rfc5424-format false` prints the
+   legacy format in SSH sessions.
 8. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
    prompt / login behaviour has not been tested.
 

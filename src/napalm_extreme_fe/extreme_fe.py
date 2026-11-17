@@ -37,7 +37,7 @@ NETMIKO_DEVICE_TYPE = next(t for t in NETMIKO_DEVICE_TYPES if t in CLASS_MAPPER)
 # Strings that indicate that the CLI rejected a command
 # Log messages printed into the session when "logging screen" is enabled
 # (a switch-wide setting the driver does not change), RFC 5424 format (seen
-# on the serial console; whether SSH sessions get them is not verified yet):
+# on the serial console and in SSH sessions):
 #   1 2026-11-17T16:11:12.756Z <host> CP1 - 0x000305ca - 00000000 GlobalRouter SW INFO ...
 # They arrive asynchronously: on their own line, right after a prompt in any
 # mode ("switch:1>", "switch:1(config)#") or in the middle of a line of
@@ -60,8 +60,8 @@ LEGACY_LOG_MESSAGE_RE = re.compile(
     re.M,
 )
 
-# Countdown of a scheduled reset ("reset -in"), seen on the serial console
-# (not verified for SSH sessions yet):
+# Countdown of a scheduled reset ("reset -in"), printed into the serial
+# console and SSH sessions:
 #           20 seconds remaining until unit resets.
 RESET_COUNTDOWN_RE = re.compile(r"^[ \t]*\d+ seconds? remaining until unit resets\.[ \t]*\n?", re.M)
 
