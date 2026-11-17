@@ -560,3 +560,14 @@ def test_revert_not_for_replace(reboot_driver):
     reboot_driver.load_replace_candidate(config=FULL_CONFIG)
     with pytest.raises(NotImplementedError):
         reboot_driver.commit_config(revert_in=300)
+
+
+def test_confirm_with_unexpected_cancel_output(reboot_driver):
+    from napalm.base.exceptions import CommitConfirmException
+
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    reboot_driver.commit_config(revert_in=300)
+    reboot_driver.device.send_command_timing = lambda command, **kw: "something else"
+    with pytest.raises(CommitConfirmException, match="cancelled"):
+        reboot_driver.confirm_commit()
+    assert reboot_driver.device.commands[-1] != "save config"  # nothing saved

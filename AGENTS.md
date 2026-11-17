@@ -131,9 +131,9 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
 6. **Commit confirm** (`revert_in`): confirmed on 9.4: `reset -in` syntax
    (`d:hh:mm | hh:mm | mm`), its prompt (`Are you sure you want to perform a
    scheduled reset? (y/n) ?`) and `reset -cancel` without a scheduled reset
-   (`Warning! No ongoing scheduled reset!`). Still to capture: the output of a
-   successful `reset -in` and `reset -cancel` (the fake switch uses a
-   placeholder), a command that shows a scheduled reset (then
+   (`Warning! No ongoing scheduled reset!`), successful `reset -in` (no output,
+   only a log message) and `reset -cancel` (`Scheduled reset successfully
+   canceled!`). Still to find: a command that shows a scheduled reset (then
    `has_pending_commit()` can ask the switch, like IOS), and that the switch
    really reboots into the saved config.
 7. **Log messages in the session** (`logging screen`, switch-wide): the driver

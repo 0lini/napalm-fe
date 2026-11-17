@@ -126,7 +126,12 @@ class FakeExtremeFEDevice(BaseTestDouble):
 
             def schedule():
                 self.scheduled_reset = when
-                return ""  # real success output not seen yet
+                # real output (9.4): only a log message after the prompt
+                return (
+                    "1 2026-11-17T16:33:05.861Z 5520-24T-FabricEngine CP1 - 0x0003068e - "
+                    "00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset "
+                    "in 0 days 0 hours 10 minutes!"
+                )
 
             self._pending = schedule
             return "Are you sure you want to perform a scheduled reset? (y/n) ? "
@@ -134,7 +139,11 @@ class FakeExtremeFEDevice(BaseTestDouble):
             if self.scheduled_reset is None:
                 return "Warning! No ongoing scheduled reset!"
             self.scheduled_reset = None
-            return "PLACEHOLDER: real output of a successful cancel not seen yet"
+            return (  # real output (9.4)
+                "Scheduled reset successfully canceled!\n"
+                "1 2026-11-17T16:33:14.081Z 5520-24T-FabricEngine CP1 - 0x0003068f - "
+                "00000000 GlobalRouter SW INFO Scheduled reset canceled!"
+            )
         return ""
 
     def send_config_set(self, config_commands, **kwargs):

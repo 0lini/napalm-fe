@@ -131,8 +131,8 @@ changes.
 
 ```python
 device.load_merge_candidate(config="vlan create 100 type port-mstprstp 0")
-device.commit_config(revert_in=300)   # reboots into the old config in 5 minutes ...
-device.confirm_commit()               # ... unless confirmed
+device.commit_config(revert_in=300)  # reboots into the old config in 5 minutes ...
+device.confirm_commit()  # ... unless confirmed
 ```
 
 ### File transfer

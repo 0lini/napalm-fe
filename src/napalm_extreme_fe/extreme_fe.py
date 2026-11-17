@@ -659,7 +659,8 @@ class ExtremeFEDriver(NetworkDriver):
 
         The switch asks ``Are you sure you want to perform a scheduled reset?
         (y/n) ?``; any other answer than ``y`` aborts with ``Scheduled reset
-        operation aborted!``.
+        operation aborted!``. On success the switch prints nothing itself
+        (only the log message "Scheduled reset enabled! ...").
         """
         output = self._confirm(f"reset -in {revert_time}")
         if self._has_cli_error(output) or re.search(r"aborted", output, re.I):
@@ -687,8 +688,11 @@ class ExtremeFEDriver(NetworkDriver):
                 "No scheduled reset on the switch any more - it may already have "
                 f"reverted the configuration:\n{output.strip()}"
             )
-        if self._has_cli_error(output):
-            raise CommitConfirmException(f"Could not cancel the revert reset:\n{output}")
+        # Fabric Engine 9.4: "Scheduled reset successfully canceled!"
+        if not re.search(r"successfully cancel", output, re.I):
+            raise CommitConfirmException(
+                f"Could not confirm that the revert reset was cancelled:\n{output.strip()}"
+            )
         self._save_config(CommitConfirmException)
 
     def _gen_rollback_cfg(self, exc_class: type = MergeConfigException) -> None:
