@@ -1,0 +1,242 @@
+************************************************************************************
+                Command Execution Time: Tue Nov 17 16:49:45 2026 UTC
+************************************************************************************
+Preparing to Display Configuration...
+#
+# Tue Nov 17 16:49:45 2026 UTC
+# box type             : 5520-24T-FabricEngine
+# software version     : 9.4.0.0
+# cli mode             : ECLI
+#
+
+#Card Info :
+
+#  Slot 1 :
+#       CardType          : 5520-24T-FabricEngine
+#       CardDescription   : 5520-24T-FabricEngine
+#       CardSerial#       : SIMD109-0000
+#       CardPart#         : DSGDPM624
+#       CardAssemblyDate  :
+#       CardHWRevision    : 1
+#       CardHWConfig      :
+#       AdminStatus       : up
+#       OperStatus        : up
+
+#
+#!end
+#
+config terminal
+
+#
+# BOOT CONFIGURATION
+#
+
+boot config flags advanced-feature-bandwidth-reservation vim
+boot config flags sshd
+#boot config sio console baud 115200 1
+# end boot flags
+
+#
+# SPBM CONFIGURATION
+#
+
+spbm
+spbm ethertype 0x8100
+
+#
+# CLI CONFIGURATION
+#
+
+password hash sha2
+
+#
+# SYSTEM CONFIGURATION
+#
+
+no autotopology
+
+#
+# SSH CONFIGURATION
+#
+
+ssh
+
+#
+# SNMP V3 GLOBAL CONFIGURATION
+#
+
+
+#
+# VRF CONFIGURATION
+#
+
+ip vrf blue vrfid 1
+
+#
+# ISIS SPBM CONFIGURATION
+#
+
+router isis
+exit
+
+#
+# GLOBAL AUTO-SENSE CONFIGURATION - PHASE I
+#
+
+auto-sense auto-mlt enable
+
+#
+# VLAN CONFIGURATION
+#
+
+vlan members remove 1 1/1-1/26 portmember
+vlan create 10 name "Users" type port-mstprstp 0
+interface Vlan 10
+ip address 192.0.2.1 255.255.255.0 1
+ipv6 interface mac-offset 1
+ipv6 interface enable
+ipv6 interface address 2001:db8:10:0:0:0:0:1/64
+
+exit
+vlan create 4048 name "onboarding-vlan" type pvlan-mstprstp 0 secondary 4049
+vlan i-sid 4048 15999999
+
+#
+# NLS CONFIGURATION
+#
+
+mgmt oob
+enable
+exit
+mgmt vlan 4048
+mac-offset 0
+enable
+exit
+mgmt dhcp-client cycle
+
+#
+# PTP CONFIGURATION
+#
+
+ptp enable
+
+#
+# PORT CONFIGURATION - PHASE II
+#
+
+interface GigabitEthernet 1/1
+auto-sense enable
+name "uplink test"
+no shutdown
+exit
+interface GigabitEthernet 1/2
+auto-sense enable
+no shutdown
+exit
+
+#
+# ISIS CONFIGURATION
+#
+
+router isis
+is-type l1
+exit
+router isis enable
+
+#
+# QOS CONFIGURATION - PHASE II
+#
+
+qos queue-profile 1 member add 1/1-1/26
+
+#
+# CFM CONFIGURATION - PHASE II
+#
+
+cfm spbm enable
+
+#
+# NTP CONFIGURATION
+#
+
+no ntp
+
+#
+#  OSPF CONFIGURATION - GlobalRouter
+#
+
+router ospf
+exit
+
+#
+# IPV6 RIPng CONFIGURATION
+#
+
+router rip
+exit
+
+#
+# I-SID NAME CONFIGURATION
+#
+
+i-sid name 15999999 "Onboarding I-SID"
+
+#
+# GLOBAL AUTO-SENSE CONFIGURATION - PHASE II
+#
+
+no auto-sense guest-isid enable
+auto-sense onboarding i-sid 15999999
+
+#
+# MACSEC CONFIGURATION
+#
+
+# GLOBAL MACSec CA Configured
+
+
+# GLOBAL MACsec Keychain Configured
+
+
+
+#
+# ISIS MULTI-AREA CONFIGURATION
+#
+
+router isis
+exit
+
+
+
+#
+# NODE ALIAS CONFIGURATION
+#
+
+
+
+end
+
+
+
+#
+# IP REDISTRIBUTE APPLY CONFIGURATIONS
+
+#
+#
+
+
+#
+# IP ECMP APPLY CONFIGURATIONS
+
+
+
+#
+# IP MULTI-AREA APPLY CONFIGURATIONS
+#
+
+
+
+
+#
+# ISIS MULTI-AREA APPLY CONFIGURATIONS
+#

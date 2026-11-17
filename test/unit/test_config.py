@@ -772,3 +772,18 @@ def test_merge_fails_on_error_without_percent(driver):
     )
     with pytest.raises(MergeConfigException, match="already exists"):
         driver.commit_config()
+
+
+def test_get_config_without_saved_config(driver):
+    """Real output of a switch that never saved its configuration (9.4 VM)."""
+    original = driver.device.send_command
+
+    def send_command(command, **kwargs):
+        if command.startswith("more "):
+            return 'Can\'t open "/intflash/config.cfg" 0x2 to read'
+        return original(command, **kwargs)
+
+    driver.device.send_command = send_command
+    config = driver.get_config()
+    assert config["startup"] == ""
+    assert config["running"]

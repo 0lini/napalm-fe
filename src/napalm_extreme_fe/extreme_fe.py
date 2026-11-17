@@ -479,9 +479,12 @@ class ExtremeFEDriver(NetworkDriver):
             command = "show running-config verbose" if full else "show running-config"
             config["running"] = self._clean_config(self._send_command(command))
         if retrieve in ("all", "startup"):
-            config["startup"] = self._clean_config(
-                self._send_command(f"more {self.startup_config_file}")
-            )
+            startup = self._send_command(f"more {self.startup_config_file}")
+            # no saved configuration (e.g. a new switch), Fabric Engine 9.4:
+            # Can't open "/intflash/config.cfg" 0x2 to read
+            if re.match(r"\s*Can't open ", startup):
+                startup = ""
+            config["startup"] = self._clean_config(startup)
         if sanitized:
             return sanitize_configs(config, SANITIZE_FILTERS)
         return config
