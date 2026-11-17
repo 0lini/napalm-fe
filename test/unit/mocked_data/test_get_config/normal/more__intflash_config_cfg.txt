@@ -1,0 +1,17 @@
+#
+# Mon Nov 16 08:00:00 2026 UTC
+# box type             : 5520-24T
+# software version     : 9.0.0.0_B020
+# cli mode             : ECLI
+#
+
+config terminal
+
+snmp-server community "public" index first secname readgrp
+snmp-server community "s3cr3t" index second secname v1v2grp
+prompt "FE-SW1"
+ntp server 10.0.0.10
+ntp
+radius server host 10.0.0.50 key "radiuskey"
+vlan create 10 name "Users" type port-mstprstp 0
+end

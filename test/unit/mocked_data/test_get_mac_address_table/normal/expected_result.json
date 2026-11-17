@@ -1,0 +1,38 @@
+[
+    {
+        "mac": "00:50:56:aa:bb:cc",
+        "interface": "1/3",
+        "vlan": 10,
+        "static": false,
+        "active": true,
+        "moves": -1,
+        "last_move": -1.0
+    },
+    {
+        "mac": "00:51:00:ce:20:81",
+        "interface": "",
+        "vlan": 10,
+        "static": true,
+        "active": true,
+        "moves": -1,
+        "last_move": -1.0
+    },
+    {
+        "mac": "00:50:56:11:22:33",
+        "interface": "1/1",
+        "vlan": 20,
+        "static": false,
+        "active": true,
+        "moves": -1,
+        "last_move": -1.0
+    },
+    {
+        "mac": "00:50:56:ab:cd:ef",
+        "interface": "1/4",
+        "vlan": 20,
+        "static": true,
+        "active": true,
+        "moves": -1,
+        "last_move": -1.0
+    }
+]

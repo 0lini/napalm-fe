@@ -1,0 +1,65 @@
+[
+    {
+        "mac": "00:01:3e:07:72:40",
+        "interface": "1/56",
+        "vlan": 865,
+        "static": false,
+        "active": true,
+        "moves": -1,
+        "last_move": -1.0
+    },
+    {
+        "mac": "00:01:3e:30:5e:b2",
+        "interface": "1/1",
+        "vlan": 865,
+        "static": false,
+        "active": true,
+        "moves": -1,
+        "last_move": -1.0
+    },
+    {
+        "mac": "00:50:56:51:cd:29",
+        "interface": "1/56",
+        "vlan": 1006,
+        "static": false,
+        "active": true,
+        "moves": -1,
+        "last_move": -1.0
+    },
+    {
+        "mac": "ac:4d:d9:4a:e1:00",
+        "interface": "1/56",
+        "vlan": 4048,
+        "static": false,
+        "active": true,
+        "moves": -1,
+        "last_move": -1.0
+    },
+    {
+        "mac": "02:00:10:01:00:00",
+        "interface": "1/56",
+        "vlan": 4051,
+        "static": true,
+        "active": true,
+        "moves": -1,
+        "last_move": -1.0
+    },
+    {
+        "mac": "09:00:2b:00:00:05",
+        "interface": "cpp",
+        "vlan": 4051,
+        "static": true,
+        "active": true,
+        "moves": -1,
+        "last_move": -1.0
+    },
+    {
+        "mac": "e2:00:49:ff:ff:ff",
+        "interface": "cpp",
+        "vlan": 4052,
+        "static": true,
+        "active": true,
+        "moves": -1,
+        "last_move": -1.0
+    }
+]

@@ -1,0 +1,14 @@
+************************************************************************************
+                Command Execution Time: Tue Nov 17 11:10:57 2026 CET
+************************************************************************************
+
+==============================================================================================================
+                                                  Port Name
+==============================================================================================================
+PORT                                                                OPERATE  OPERATE  OPERATE
+NUM      NAME                                   DESCRIPTION         STATUS   DUPLEX   SPEED    VLAN
+--------------------------------------------------------------------------------------------------------------
+1/1      Default settings for auto-sense port   1000BaseTX          up       full     100      Tagged
+1/2      Default settings for auto-sense port   1000BaseTX          down     half     0        Access
+1/52     Default settings for auto-sense port   10GbNone            down     full     0        Access
+1/56     Default settings for auto-sense port   10GbCX              up       full     10000    Tagged
