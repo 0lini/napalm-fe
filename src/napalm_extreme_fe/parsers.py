@@ -944,3 +944,35 @@ def replace_diff(running_config: str, candidate: str) -> str:
         _config_lines(running_config), _config_lines(candidate), lineterm="", n=0
     )
     return "\n".join(line for line in diff if not line.startswith(("---", "+++", "@@")))
+
+
+LOG_ENTRY_RE = re.compile(
+    r"^\s*1 (?P<time>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)(?:Z|[+-]\d{2}:?\d{2})? "
+    r"\S+ \S+ - (?P<code>0x[0-9a-fA-F]+) - \S+ (?P<message>.*)$"
+)
+
+
+def parse_log_entries(output: str) -> List[Tuple[datetime, str, str]]:
+    """Parse ``show logging file`` output (RFC 5424 format).
+
+    Returns ``(timestamp, event code, message)`` tuples in the order of the
+    output (``event-code`` filters list the oldest entry first, ``tail`` the
+    newest first).
+    """
+    entries: List[Tuple[datetime, str, str]] = []
+    for line in output.splitlines():
+        match = LOG_ENTRY_RE.match(line)
+        if not match:
+            continue
+        timestamp = datetime.strptime(match.group("time")[:19], "%Y-%m-%dT%H:%M:%S")
+        fraction = match.group("time")[20:]
+        if fraction:
+            timestamp = timestamp.replace(microsecond=int(fraction.ljust(6, "0")[:6]))
+        entries.append((timestamp, match.group("code").lower(), match.group("message")))
+    return entries
+
+
+def latest_log_time(output: str) -> Optional[datetime]:
+    """Timestamp of the newest entry in ``show logging file`` output."""
+    times = [entry[0] for entry in parse_log_entries(output)]
+    return max(times) if times else None

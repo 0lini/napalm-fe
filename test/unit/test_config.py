@@ -16,6 +16,12 @@ def driver():
     return driver
 
 
+LOG_QUERIES = [
+    "show logging file event-code 0x0003068e",
+    "show logging file event-code 0x0003068f",
+    "show logging file event-code 0x00034594",
+]
+
 CONFIG = """
 # comment
 interface gigabitEthernet 1/2
@@ -327,6 +333,7 @@ def test_rollback_after_merge(reboot_driver):
 
     reboot_driver.rollback()
     assert device.commands == [
+        *LOG_QUERIES,  # is a revert pending? (no)
         "ls /intflash/napalm_rollback.cfg",
         "copy /intflash/napalm_rollback.cfg /intflash/config.cfg",
         "y",
@@ -494,6 +501,7 @@ def test_commit_with_revert_and_confirm(reboot_driver):
     reboot_driver.commit_config(revert_in=300)
     # saved before the change, reset scheduled before applying, not saved after
     assert device.commands == [
+        *LOG_QUERIES,  # no other revert pending
         "save config file /intflash/napalm_rollback.cfg",
         "save config",
         "reset -in 5",
@@ -596,3 +604,75 @@ def test_log_display_commands_keep_log_lines(driver, command):
 def test_other_commands_drop_log_lines(driver):
     driver.device.send_command = lambda cmd, **kw: f"VLAN    PORT\n{LOG_LINE}\n1       1/1"
     assert driver.cli(["show vlan members"])["show vlan members"] == "VLAN    PORT\n1       1/1"
+
+
+# --- pending revert from the switch log (real Fabric Engine 9.4 VM output) --
+
+SCHEDULED = """\
+1 2026-11-17T16:33:05.861Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 10 minutes!
+1 2026-11-17T16:33:44.223Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 10 minutes!
+1 2026-11-17T16:34:55.339Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 10 minutes!
+1 2026-11-17T16:36:19.303Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 10 minutes!
+"""
+CANCELED = """\
+1 2026-11-17T16:33:14.081Z 5520-24T-FabricEngine CP1 - 0x0003068f - 00000000 GlobalRouter SW INFO Scheduled reset canceled!
+1 2026-11-17T16:34:17.781Z 5520-24T-FabricEngine CP1 - 0x0003068f - 00000000 GlobalRouter SW INFO Scheduled reset canceled!
+1 2026-11-17T16:35:36.193Z 5520-24T-FabricEngine CP1 - 0x0003068f - 00000000 GlobalRouter SW INFO Scheduled reset canceled!
+"""
+BOOT = """\
+1 2026-11-17T15:51:41.628Z 5520-24T-FabricEngine CP1 - 0x00034594 - 00000000 GlobalRouter SW INFO System boot
+"""
+
+
+def _log_switch(driver, scheduled, canceled, boot):
+    outputs = {"0x0003068e": scheduled, "0x0003068f": canceled, "0x00034594": boot}
+    driver.device.send_command = lambda cmd, **kw: outputs[cmd.split()[-1]]
+
+
+def test_pending_from_real_log(driver):
+    # the newest "enabled" (16:36:19) is newer than the newest cancel (16:35:36)
+    _log_switch(driver, SCHEDULED, CANCELED, BOOT)
+    assert driver.has_pending_commit()
+
+
+def test_not_pending_after_cancel(driver):
+    cancel = CANCELED + CANCELED.splitlines()[-1].replace("16:35:36", "16:37:00") + "\n"
+    _log_switch(driver, SCHEDULED, cancel, BOOT)
+    assert not driver.has_pending_commit()
+
+
+def test_not_pending_after_reboot(driver):
+    # the timer expired: the switch rebooted after the reset was scheduled
+    boot = BOOT.replace("15:51:41", "16:46:30")
+    _log_switch(driver, SCHEDULED, CANCELED, boot)
+    assert not driver.has_pending_commit()
+
+
+def test_not_pending_without_entries(driver):
+    _log_switch(driver, "", "", BOOT)
+    assert not driver.has_pending_commit()
+
+
+def test_confirm_commit_of_another_session(reboot_driver):
+    """A pending revert scheduled by another session is found in the log."""
+    device = reboot_driver.device
+    device.scheduled_reset = "5"
+    device._log("0x0003068e", "GlobalRouter SW INFO Scheduled reset enabled! ...")
+    assert not reboot_driver.pending_revert
+    reboot_driver.confirm_commit()
+    assert device.commands[-2:] == ["reset -cancel", "save config"]
+
+
+def test_parse_log_entries():
+    from datetime import datetime
+
+    from napalm_extreme_fe import parsers
+
+    entries = parsers.parse_log_entries(SCHEDULED)
+    assert entries[0] == (
+        datetime(2026, 11, 17, 16, 33, 5, 861000),
+        "0x0003068e",
+        "GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 10 minutes!",
+    )
+    assert parsers.latest_log_time(SCHEDULED) == datetime(2026, 11, 17, 16, 36, 19, 303000)
+    assert parsers.latest_log_time("") is None

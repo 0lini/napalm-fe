@@ -54,6 +54,11 @@ LOG_MESSAGE_RE = re.compile(
 # filter above must not be applied to them.
 LOG_DISPLAY_COMMAND_RE = re.compile(r"^\s*show\s+log", re.I)
 
+# Log event codes (Fabric Engine 9.4) used to find a scheduled reset
+EVENT_RESET_SCHEDULED = "0x0003068e"  # Scheduled reset enabled! Unit will reset in ...
+EVENT_RESET_CANCELED = "0x0003068f"  # Scheduled reset canceled!
+EVENT_SYSTEM_BOOT = "0x00034594"  # System boot
+
 CLI_ERROR_PATTERNS = (
     r"% Invalid input",
     r"% Incomplete command",
@@ -596,7 +601,7 @@ class ExtremeFEDriver(NetworkDriver):
         """
         if message:
             raise NotImplementedError("Commit message not implemented for this platform")
-        if self.pending_revert:
+        if self.pending_revert or (revert_in is not None and self._reset_scheduled_on_switch()):
             raise CommitConfirmException("A commit is waiting for confirm_commit() or rollback()")
         revert_time = None
         if revert_in is not None:
@@ -676,17 +681,37 @@ class ExtremeFEDriver(NetworkDriver):
         self.pending_revert = True
         logger.info("%s: revert reset scheduled in %s", self.hostname, revert_time)
 
-    def has_pending_commit(self) -> bool:
-        """Whether a commit with ``revert_in`` waits for confirmation.
+    def _reset_scheduled_on_switch(self) -> bool:
+        """Read the switch's log to find out whether a reset is scheduled.
 
-        Fabric Engine has no command to show a scheduled reset (known so far),
-        so this is tracked by the driver instance that made the commit.
+        Fabric Engine has no command that shows a scheduled reset, but logs
+        scheduling, cancelling and booting. A reset is pending if the newest
+        "Scheduled reset enabled" entry is newer than the newest "Scheduled
+        reset canceled" and "System boot" entries (an expired timer reboots
+        the switch, which logs "System boot").
         """
-        return self.pending_revert
+        latest = {}
+        for code in (EVENT_RESET_SCHEDULED, EVENT_RESET_CANCELED, EVENT_SYSTEM_BOOT):
+            latest[code] = parsers.latest_log_time(
+                self._send_command(f"show logging file event-code {code}")
+            )
+        scheduled = latest[EVENT_RESET_SCHEDULED]
+        if scheduled is None:
+            return False
+        others = [t for c, t in latest.items() if c != EVENT_RESET_SCHEDULED and t]
+        return all(scheduled > other for other in others)
+
+    def has_pending_commit(self) -> bool:
+        """Whether a reset is scheduled on the switch (like IOS, asks the switch).
+
+        Reads the switch's log (see ``_reset_scheduled_on_switch``), so a
+        commit with ``revert_in`` made by another session is found too.
+        """
+        return self._reset_scheduled_on_switch()
 
     def confirm_commit(self) -> None:
         """Cancel the scheduled revert reset and save the configuration."""
-        if not self.pending_revert:
+        if not (self.pending_revert or self._reset_scheduled_on_switch()):
             raise CommitConfirmException("No pending configuration")
         output = self.device.send_command_timing("reset -cancel", read_timeout=self.timeout)
         output = LOG_MESSAGE_RE.sub("", output)
@@ -805,7 +830,7 @@ class ExtremeFEDriver(NetworkDriver):
         that commit (like IOS ``configure revert now``).
         """
         self._check_reboot_allowed("rollback()")
-        if self.pending_revert:
+        if self.pending_revert or self._reset_scheduled_on_switch():
             logger.warning("%s: reverting the pending commit now (reboot)", self.hostname)
             self.pending_revert = False
             self._reboot()

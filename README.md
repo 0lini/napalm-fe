@@ -94,7 +94,7 @@ the boot configuration and reboot the switch.
 | `compare_config`         | Merge: incremental diff against the running config (`+line` added, `-line` removed by `no ...`, configured lines omitted). Replace: `-`/`+` for every differing line |
 | `commit_config`          | Saves the running config to `rollback_cfg` first (like IOS), then applies the candidate, see below. `revert_in` see [Commit confirm](#commit-confirm-revert_in); `message` is not supported |
 | `confirm_commit`         | Cancels the scheduled revert reset and saves the configuration |
-| `has_pending_commit`     | Whether a `revert_in` commit waits for `confirm_commit()` (tracked by the driver instance) |
+| `has_pending_commit`     | Whether a reset is scheduled on the switch, read from the switch log (like IOS, also finds a commit made by another session) |
 | `discard_config`         | Drops the candidate |
 | `rollback`               | Installs `rollback_cfg` as the boot configuration and reboots; while a `revert_in` commit is pending it reverts that commit now (`reset -y`). Needs `allow_reboot=True` |
 
