@@ -30,6 +30,19 @@ All notable changes to this project are documented here. The format follows
   before every commit (not only with `config_method="file"`).
 - CI: test on Python 3.15; update GitHub Actions (checkout v7,
   setup-python v7, upload-artifact v7, download-artifact v8).
+- `config_method="file"` runs the candidate with `source <file> debug`: without
+  `debug` the switch prints nothing for a rejected line, so the merge seemed to
+  succeed.
+
+### Fixed
+
+- Every commit after the first one failed: `save config file` asks before
+  overwriting the existing `rollback_cfg` (`... already existing, overwrite
+  (y/n) ?`); the driver now answers it and waits for the save to finish.
+- `ExtremeFEFileTransfer` uploads failed with `No response from server`: the
+  switch writes the file but closes the SCP channel without the final
+  acknowledgement (Fabric Engine 8.10, 9.3). This error is ignored, the upload
+  is verified by size and MD5 as before.
 
 ## [0.1.0]
 

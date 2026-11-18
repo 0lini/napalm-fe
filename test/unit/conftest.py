@@ -1,5 +1,6 @@
 """Test fixtures for the NAPALM getter tests (mocked device)."""
 
+import re
 from datetime import datetime, timedelta
 
 import pytest
@@ -96,15 +97,34 @@ class FakeExtremeFEDevice(BaseTestDouble):
     def write_channel(self, data):
         pass
 
+    def find_prompt(self, *args, **kwargs):
+        return "5520-24T-FabricEngine:1#"
+
     def send_command(self, command, **kwargs):
         self.commands.append(command)
+        if command == "y" and self._pending:
+            action, self._pending = self._pending, None
+            return action()
+        if self._pending:  # real switch: any other answer aborts
+            self._pending = None
+            return ""
         if command.startswith("save config file "):
             path = command.split()[-1]
-            self.flash[path] = "running config"
-            return (
-                f"CP-1: Save config to file {path} successful.\n"
-                'WARNING: Choice Primary Node Config file is "/intflash/config.cfg".'
-            )
+
+            def save():
+                self.flash[path] = "running config"
+                return (
+                    f"CP-1: Save config to file {path} successful.\n"
+                    'WARNING: Choice Primary Node Config file is "/intflash/config.cfg".'
+                )
+
+            if path not in self.flash:
+                return save()
+            self._pending = save
+            question = f"File [{path}] already existing, overwrite (y/n) ? "  # real (9.3)
+            # the driver must wait for it with expect_string, not for the prompt
+            assert re.search(kwargs.get("expect_string", "^$"), question)
+            return question
         if command.startswith("dir ") and command.endswith(" -l"):
             directory = command.split()[1].rstrip("/")
             lines = [
@@ -132,6 +152,9 @@ class FakeExtremeFEDevice(BaseTestDouble):
         if command == "y" and self._pending:
             action, self._pending = self._pending, None
             return action()
+        if self._pending:  # real switch: any other answer aborts
+            self._pending = None
+            return ""
         if command.startswith("copy "):
             _, src, dst = command.split()
             if dst not in self.flash:  # real switch: no output for a new file

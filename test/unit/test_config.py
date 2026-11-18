@@ -1,5 +1,7 @@
 """Tests for the configuration management workflow."""
 
+import re
+
 import pytest
 from napalm.base.exceptions import MergeConfigException, ReplaceConfigException
 from netmiko.exceptions import ConfigInvalidException
@@ -185,7 +187,7 @@ def test_file_method_upload_and_commit(file_driver):
     file_driver.commit_config()
     assert file_driver.device.commands[-3:] == [
         "save config file /intflash/napalm_rollback.cfg",
-        "source /intflash/napalm_merge.cfg",
+        "source /intflash/napalm_merge.cfg debug",
         "save config",
     ]
     assert file_driver.device.sent_config == []  # nothing sent line by line
@@ -256,6 +258,18 @@ def test_merge_saves_rollback_file_first(driver):
     assert driver.device.commands[0] == "save config file /intflash/napalm_rollback.cfg"
     assert "/intflash/napalm_rollback.cfg" in driver.device.flash
     assert driver.device.sent_config == ["ntp server 192.0.2.99"]
+
+
+def test_second_commit_overwrites_rollback_file(driver):
+    # the rollback file exists from the first commit: the switch asks before
+    # overwriting it (Fabric Engine 9.3) and aborts on any answer but "y"
+    driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    driver.commit_config()
+    driver.load_merge_candidate(config="ntp server 192.0.2.98")
+    driver.commit_config()
+    assert driver.device.commands.count("save config file /intflash/napalm_rollback.cfg") == 2
+    assert driver.device.commands.count("y") == 1
+    assert driver.device.sent_config == ["ntp server 192.0.2.99", "ntp server 192.0.2.98"]
 
 
 def test_merge_aborts_if_rollback_file_fails(driver):
@@ -476,7 +490,56 @@ def test_file_method_real_source_output(file_driver):
     file_driver.device.send_command = send_command
     file_driver.load_merge_candidate(config='snmp-server location "napalm-test"')
     file_driver.commit_config()
-    assert file_driver.device.commands[-2:] == ["source /intflash/napalm_merge.cfg", "save config"]
+    assert file_driver.device.commands[-2:] == [
+        "source /intflash/napalm_merge.cfg debug",
+        "save config",
+    ]
+
+
+# Real output of "source /intflash/napalm_merge.cfg debug" (Fabric Engine 9.3 VM,
+# TestExtremeFEDriver.py) as Netmiko returns it: echo and final prompt removed.
+# Without "debug" the switch prints nothing, also for the rejected line.
+SOURCE_DEBUG_TYPO = """\
+
+5520-24T-FabricEngine:1#config terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+5520-24T-FabricEngine:1(config)#snmp-server location "napalm-test"
+5520-24T-FabricEngine:1(config)#asdasda
+                                 ^
+% Invalid input detected at '^' marker.
+5520-24T-FabricEngine:1(config)#end
+"""
+
+SOURCE_DEBUG_GOOD = """\
+
+5520-24T-FabricEngine:1#config terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+5520-24T-FabricEngine:1(config)#snmp-server location "napalm-test"
+5520-24T-FabricEngine:1(config)#end
+"""
+
+
+@pytest.mark.parametrize("output, fails", [(SOURCE_DEBUG_TYPO, True), (SOURCE_DEBUG_GOOD, False)])
+def test_file_method_source_debug_output(file_driver, output, fails):
+    original = file_driver.device.send_command
+
+    def send_command(command, **kwargs):
+        if command.startswith("source "):
+            # the echo contains the prompt: only the prompt at the end may match
+            assert not re.search(kwargs["expect_string"], output)
+            assert re.search(kwargs["expect_string"], output + "5520-24T-FabricEngine:1#")
+            return output
+        return original(command, **kwargs)
+
+    file_driver.device.send_command = send_command
+    file_driver.load_merge_candidate(config='snmp-server location "napalm-test"\nasdasda')
+    if fails:
+        with pytest.raises(MergeConfigException, match="Invalid input"):
+            file_driver.commit_config()
+        assert "save config" not in file_driver.device.commands
+    else:
+        file_driver.commit_config()
+        assert file_driver.device.commands[-1] == "save config"
 
 
 # --- commit confirm (revert_in), like Site Engine: scheduled reset ----------

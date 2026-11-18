@@ -280,6 +280,38 @@ class ExtremeFEDriver(NetworkDriver):
         if not self._save_successful(output):
             raise exc_class(f"Saving the configuration failed:\n{output}")
 
+    def _save_config_file(self, path: str) -> str:
+        """Save the running configuration to ``path`` (``save config file``).
+
+        If the file exists the switch asks
+        ``File [/intflash/napalm_rollback.cfg] already existing, overwrite (y/n) ?``
+        (Fabric Engine 9.3); any answer but ``y`` aborts the save. Saving takes
+        a few seconds, so this waits for the prompt, not for the output to settle.
+        """
+        prompt = re.escape(self.device.find_prompt())
+        output = self._send_command(f"save config file {path}", expect_string=rf"\(y/n\)|{prompt}")
+        if re.search(r"\(y/n\)", output):
+            output += "\n" + self._send_command("y", expect_string=prompt, cmd_verify=False)
+        return output
+
+    def _source_file(self, path: str) -> str:
+        """Run the configuration file ``path`` on the switch (``source <file> debug``).
+
+        Without ``debug`` the switch prints nothing, not even for a rejected
+        line; ``stop`` (stop on error) is silent as well and cannot be combined
+        with ``debug`` (Fabric Engine 8.10, 9.3). With ``debug`` every line is
+        echoed after a prompt (``5520-24T-FabricEngine:1(config)#asdasda``)
+        followed by its error (``% Invalid input detected at '^' marker.``);
+        the following lines are still run. As the echo contains the prompt,
+        this waits for the prompt at the end of the output.
+        """
+        prompt = re.escape(self.device.find_prompt())
+        return self._send_command(
+            f"source {path} debug",
+            expect_string=rf"{prompt}\s*$",
+            read_timeout=max(self.timeout, 120),
+        )
+
     @staticmethod
     def _send_command_postprocess(output: str, remove_log_messages: bool = True) -> str:
         """Remove CLI noise from command output (like the IOS driver).
@@ -794,8 +826,7 @@ class ExtremeFEDriver(NetworkDriver):
 
     def _gen_rollback_cfg(self, exc_class: type = MergeConfigException) -> None:
         """Save the running config to ``rollback_cfg`` (like the IOS driver)."""
-        cmd = f"save config file {self._gen_full_path(self.rollback_cfg)}"
-        output = self._send_command(cmd)
+        output = self._save_config_file(self._gen_full_path(self.rollback_cfg))
         if not self._save_successful(output):
             raise exc_class(f"Could not save the rollback configuration:\n{output}")
 
@@ -827,8 +858,7 @@ class ExtremeFEDriver(NetworkDriver):
         )
 
     def _commit_from_file(self) -> None:
-        cmd = f"source {self._gen_full_path(self.merge_cfg)}"
-        output = self._send_command(cmd, read_timeout=max(self.timeout, 120))
+        output = self._source_file(self._gen_full_path(self.merge_cfg))
         if self._has_cli_error(output):
             raise self._merge_failed(output)
 

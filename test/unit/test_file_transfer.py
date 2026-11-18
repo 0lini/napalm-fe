@@ -3,6 +3,7 @@
 import hashlib
 
 import pytest
+from scp import SCPException
 
 from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer, parse_dir, parse_dir_free
 
@@ -25,6 +26,21 @@ DIR_INTFLASH = """\
     9852    Nov-17-2026  16:28   /intflash/test2.cfg
 total: 6260543488       used: 202092544         free: 6058450944        bytes
 """
+
+# Real output of "dir /intflash -l" (Fabric Engine 8.10.1 VM, trimmed): trailing
+# blanks after the names, tabs in the last line
+DIR_INTFLASH_8_10 = (
+    "\n"
+    "       -------- INTFLASH --------\n"
+    "  size          date       time       name\n"
+    "--------       ------     ------    --------\n"
+    "    4096    Nov-17-2026  18:55   /intflash/openapi        <DIR>\n"
+    "    6187    Nov-17-2026  18:55   /intflash/log_of.txt.1        \n"
+    "    9547    Nov-18-2026  18:36   /intflash/napalm_rollback.cfg      \n"
+    "      44    Nov-18-2026  18:37   /intflash/napalm_merge.cfg      \n"
+    "       0    Nov-17-2026  18:54   /intflash/perflog.txt         \n"
+    "total: 6286004224 \tused: 231542784 \tfree: 6054461440 \tbytes\n"
+)
 
 MD5_OUTPUT = "MD5 (/intflash/config.cfg) = 5a922729bc0fa85437e7e3b8c339ea34\n"
 
@@ -67,11 +83,51 @@ def test_parse_dir():
     assert parse_dir_free("") is None
 
 
+def test_parse_dir_8_10():
+    entries = parse_dir(DIR_INTFLASH_8_10)
+    assert entries["/intflash/napalm_merge.cfg"] == {"size": 44, "is_dir": False}
+    assert entries["/intflash/perflog.txt"] == {"size": 0, "is_dir": False}
+    assert entries["/intflash/openapi"]["is_dir"] is True
+    assert len(entries) == 5
+    assert parse_dir_free(DIR_INTFLASH_8_10) == 6054461440
+
+
+class FakeSCPConn:
+    def __init__(self, error=None):
+        self.error = error
+        self.closed = False
+
+    def scp_transfer_file(self, source_file, dest_file):
+        if self.error:
+            raise self.error
+
+    def close(self):
+        self.closed = True
+
+
+def test_put_file_without_final_ack(local_file):
+    """Fabric Engine 8.10 / 9.3 write the file but do not acknowledge it."""
+    transfer = ExtremeFEFileTransfer(FakeConn(), source_file=local_file, dest_file="a.cfg")
+    transfer.scp_conn = FakeSCPConn(SCPException("No response from server"))
+    transfer.put_file()  # no error: verify_file() checks the result
+    assert transfer.scp_conn.closed
+
+
+def test_put_file_other_scp_errors_raise(local_file):
+    transfer = ExtremeFEFileTransfer(FakeConn(), source_file=local_file, dest_file="a.cfg")
+    transfer.scp_conn = FakeSCPConn(SCPException("scp: /intflash/a.cfg: Permission denied"))
+    with pytest.raises(SCPException, match="Permission denied"):
+        transfer.put_file()
+
+
 def test_process_md5_real_output():
     assert ExtremeFEFileTransfer.process_md5(MD5_OUTPUT) == "5a922729bc0fa85437e7e3b8c339ea34"
     # Fabric Engine 9.4 VM, test1.cfg from DIR_INTFLASH
     vm_output = "MD5 (/intflash/test1.cfg) = 1ea7d1fb127766a9b2b25e86e46ed21d\n"
     assert ExtremeFEFileTransfer.process_md5(vm_output) == "1ea7d1fb127766a9b2b25e86e46ed21d"
+    # Fabric Engine 8.10.1 VM, napalm_merge.cfg from DIR_INTFLASH_8_10
+    output_8_10 = "MD5 (/intflash/napalm_merge.cfg) = 1e91b642c02c9edee13ef1c8c237082e\n"
+    assert ExtremeFEFileTransfer.process_md5(output_8_10) == "1e91b642c02c9edee13ef1c8c237082e"
 
 
 def test_file_exists_size_and_md5(local_file):

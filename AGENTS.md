@@ -33,7 +33,8 @@ Run all of them before every commit, and only commit when they pass
   allows it: IOS (`napalm/ios/ios.py`) for the CLI workflow and NX-OS
   (`napalm/nxos/nxos.py`, `nxos_ssh`) for the structure. Like NX-OS, all
   transport specific code is in a few primitives (`open`, `close`, `is_alive`,
-  `_send_command`, `_send_command_timing`, `_send_config`, `_copy_run_start`)
+  `_send_command`, `_send_command_timing`, `_send_config`, `_copy_run_start`,
+  `_save_config_file`, `_source_file`)
   so that a second transport (OpenAPI, see below) only implements those; the
   `transport` option itself follows the EOS driver. Known deviations: a failed
   merge is not rolled back automatically (rollback reboots the switch). IOS and
@@ -124,12 +125,32 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below,
 `save config file`, `show running-config | include`, SCP,
 `terminal more disable` (sent by Netmiko at login; accepted without output).
 
-1. **`config_method="file"` end to end**: on success `source <file>` prints
-   nothing (only log messages, seen on 9.4 when run in config mode). Still to
-   check: the output for a rejected line, that it works from privileged EXEC
-   mode (where the driver runs it), and whether the `config terminal` / `end`
-   wrapper the driver adds is needed. Run `TestExtremeFEDriver.py` (step 5)
-   and add the raw output to a unit test in `test_config.py`.
+Confirmed on the Fabric Engine 8.10.1 and 9.3 VMs (GNS3 images of Extreme,
+both report as `5520-24T-FabricEngine`): NAPALM's getter suite (only failures:
+ARP, VRF `TEST` and NTP are empty on a fresh VM) and `TestExtremeFEDriver.py`
+(all 6). Findings there:
+
+- `save config file <file>` to an existing file asks
+  `File [<file>] already existing, overwrite (y/n) ?`; anything but `y` prints
+  `Save config to file <file> Aborted.` Saving takes a few seconds on the VM
+  (`Saving Configuration...` first); meanwhile `show running-config` answers
+  `Another show or save in progress.  Please try the command later.`
+- SCP uploads write the file completely but the switch closes the channel
+  without the final acknowledgement (scp library: `No response from server`,
+  OpenSSH `scp -O`: `lost connection`), also when overwriting.
+- 8.10 offers only `ssh-rsa` / `ssh-dss` host keys (no setting to change
+  it); paramiko 5 cannot connect, paramiko 4 can.
+- The `rwa` password change forced at the first login is lost on reboot
+  unless the configuration is saved (VM: `rwa` / `rwa` again).
+
+1. **`config_method="file"` end to end**: settled on 8.10 / 9.3 - `source
+   <file>` and `source <file> stop` print nothing, also for a rejected line;
+   `source <file> debug` echoes every line after a prompt and prints the
+   error (`% Invalid input detected at '^' marker.`), then runs the remaining
+   lines; options cannot be combined. Runs fine from privileged EXEC mode with
+   the `config terminal` / `end` wrapper. Still to check: 9.4 and hardware.
+   `show running-config` during a running save is not detected as an error
+   yet (see above).
 2. **Routed interfaces**: `show ip interface vrfids 0-512`,
    `show ipv6 address interface`, `show ip arp` and `show ip arp vrf <vrf>` have
    only been seen empty. Capture them from a switch with IP interfaces / ARP

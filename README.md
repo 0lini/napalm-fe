@@ -23,6 +23,11 @@ pip install napalm-extreme-fe
 
 Requires Python 3.10+, NAPALM 5 and Netmiko 4.
 
+Older releases (seen on 8.10) offer only `ssh-rsa` (SHA-1) and `ssh-dss` SSH
+host keys, which paramiko 5 no longer supports: the connection fails with
+`Incompatible ssh peer (no acceptable host key)`. Use `paramiko<5` for those
+switches (`pip install "paramiko<5"`).
+
 ## Usage
 
 ```python
@@ -111,7 +116,9 @@ the boot configuration and reboot the switch.
   before it stay applied.
 * **`file`** (IOS-style): `load_merge_candidate` copies the candidate to the
   switch with SCP (verified with `file-checksum md5`); `commit_config` applies
-  it with `source`. Requires SCP (`boot config flags sshd`).
+  it with `source <file> debug` (without `debug` the switch does not report
+  rejected lines). A rejected line raises `MergeConfigException`; unlike `cli`,
+  the lines after it are still applied. Requires SCP (`boot config flags sshd`).
 
 **Replace and rollback** reboot the switch and therefore require
 `allow_reboot=True`; otherwise they raise `ReplaceConfigException`. The file is
