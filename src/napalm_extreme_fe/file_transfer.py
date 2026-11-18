@@ -8,8 +8,8 @@ Fabric Engine differences to the base (Cisco) implementation:
 
 * files are listed with ``ls <path>`` (Unix ``ls -l`` style output)
 * MD5 digests are calculated with ``file-checksum md5 <file>``
-* free space is read from the last line of ``dir`` (``total: ... used: ...
-  free: <n> bytes``), which lists ``/intflash``
+* free space is read from the last line of ``dir <file system>``
+  (``total: ... used: ... free: <n> bytes``)
 """
 
 import os
@@ -72,11 +72,11 @@ class ExtremeFEFileTransfer(BaseFileTransfer):
         return parse_ls(output).get(name)
 
     def remote_space_available(self, search_pattern: str = "") -> int:
-        """Free bytes on ``/intflash``, from the last line of ``dir``.
+        """Free bytes on the file system, from the last line of ``dir <fs>``.
 
         Fabric Engine 9.4: ``total: 6260543488  used: 202080256  free: 6058463232  bytes``
         """
-        output = self.ssh_ctl_chan._send_command_str("dir", read_timeout=60)
+        output = self.ssh_ctl_chan._send_command_str(f"dir {self.file_system}", read_timeout=60)
         match = re.search(search_pattern, output, re.I) if search_pattern else None
         match = match or DIR_FREE_RE.search(output)
         if not match:
@@ -84,15 +84,10 @@ class ExtremeFEFileTransfer(BaseFileTransfer):
         return int(match.group(1))
 
     def verify_space_available(self, search_pattern: str = "") -> bool:
-        """Whether the file fits.
-
-        ``dir`` reports ``/intflash`` only; for other file systems, or if the
-        free space cannot be read, the check passes (unknown).
-        """
+        """Whether the file fits. If the free space cannot be read, the check
+        passes (unknown)."""
         if self.direction == "get":
             return self.local_space_available() > self.file_size
-        if self.file_system.rstrip("/") != DEFAULT_FILE_SYSTEM:
-            return True
         try:
             return self.remote_space_available(search_pattern) > self.file_size
         except ValueError:

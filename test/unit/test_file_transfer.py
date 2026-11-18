@@ -25,7 +25,7 @@ Listing Directory /intflash:
 Can't open "/intflash/doesnotexist.cfg".
 """
 
-# last lines of "dir" (Fabric Engine 9.4 VM)
+# last lines of "dir" (Fabric Engine 9.4 VM; the footer is the same for "dir <fs>")
 DIR_OUTPUT = """\
 ./openapi
 total: 6260543488       used: 202080256         free: 6058463232        bytes
@@ -49,7 +49,7 @@ class FakeConn:
         self.commands.append(command)
         if command.startswith("file-checksum md5"):
             return self.md5_output
-        if command == "dir":
+        if command.split()[0] == "dir":
             return self.dir_output
         return self.listing
 
@@ -120,9 +120,11 @@ def test_md5_unparsable(local_file):
 
 
 def test_remote_space_available_real_dir(local_file):
-    transfer = ExtremeFEFileTransfer(FakeConn(""), source_file=local_file, dest_file="a.cfg")
+    conn = FakeConn("")
+    transfer = ExtremeFEFileTransfer(conn, source_file=local_file, dest_file="a.cfg")
     assert transfer.remote_space_available() == 6058463232
     assert transfer.verify_space_available()
+    assert conn.commands[-1] == "dir /intflash"
 
 
 def test_insufficient_space(local_file):
@@ -142,10 +144,10 @@ def test_space_unknown_passes(local_file):
     assert transfer.verify_space_available()
 
 
-def test_space_not_checked_outside_intflash(local_file):
+def test_space_on_usb(local_file):
     conn = FakeConn("")
     transfer = ExtremeFEFileTransfer(
         conn, source_file=local_file, dest_file="a.cfg", file_system="/usb"
     )
     assert transfer.verify_space_available()
-    assert "dir" not in conn.commands
+    assert conn.commands == ["dir /usb"]

@@ -106,7 +106,7 @@ Run all of them before every commit, and only commit when they pass
 ## Open items (verify on a real switch)
 
 Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
-`file-checksum md5`, `dir` (free space on `/intflash` in its last line),
+`file-checksum md5`, `dir` (free space in its last line; the driver runs `dir <file system>`),
 `save config file`, `show running-config | include`, SCP,
 `terminal more disable` (sent by Netmiko at login; accepted without output).
 
