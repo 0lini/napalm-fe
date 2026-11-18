@@ -6,10 +6,10 @@ unchanged (registered as ``extreme_fe`` / ``extreme_voss`` / ``extreme_vsp``).
 
 Fabric Engine differences to the base (Cisco) implementation:
 
-* files are listed with ``ls <path>`` (Unix ``ls -l`` style output)
-* MD5 digests are calculated with ``file-checksum md5 <file>``
-* free space is read from the last line of ``dir <file system>``
+* files are listed with ``dir <directory> -l`` (size, date, full path,
+  ``<DIR>`` for directories); its last line holds the free space
   (``total: ... used: ... free: <n> bytes``)
+* MD5 digests are calculated with ``file-checksum md5 <file>``
 """
 
 import os
@@ -22,25 +22,31 @@ DEFAULT_FILE_SYSTEM = "/intflash"
 DIR_FREE_RE = re.compile(r"free:\s*(\d+)\s*bytes", re.I)
 MD5_RE = re.compile(r"\b([0-9a-fA-F]{32})\b")
 
-# -rwx------  1 0       0          14385 Nov 16 12:24  config.cfg
-LS_LINE_RE = re.compile(
-    r"^(?P<perms>[-dlrwxsStT]{10})\s+\d+\s+\S+\s+\S+\s+(?P<size>\d+)\s+"
-    r"\w{3}\s+\d+\s+[\d:]+\s+(?P<name>\S+?)/?\s*$"
+# "dir /intflash -l" (Fabric Engine 9.4):
+#     9852    Nov-17-2026  16:28   /intflash/test1.cfg
+#     4096    Nov-17-2026  16:41   /intflash/var            <DIR>
+DIR_LINE_RE = re.compile(
+    r"^\s*(?P<size>\d+)\s+\w{3}-\d{2}-\d{4}\s+\d{2}:\d{2}\s+(?P<path>/\S+)\s*(?P<dir><DIR>)?\s*$"
 )
 
 
-def parse_ls(output: str) -> Dict[str, Dict[str, Any]]:
-    """Parse ``ls`` output into ``{name: {"size": int, "is_dir": bool}}``."""
+def parse_dir(output: str) -> Dict[str, Dict[str, Any]]:
+    """Parse ``dir <directory> -l`` into ``{path: {"size": int, "is_dir": bool}}``."""
     entries: Dict[str, Dict[str, Any]] = {}
     for line in output.splitlines():
-        match = LS_LINE_RE.match(line.strip())
-        if not match or match.group("name") in (".", ".."):
-            continue
-        entries[match.group("name")] = {
-            "size": int(match.group("size")),
-            "is_dir": match.group("perms").startswith("d"),
-        }
+        match = DIR_LINE_RE.match(line)
+        if match:
+            entries[match.group("path")] = {
+                "size": int(match.group("size")),
+                "is_dir": bool(match.group("dir")),
+            }
     return entries
+
+
+def parse_dir_free(output: str) -> Optional[int]:
+    """Free bytes from the last line of ``dir``, or None."""
+    match = DIR_FREE_RE.search(output)
+    return int(match.group(1)) if match else None
 
 
 class ExtremeFEFileTransfer(BaseFileTransfer):
@@ -66,22 +72,24 @@ class ExtremeFEFileTransfer(BaseFileTransfer):
             **kwargs,
         )
 
+    def _dir(self, directory: str) -> str:
+        return self.ssh_ctl_chan._send_command_str(f"dir {directory} -l", read_timeout=60)
+
     def _remote_entry(self, remote_file: str) -> Optional[Dict[str, Any]]:
-        output = self.ssh_ctl_chan._send_command_str(f"ls {self.file_system}/{remote_file}")
-        name = remote_file.rsplit("/", 1)[-1]
-        return parse_ls(output).get(name)
+        path = f"{self.file_system.rstrip('/')}/{remote_file}"
+        return parse_dir(self._dir(path.rsplit("/", 1)[0])).get(path)
 
     def remote_space_available(self, search_pattern: str = "") -> int:
-        """Free bytes on the file system, from the last line of ``dir <fs>``.
+        """Free bytes on the file system, from the last line of ``dir <fs> -l``.
 
         Fabric Engine 9.4: ``total: 6260543488  used: 202080256  free: 6058463232  bytes``
         """
-        output = self.ssh_ctl_chan._send_command_str(f"dir {self.file_system}", read_timeout=60)
+        output = self._dir(self.file_system)
         match = re.search(search_pattern, output, re.I) if search_pattern else None
-        match = match or DIR_FREE_RE.search(output)
-        if not match:
+        free = int(match.group(1)) if match else parse_dir_free(output)
+        if free is None:
             raise ValueError(f"Free space not found in the output of 'dir':\n{output[-500:]}")
-        return int(match.group(1))
+        return free
 
     def verify_space_available(self, search_pattern: str = "") -> bool:
         """Whether the file fits. If the free space cannot be read, the check

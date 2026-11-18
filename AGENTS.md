@@ -96,7 +96,7 @@ Run all of them before every commit, and only commit when they pass
 
 ### Safety rules for the switch
 
-- Only send read-only commands (`show`, `ls`, `more`, `file-checksum`), except
+- Only send read-only commands (`show`, `dir`, `ls`, `more`, `file-checksum`), except
   through `TestExtremeFEDriver.py` (step 5).
 - Never save the configuration (`save_config=False`) and never run
   `save config`, `boot`, `reset`, `delete`, `copy` or `source` by hand.
@@ -105,8 +105,9 @@ Run all of them before every commit, and only commit when they pass
 
 ## Open items (verify on a real switch)
 
-Confirmed on Fabric Engine 9.4: all getters except the ones below, `ls`,
-`file-checksum md5`, `dir` (free space in its last line; the driver runs `dir <file system>`),
+Confirmed on Fabric Engine 9.4: all getters except the ones below,
+`dir /intflash -l` (size, full path, `<DIR>`; free space in its last line),
+`file-checksum md5`,
 `save config file`, `show running-config | include`, SCP,
 `terminal more disable` (sent by Netmiko at login; accepted without output).
 

@@ -105,16 +105,21 @@ class FakeExtremeFEDevice(BaseTestDouble):
                 f"CP-1: Save config to file {path} successful.\n"
                 'WARNING: Choice Primary Node Config file is "/intflash/config.cfg".'
             )
-        if command.startswith("ls "):
-            path = command.split()[-1]
-            directory, _, name = path.rpartition("/")
-            if path not in self.flash:
-                return f'Listing Directory {directory}:\nCan\'t open "{path}".'
-            size = len(self.flash[path])
-            return (
-                f"Listing Directory {directory}:\n"
-                f"-rwx------  1 0       0          {size:5d} Nov 16 12:24  {name}"
+        if command.startswith("dir ") and command.endswith(" -l"):
+            directory = command.split()[1].rstrip("/")
+            lines = [
+                "",
+                "       -------- INTFLASH --------",
+                "  size          date       time       name",
+                "--------       ------     ------    --------",
+            ]
+            for path, content in sorted(self.flash.items()):
+                if path.rsplit("/", 1)[0] == directory:
+                    lines.append(f"{len(content):8d}    Nov-17-2026  16:28   {path}")
+            lines.append(
+                "total: 6260543488       used: 202092544         free: 6058450944        bytes"
             )
+            return "\n".join(lines)
         if command.startswith("source "):
             return ""
         if command.startswith("show logging file event-code "):

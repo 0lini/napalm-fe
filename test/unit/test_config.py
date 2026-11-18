@@ -292,7 +292,7 @@ def test_replace_compare_and_commit(reboot_driver):
     assert device.commands == [
         "show running-config",
         "save config file /intflash/napalm_rollback.cfg",
-        "ls /intflash/napalm_candidate.cfg",
+        "dir /intflash -l",
         "copy /intflash/napalm_candidate.cfg /intflash/config.cfg",
         "y",
         "reset -y",
@@ -337,7 +337,7 @@ def test_rollback_after_merge(reboot_driver):
     reboot_driver.rollback()
     assert device.commands == [
         *LOG_QUERIES,  # is a revert pending? (no)
-        "ls /intflash/napalm_rollback.cfg",
+        "dir /intflash -l",
         "copy /intflash/napalm_rollback.cfg /intflash/config.cfg",
         "y",
         "reset -y",

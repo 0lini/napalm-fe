@@ -25,7 +25,7 @@ from netmiko.exceptions import ConfigInvalidException
 from netmiko.ssh_dispatcher import CLASS_MAPPER
 
 from napalm_extreme_fe import parsers
-from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer, parse_ls
+from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer, parse_dir
 
 logger = logging.getLogger(__name__)
 
@@ -821,8 +821,8 @@ class ExtremeFEDriver(NetworkDriver):
         return output
 
     def _file_exists(self, path: str) -> bool:
-        output = self._send_command(f"ls {path}")
-        return path.rsplit("/", 1)[-1] in parse_ls(output)
+        entry = parse_dir(self._send_command(f"dir {path.rsplit('/', 1)[0]} -l")).get(path)
+        return entry is not None and not entry["is_dir"]
 
     def _install_and_reboot(self, config_file: str) -> None:
         """Make ``config_file`` the boot configuration and reboot the switch."""
