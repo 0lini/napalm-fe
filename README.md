@@ -143,7 +143,8 @@ device.confirm_commit()  # ... unless confirmed
 
 `napalm_extreme_fe.file_transfer.ExtremeFEFileTransfer` implements Netmiko's
 `BaseFileTransfer` interface for Fabric Engine (SCP via the SSH server, `ls` for
-existence and size checks, `file-checksum md5` to verify transfers). It is
+existence and size checks, `dir` for the free space on `/intflash`,
+`file-checksum md5` to verify transfers). It is
 written so that it can be contributed to Netmiko as-is.
 
 ## Reporting parsing problems

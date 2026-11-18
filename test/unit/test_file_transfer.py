@@ -25,6 +25,12 @@ Listing Directory /intflash:
 Can't open "/intflash/doesnotexist.cfg".
 """
 
+# last lines of "dir" (Fabric Engine 9.4 VM)
+DIR_OUTPUT = """\
+./openapi
+total: 6260543488       used: 202080256         free: 6058463232        bytes
+"""
+
 MD5_OUTPUT = "MD5 (/intflash/config.cfg) = 5a922729bc0fa85437e7e3b8c339ea34\n"
 
 LOCAL_MD5 = hashlib.md5(b"x" * 14385).hexdigest()
@@ -33,15 +39,18 @@ LOCAL_MD5 = hashlib.md5(b"x" * 14385).hexdigest()
 class FakeConn:
     device_type = "extreme_vsp"
 
-    def __init__(self, listing, md5_output=""):
+    def __init__(self, listing, md5_output="", dir_output=DIR_OUTPUT):
         self.listing = listing
         self.md5_output = md5_output
+        self.dir_output = dir_output
         self.commands = []
 
     def _send_command_str(self, command, **kwargs):
         self.commands.append(command)
         if command.startswith("file-checksum md5"):
             return self.md5_output
+        if command == "dir":
+            return self.dir_output
         return self.listing
 
 
@@ -108,3 +117,35 @@ def test_md5_unparsable(local_file):
     )
     with pytest.raises(ValueError):
         transfer.remote_md5()
+
+
+def test_remote_space_available_real_dir(local_file):
+    transfer = ExtremeFEFileTransfer(FakeConn(""), source_file=local_file, dest_file="a.cfg")
+    assert transfer.remote_space_available() == 6058463232
+    assert transfer.verify_space_available()
+
+
+def test_insufficient_space(local_file):
+    full = "total: 6260543488       used: 6260540000         free: 3488        bytes\n"
+    transfer = ExtremeFEFileTransfer(
+        FakeConn("", dir_output=full), source_file=local_file, dest_file="a.cfg"
+    )
+    assert not transfer.verify_space_available()  # 14385 bytes do not fit
+
+
+def test_space_unknown_passes(local_file):
+    transfer = ExtremeFEFileTransfer(
+        FakeConn("", dir_output="% Invalid input"), source_file=local_file, dest_file="a.cfg"
+    )
+    with pytest.raises(ValueError):
+        transfer.remote_space_available()
+    assert transfer.verify_space_available()
+
+
+def test_space_not_checked_outside_intflash(local_file):
+    conn = FakeConn("")
+    transfer = ExtremeFEFileTransfer(
+        conn, source_file=local_file, dest_file="a.cfg", file_system="/usb"
+    )
+    assert transfer.verify_space_available()
+    assert "dir" not in conn.commands

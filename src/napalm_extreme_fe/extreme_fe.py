@@ -569,6 +569,8 @@ class ExtremeFEDriver(NetworkDriver):
                 dest_file=dest_file,
                 file_system=self.dest_file_system,
             ) as transfer:
+                if not transfer.verify_space_available():
+                    raise CommandErrorException("Insufficient space on the switch")
                 transfer.transfer_file()
                 if not transfer.verify_file():
                     raise CommandErrorException("File transfer to the switch failed")

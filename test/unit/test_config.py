@@ -142,6 +142,9 @@ class FakeTransfer:
     def __exit__(self, *args):
         pass
 
+    def verify_space_available(self):
+        return True
+
     def transfer_file(self):
         pass
 

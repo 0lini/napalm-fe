@@ -8,7 +8,8 @@ Fabric Engine differences to the base (Cisco) implementation:
 
 * files are listed with ``ls <path>`` (Unix ``ls -l`` style output)
 * MD5 digests are calculated with ``file-checksum md5 <file>``
-* ``ls`` does not report free space, so the space check is skipped
+* free space is read from the last line of ``dir`` (``total: ... used: ...
+  free: <n> bytes``), which lists ``/intflash``
 """
 
 import os
@@ -18,6 +19,7 @@ from typing import Any, Dict, Optional
 from netmiko.scp_handler import BaseFileTransfer
 
 DEFAULT_FILE_SYSTEM = "/intflash"
+DIR_FREE_RE = re.compile(r"free:\s*(\d+)\s*bytes", re.I)
 MD5_RE = re.compile(r"\b([0-9a-fA-F]{32})\b")
 
 # -rwx------  1 0       0          14385 Nov 16 12:24  config.cfg
@@ -70,14 +72,31 @@ class ExtremeFEFileTransfer(BaseFileTransfer):
         return parse_ls(output).get(name)
 
     def remote_space_available(self, search_pattern: str = "") -> int:
-        """Fabric Engine's ``ls`` does not report free space."""
-        raise NotImplementedError("Free space is not reported by Fabric Engine")
+        """Free bytes on ``/intflash``, from the last line of ``dir``.
+
+        Fabric Engine 9.4: ``total: 6260543488  used: 202080256  free: 6058463232  bytes``
+        """
+        output = self.ssh_ctl_chan._send_command_str("dir", read_timeout=60)
+        match = re.search(search_pattern, output, re.I) if search_pattern else None
+        match = match or DIR_FREE_RE.search(output)
+        if not match:
+            raise ValueError(f"Free space not found in the output of 'dir':\n{output[-500:]}")
+        return int(match.group(1))
 
     def verify_space_available(self, search_pattern: str = "") -> bool:
-        """Free space cannot be determined; assume it is available for 'put'."""
+        """Whether the file fits.
+
+        ``dir`` reports ``/intflash`` only; for other file systems, or if the
+        free space cannot be read, the check passes (unknown).
+        """
         if self.direction == "get":
             return self.local_space_available() > self.file_size
-        return True
+        if self.file_system.rstrip("/") != DEFAULT_FILE_SYSTEM:
+            return True
+        try:
+            return self.remote_space_available(search_pattern) > self.file_size
+        except ValueError:
+            return True
 
     def check_file_exists(self, remote_cmd: str = "") -> bool:
         """Check whether the destination file exists."""
