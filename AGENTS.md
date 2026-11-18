@@ -165,3 +165,48 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below,
 Not implemented yet (NotImplementedError, skipped in tests): BGP, users,
 optics, route table, NTP stats/peers, network instances, ping/traceroute,
 IPv6 neighbours. Implement them with real captures only.
+
+## Planned: OpenAPI transport (EOS-style)
+
+Goal: an optional second transport using the switch's OpenAPI (REST/JSON),
+modelled on NAPALM's Arista **EOS** driver: one driver, selected with
+`optional_args={"transport": ...}` (`"ssh"` = today's CLI driver, stays the
+default until the API is validated; `"openapi"` = new). Not the NX-OS model
+(separate `nxos` / `nxos_ssh` drivers), which would need a second package.
+
+What is known (Extreme docs, not yet verified on a switch):
+
+- enabled with `enable openapi` (application configuration); Fabric Engine 9.3
+  also has `openapi local-mgmt enable`; served at
+  `https://<switch>:9443/rest/openapi` (TLS by default)
+- authentication: a token from `/auth/token` (user needs access level `rwa`),
+  sent as `x-auth-token`; token lifetime differs between docs (60 s in 9.3,
+  one day in older RESTCONF guides)
+- example endpoint `/rest/openapi/v0/state/system`; the switch serves its own
+  OpenAPI schema at `/rest/openapi`
+- the Fabric Engine 9.4 VM (GNS3) has OpenAPI available
+
+Tasks, in order:
+
+1. **Schema**: fetch the schema from the VM, list its paths (method + path)
+   and commit a trimmed copy under `test/unit/openapi/` (no tokens). Record
+   the exact token request/response format, the token lifetime and the port.
+2. **Coverage map**: for every implemented getter and config method, note the
+   endpoint(s) that provide the data, or "CLI only". Add the table here.
+3. **Design** (before code): `transport` option and validation; an HTTP
+   session class (token handling, renewal on expiry, TLS verification option
+   like EOS's `verify`); getters use the API where the coverage map has an
+   endpoint and fall back to the CLI otherwise (only if an SSH session is
+   configured as well - decide and document). Config management stays
+   CLI-based unless the API offers an equivalent of a candidate/diff/commit.
+4. **Implementation**: API responses are parsed in separate functions (like
+   `parsers.py`), returning the same NAPALM structures as the CLI path.
+5. **Tests**: mocked JSON responses per getter in
+   `test/unit/mocked_data/<test>/<case>/` (as NAPALM's EOS tests do), a fake
+   HTTP session in `conftest.py`, and the existing getter suite run for both
+   transports. Real responses only (anonymised), no invented JSON.
+6. **Docs**: README (transport option, enabling OpenAPI on the switch,
+   required access level) and CHANGELOG.
+
+Safety: only `GET` requests against the switch until step 3 is agreed; never
+store tokens or passwords in the repository.
