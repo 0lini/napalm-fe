@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 # Extreme renamed VOSS (VSP Operating System Software) to Fabric Engine;
 # Netmiko still calls it "extreme_vsp". Use the newest name Netmiko provides.
+SUPPORTED_TRANSPORTS = ("ssh",)
+
 NETMIKO_DEVICE_TYPES = ("extreme_fe", "extreme_voss", "extreme_vsp")
 NETMIKO_DEVICE_TYPE = next(t for t in NETMIKO_DEVICE_TYPES if t in CLASS_MAPPER)
 
@@ -136,6 +138,9 @@ class ExtremeFEDriver(NetworkDriver):
         Supported ``optional_args`` (in addition to the Netmiko arguments such
         as ``port``, ``secret``, ``key_file``, ``ssh_config_file``...):
 
+        * ``transport`` (default ``"ssh"``): how the driver talks to the
+          switch, like NAPALM's EOS driver. Only ``"ssh"`` (CLI via Netmiko) is
+          available; an ``"openapi"`` transport is planned (see AGENTS.md).
         * ``save_config`` (bool, default ``True``): run ``save config`` after
           a successful ``commit_config``.
         * ``startup_config_file`` (str, default ``/intflash/config.cfg``):
@@ -162,6 +167,12 @@ class ExtremeFEDriver(NetworkDriver):
         self.timeout = timeout
         optional_args = optional_args or {}
 
+        self.transport = optional_args.get("transport", "ssh")
+        if self.transport not in SUPPORTED_TRANSPORTS:
+            raise ValueError(
+                f"transport {self.transport!r} is not supported, use one of "
+                f"{', '.join(SUPPORTED_TRANSPORTS)} (an 'openapi' transport is planned)"
+            )
         self.save_on_commit = bool(optional_args.get("save_config", True))
         self.startup_config_file = optional_args.get("startup_config_file", "/intflash/config.cfg")
         self.force_no_enable = bool(optional_args.get("force_no_enable", False))
@@ -236,6 +247,38 @@ class ExtremeFEDriver(NetworkDriver):
         return self._send_command_postprocess(
             output, remove_log_messages=not LOG_DISPLAY_COMMAND_RE.match(cmd)
         )
+
+    # Transport primitives (like NAPALM's NX-OS drivers): everything that talks
+    # to Netmiko directly is here, so that another transport only has to
+    # implement these.
+
+    def _send_command_timing(self, command: str) -> str:
+        """Send a command that prompts or has no fixed end (copy, reset, y)."""
+        return str(self.device.send_command_timing(command, read_timeout=self.timeout))
+
+    def _send_config(self, lines: List[str]) -> str:
+        """Send lines in configuration mode; stop at the first rejected line.
+
+        Raises ``ConfigInvalidException`` (Netmiko) for a rejected line.
+        """
+        try:
+            return str(
+                self.device.send_config_set(
+                    lines, cmd_verify=False, error_pattern=CONFIG_ERROR_PATTERN
+                )
+            )
+        except ConfigInvalidException:
+            try:
+                self.device.exit_config_mode()
+            except Exception:  # pragma: no cover - best effort
+                pass
+            raise
+
+    def _copy_run_start(self, exc_class: type = CommandErrorException) -> None:
+        """Save the running configuration (``save config``)."""
+        output = str(self.device.save_config())
+        if not self._save_successful(output):
+            raise exc_class(f"Saving the configuration failed:\n{output}")
 
     @staticmethod
     def _send_command_postprocess(output: str, remove_log_messages: bool = True) -> str:
@@ -657,7 +700,7 @@ class ExtremeFEDriver(NetworkDriver):
         self._gen_rollback_cfg(MergeConfigException)
         if revert_time:
             # the switch reboots into this saved configuration unless confirmed
-            self._save_config(CommitConfirmException)
+            self._copy_run_start(CommitConfirmException)
             self._schedule_reset(revert_time)
         if self.config_method == "file":
             self._commit_from_file()
@@ -665,13 +708,8 @@ class ExtremeFEDriver(NetworkDriver):
             self._commit_from_cli()
 
         if self.save_on_commit and not revert_time:
-            self._save_config(CommandErrorException)
+            self._copy_run_start(CommandErrorException)
         self.candidate_config = None
-
-    def _save_config(self, exc_class: type) -> None:
-        save_output = self.device.save_config()
-        if not self._save_successful(save_output):
-            raise exc_class(f"Saving the configuration failed:\n{save_output}")
 
     # Maximum of "reset -in": 9 days, 23 hours, 59 minutes
     REVERT_MAX_MINUTES = 9 * 1440 + 23 * 60 + 59
@@ -739,7 +777,7 @@ class ExtremeFEDriver(NetworkDriver):
         """Cancel the scheduled revert reset and save the configuration."""
         if not (self.pending_revert or self._reset_scheduled_on_switch()):
             raise CommitConfirmException("No pending configuration")
-        output = self.device.send_command_timing("reset -cancel", read_timeout=self.timeout)
+        output = self._send_command_timing("reset -cancel")
         output = LOG_MESSAGE_RE.sub("", output)
         self.pending_revert = False
         if re.search(r"No ongoing scheduled reset", output, re.I):
@@ -752,7 +790,7 @@ class ExtremeFEDriver(NetworkDriver):
             raise CommitConfirmException(
                 f"Could not confirm that the revert reset was cancelled:\n{output.strip()}"
             )
-        self._save_config(CommitConfirmException)
+        self._copy_run_start(CommitConfirmException)
 
     def _gen_rollback_cfg(self, exc_class: type = MergeConfigException) -> None:
         """Save the running config to ``rollback_cfg`` (like the IOS driver)."""
@@ -786,14 +824,8 @@ class ExtremeFEDriver(NetworkDriver):
     def _commit_from_cli(self) -> None:
         lines = (self.candidate_config or "").splitlines()
         try:
-            output = self.device.send_config_set(
-                lines, cmd_verify=False, error_pattern=CONFIG_ERROR_PATTERN
-            )
+            output = self._send_config(lines)
         except ConfigInvalidException as exc:
-            try:
-                self.device.exit_config_mode()
-            except Exception:  # pragma: no cover - best effort
-                pass
             raise MergeConfigException(f"Configuration merge failed:\n{exc}") from exc
         if self._has_cli_error(output):
             raise MergeConfigException(f"Configuration merge failed:\n{output}")
@@ -812,11 +844,9 @@ class ExtremeFEDriver(NetworkDriver):
         ``File [/intflash/test2.cfg] already existing, overwrite (y/n) ?``
         """
         # a log message may arrive after the prompt: remove it before looking
-        output = LOG_MESSAGE_RE.sub(
-            "", self.device.send_command_timing(command, read_timeout=self.timeout)
-        )
+        output = LOG_MESSAGE_RE.sub("", self._send_command_timing(command))
         if re.search(r"\(y/n\)|\[y/n\]|y/n\s*\??\s*$", output.rstrip(), re.I):
-            answer = self.device.send_command_timing("y", read_timeout=self.timeout)
+            answer = self._send_command_timing("y")
             output += LOG_MESSAGE_RE.sub("", answer)
         return output
 
@@ -839,7 +869,7 @@ class ExtremeFEDriver(NetworkDriver):
     def _reboot(self) -> None:
         try:
             # "-y" skips "Are you sure you want to reset the switch (y/n) ?"
-            self.device.send_command_timing("reset -y", read_timeout=self.timeout)
+            self._send_command_timing("reset -y")
         except Exception:  # noqa: BLE001 - the session ends when the switch reboots
             pass
         self.close()
@@ -864,6 +894,25 @@ class ExtremeFEDriver(NetworkDriver):
         self._install_and_reboot(self._gen_full_path(self.rollback_cfg))
 
     def discard_config(self) -> None:
-        """Discard the pending candidate."""
+        """Discard the pending candidate.
+
+        Like NAPALM's NX-OS drivers, a replace candidate uploaded to the switch
+        (``candidate_cfg``) is deleted as well.
+        """
+        if self.config_replace and self.candidate_config and self.device is not None:
+            self._delete_file(self._gen_full_path(self.candidate_cfg))
         self.candidate_config = None
         self.config_replace = False
+
+    def _delete_file(self, path: str) -> None:
+        """Delete a file on the switch (answers ``Are you sure (y/n) ?``).
+
+        Best effort: a failure is logged, not raised.
+        """
+        try:
+            output = self._confirm(f"delete {path}")
+        except Exception as exc:  # noqa: BLE001 - cleanup must not fail
+            logger.warning("%s: could not delete %s: %s", self.hostname, path, exc)
+            return
+        if self._has_cli_error(output) or re.search(r"can't|cannot|fail", output, re.I):
+            logger.warning("%s: could not delete %s: %s", self.hostname, path, output.strip())

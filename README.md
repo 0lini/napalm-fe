@@ -42,6 +42,7 @@ with driver("192.0.2.10", "admin", "secret", optional_args={"port": 22}) as devi
 
 | Argument              | Default                | Description |
 |-----------------------|------------------------|-------------|
+| `transport`           | `ssh`                  | How the driver talks to the switch (like NAPALM's EOS driver). Only `ssh` for now; an `openapi` transport is planned |
 | `save_config`         | `True`                 | Run `save config` after a successful commit |
 | `startup_config_file` | `/intflash/config.cfg` | File returned as `startup` by `get_config()` |
 | `force_no_enable`     | `False`                | Do not enter privileged (`enable`) mode. `show running-config` needs it, so `get_config`, `get_ntp_servers`, `get_snmp_information`, the `fqdn` of `get_facts` and configuration changes do not work without it |
@@ -99,7 +100,7 @@ the boot configuration and reboot the switch.
 | `commit_config`          | Saves the running config to `rollback_cfg` first (like IOS), then applies the candidate, see below. `revert_in` see [Commit confirm](#commit-confirm-revert_in); `message` is not supported |
 | `confirm_commit`         | Cancels the scheduled revert reset and saves the configuration |
 | `has_pending_commit`     | Whether a reset is scheduled on the switch, read from the switch log (like IOS, also finds a commit made by another session) |
-| `discard_config`         | Drops the candidate |
+| `discard_config`         | Drops the candidate; an uploaded replace candidate is deleted on the switch (like NX-OS) |
 | `rollback`               | Installs `rollback_cfg` as the boot configuration and reboots; while a `revert_in` commit is pending it reverts that commit now (`reset -y`). Needs `allow_reboot=True` |
 
 **Merge** (`config_method`), saved with `save config` afterwards unless

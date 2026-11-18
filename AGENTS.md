@@ -29,8 +29,16 @@ Run all of them before every commit, and only commit when they pass
 
 ## Conventions
 
-- Follow NAPALM's IOS driver (`napalm/ios/ios.py`) for behaviour and naming
-  where Fabric Engine allows it.
+- Follow NAPALM's Cisco drivers for behaviour and naming where Fabric Engine
+  allows it: IOS (`napalm/ios/ios.py`) for the CLI workflow and NX-OS
+  (`napalm/nxos/nxos.py`, `nxos_ssh`) for the structure. Like NX-OS, all
+  transport specific code is in a few primitives (`open`, `close`, `is_alive`,
+  `_send_command`, `_send_command_timing`, `_send_config`, `_copy_run_start`)
+  so that a second transport (OpenAPI, see below) only implements those; the
+  `transport` option itself follows the EOS driver. Known deviations: a failed
+  merge is not rolled back automatically (rollback reboots the switch), and the
+  merge diff is our own (`parsers.merge_diff`) because netutils'
+  `diff_network_config` has no Fabric Engine / VOSS parser.
 - Parsers live in `parsers.py`, take raw output and return plain data. Prefer
   parsing by table title / header (`iter_tables`, `header_columns`,
   `tables_by_title`) over fixed column positions: layouts differ between

@@ -144,6 +144,15 @@ class FakeExtremeFEDevice(BaseTestDouble):
 
             self._pending = copy
             return f"File [{dst}] already existing, overwrite (y/n) ? "
+        if command.startswith("delete "):
+            path = command.split()[1]
+
+            def delete():
+                self.flash.pop(path, None)
+                return ""
+
+            self._pending = delete
+            return "Are you sure (y/n) ? "  # real prompt (9.4)
         if command == "reset":
             self._pending = None  # real prompt; the driver must not need it
             return "Are you sure you want to reset the switch (y/n) ? "

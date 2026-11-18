@@ -319,7 +319,11 @@ def test_replace_from_missing_file(reboot_driver):
 
 def test_discard_replace(reboot_driver):
     reboot_driver.load_replace_candidate(config=FULL_CONFIG)
+    assert "/intflash/napalm_candidate.cfg" in reboot_driver.device.flash
     reboot_driver.discard_config()
+    # like NX-OS: the uploaded candidate is deleted on the switch
+    assert reboot_driver.device.commands[-2:] == ["delete /intflash/napalm_candidate.cfg", "y"]
+    assert "/intflash/napalm_candidate.cfg" not in reboot_driver.device.flash
     assert reboot_driver.compare_config() == ""
     with pytest.raises(MergeConfigException):
         reboot_driver.commit_config()
@@ -808,3 +812,31 @@ def test_upload_stops_if_free_space_unknown(monkeypatch):
     monkeypatch.setattr(extreme_fe, "ExtremeFEFileTransfer", NoSpaceInfo)
     with pytest.raises(MergeConfigException, match="Free space not found"):
         driver.load_merge_candidate(config="ntp server 192.0.2.99")
+
+
+def test_discard_merge_deletes_nothing(file_driver):
+    file_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    file_driver.discard_config()
+    assert not any(c.startswith("delete") for c in file_driver.device.commands)
+
+
+def test_discard_survives_failed_delete(reboot_driver):
+    reboot_driver.load_replace_candidate(config=FULL_CONFIG)
+
+    def broken(command, **kwargs):
+        raise OSError("Socket is closed")
+
+    reboot_driver.device.send_command_timing = broken
+    reboot_driver.discard_config()  # logged, not raised
+    assert reboot_driver.compare_config() == ""
+
+
+def test_transport_option():
+    from .conftest import PatchedExtremeFEDriver
+
+    assert PatchedExtremeFEDriver("h", "u", "p").transport == "ssh"
+    assert (
+        PatchedExtremeFEDriver("h", "u", "p", optional_args={"transport": "ssh"}).transport == "ssh"
+    )
+    with pytest.raises(ValueError, match="openapi"):
+        PatchedExtremeFEDriver("h", "u", "p", optional_args={"transport": "openapi"})

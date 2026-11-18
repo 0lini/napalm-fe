@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `transport` option (like NAPALM's EOS driver); only `ssh` for now, an
+  `openapi` transport is planned.
+- `discard_config()` deletes an uploaded replace candidate on the switch
+  (like NAPALM's NX-OS drivers).
+
 - `load_replace_candidate`, replace `commit_config` and `rollback()`: the file
   is installed as the boot configuration and the switch is rebooted, like
   ExtremeCloud IQ Site Engine's configuration restore. Requires
