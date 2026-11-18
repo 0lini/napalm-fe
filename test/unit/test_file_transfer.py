@@ -69,6 +69,9 @@ def test_parse_dir():
 
 def test_process_md5_real_output():
     assert ExtremeFEFileTransfer.process_md5(MD5_OUTPUT) == "5a922729bc0fa85437e7e3b8c339ea34"
+    # Fabric Engine 9.4 VM, test1.cfg from DIR_INTFLASH
+    vm_output = "MD5 (/intflash/test1.cfg) = 1ea7d1fb127766a9b2b25e86e46ed21d\n"
+    assert ExtremeFEFileTransfer.process_md5(vm_output) == "1ea7d1fb127766a9b2b25e86e46ed21d"
 
 
 def test_file_exists_size_and_md5(local_file):
