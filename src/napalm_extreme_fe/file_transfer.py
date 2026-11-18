@@ -92,14 +92,14 @@ class ExtremeFEFileTransfer(BaseFileTransfer):
         return free
 
     def verify_space_available(self, search_pattern: str = "") -> bool:
-        """Whether the file fits. If the free space cannot be read, the check
-        passes (unknown)."""
+        """Whether the file fits.
+
+        Like Netmiko's Cisco implementation, a ``ValueError`` is raised if the
+        free space cannot be read, so nothing is uploaded blindly.
+        """
         if self.direction == "get":
             return self.local_space_available() > self.file_size
-        try:
-            return self.remote_space_available(search_pattern) > self.file_size
-        except ValueError:
-            return True
+        return self.remote_space_available(search_pattern) > self.file_size
 
     def check_file_exists(self, remote_cmd: str = "") -> bool:
         """Check whether the destination file exists."""

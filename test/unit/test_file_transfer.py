@@ -138,13 +138,15 @@ def test_insufficient_space(local_file):
     assert not transfer.verify_space_available()  # 9852 bytes do not fit
 
 
-def test_space_unknown_passes(local_file):
+def test_space_unknown_raises(local_file):
+    """Like Netmiko's Cisco implementation: unreadable free space is an error."""
     transfer = ExtremeFEFileTransfer(
         FakeConn(dir_output="% Invalid input"), source_file=local_file, dest_file="a.cfg"
     )
     with pytest.raises(ValueError):
         transfer.remote_space_available()
-    assert transfer.verify_space_available()
+    with pytest.raises(ValueError):
+        transfer.verify_space_available()
 
 
 def test_space_on_usb(local_file):

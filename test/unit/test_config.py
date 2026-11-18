@@ -790,3 +790,21 @@ def test_get_config_without_saved_config(driver):
     config = driver.get_config()
     assert config["startup"] == ""
     assert config["running"]
+
+
+def test_upload_stops_if_free_space_unknown(monkeypatch):
+    """The upload is refused (no transfer) if 'dir' output cannot be read."""
+
+    class NoSpaceInfo(FakeTransfer):
+        def verify_space_available(self):
+            raise ValueError("Free space not found in the output of 'dir'")
+
+        def transfer_file(self):
+            raise AssertionError("must not transfer")
+
+    from napalm_extreme_fe import extreme_fe
+
+    driver = _make_driver(monkeypatch, config_method="file")
+    monkeypatch.setattr(extreme_fe, "ExtremeFEFileTransfer", NoSpaceInfo)
+    with pytest.raises(MergeConfigException, match="Free space not found"):
+        driver.load_merge_candidate(config="ntp server 192.0.2.99")
