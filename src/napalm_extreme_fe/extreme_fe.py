@@ -812,23 +812,34 @@ class ExtremeFEDriver(NetworkDriver):
             re.search(r"Save config to file \S+ successful", output, re.I)
         )
 
+    def _merge_failed(self, output: str) -> MergeConfigException:
+        """The error for a failed merge (wording like napalm-dellos10).
+
+        Lines before the rejected one stay applied; Fabric Engine can only
+        roll back by rebooting, so this is left to the caller.
+        """
+        return MergeConfigException(
+            "Configuration merge failed; automatic rollback not available, the "
+            "switch may be left partly changed (not saved). The configuration "
+            f"before the commit is in {self._gen_full_path(self.rollback_cfg)}; "
+            "rollback() with optional_args allow_reboot=True restores it (reboot):\n"
+            f"{output.strip()}"
+        )
+
     def _commit_from_file(self) -> None:
         cmd = f"source {self._gen_full_path(self.merge_cfg)}"
         output = self._send_command(cmd, read_timeout=max(self.timeout, 120))
         if self._has_cli_error(output):
-            raise MergeConfigException(
-                "Configuration merge failed; the configuration before the commit was "
-                f"saved to {self._gen_full_path(self.rollback_cfg)}:\n{output}"
-            )
+            raise self._merge_failed(output)
 
     def _commit_from_cli(self) -> None:
         lines = (self.candidate_config or "").splitlines()
         try:
             output = self._send_config(lines)
         except ConfigInvalidException as exc:
-            raise MergeConfigException(f"Configuration merge failed:\n{exc}") from exc
+            raise self._merge_failed(str(exc)) from exc
         if self._has_cli_error(output):
-            raise MergeConfigException(f"Configuration merge failed:\n{output}")
+            raise self._merge_failed(output)
 
     def _check_reboot_allowed(self, what: str, exc_class: type = ReplaceConfigException) -> None:
         if not self.allow_reboot:

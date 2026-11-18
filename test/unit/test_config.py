@@ -840,3 +840,16 @@ def test_transport_option():
     )
     with pytest.raises(ValueError, match="openapi"):
         PatchedExtremeFEDriver("h", "u", "p", optional_args={"transport": "openapi"})
+
+
+def test_failed_merge_message(driver):
+    """Says that nothing was rolled back and how to restore (like napalm-dellos10)."""
+    driver.device.send_config_set = lambda lines, **kw: COMMUNITY_EXISTS
+    driver.load_merge_candidate(config="foo")
+    with pytest.raises(MergeConfigException) as exc:
+        driver.commit_config()
+    message = str(exc.value)
+    assert "automatic rollback not available" in message
+    assert "/intflash/napalm_rollback.cfg" in message
+    assert "allow_reboot=True" in message
+    assert "Error: The community entry already exists." in message

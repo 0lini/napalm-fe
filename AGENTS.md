@@ -36,7 +36,12 @@ Run all of them before every commit, and only commit when they pass
   `_send_command`, `_send_command_timing`, `_send_config`, `_copy_run_start`)
   so that a second transport (OpenAPI, see below) only implements those; the
   `transport` option itself follows the EOS driver. Known deviations: a failed
-  merge is not rolled back automatically (rollback reboots the switch), and the
+  merge is not rolled back automatically (rollback reboots the switch). IOS and
+  NX-OS roll back because their devices can do it without a reboot; community
+  drivers for platforms that cannot (napalm-dellos10, napalm-netiron,
+  napalm-aos) raise and leave it to the caller, and so do we, with
+  napalm-dellos10's wording ("automatic rollback not available") plus the
+  rollback file and how to restore it. The
   merge diff is our own (`parsers.merge_diff`) because netutils'
   `diff_network_config` has no Fabric Engine / VOSS parser.
 - Parsers live in `parsers.py`, take raw output and return plain data. Prefer
