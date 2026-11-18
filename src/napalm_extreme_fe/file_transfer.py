@@ -11,7 +11,7 @@ Fabric Engine differences to the base (Cisco) implementation:
   (``total: ... used: ... free: <n> bytes``)
 * MD5 digests are calculated with ``file-checksum md5 <file>``
 * the SCP server closes the channel without the final acknowledgement of an
-  upload (Fabric Engine 8.10, 9.3: ``No response from server``, OpenSSH:
+  upload (Fabric Engine 9.3: ``No response from server``, OpenSSH:
   ``lost connection``) although the file is written completely; ``put_file``
   ignores this error, ``verify_file`` (size, MD5) decides
 """
@@ -145,7 +145,7 @@ class ExtremeFEFileTransfer(BaseFileTransfer):
         """SCP copy the file to the switch.
 
         The switch writes the file but closes the channel without the final
-        acknowledgement (Fabric Engine 8.10, 9.3), which the scp library
+        acknowledgement (Fabric Engine 9.3), which the scp library
         reports as ``No response from server``. Only that error is ignored:
         whether the file arrived is checked by ``verify_file``.
         """

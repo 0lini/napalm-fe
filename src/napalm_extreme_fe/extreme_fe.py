@@ -299,7 +299,7 @@ class ExtremeFEDriver(NetworkDriver):
 
         Without ``debug`` the switch prints nothing, not even for a rejected
         line; ``stop`` (stop on error) is silent as well and cannot be combined
-        with ``debug`` (Fabric Engine 8.10, 9.3). With ``debug`` every line is
+        with ``debug`` (Fabric Engine 9.3). With ``debug`` every line is
         echoed after a prompt (``5520-24T-FabricEngine:1(config)#asdasda``)
         followed by its error (``% Invalid input detected at '^' marker.``);
         the following lines are still run. As the echo contains the prompt,

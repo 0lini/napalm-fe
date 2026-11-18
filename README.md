@@ -23,11 +23,6 @@ pip install napalm-extreme-fe
 
 Requires Python 3.10+, NAPALM 5 and Netmiko 4.
 
-Older releases (seen on 8.10) offer only `ssh-rsa` (SHA-1) and `ssh-dss` SSH
-host keys, which paramiko 5 no longer supports: the connection fails with
-`Incompatible ssh peer (no acceptable host key)`. Use `paramiko<5` for those
-switches (`pip install "paramiko<5"`).
-
 ## Usage
 
 ```python

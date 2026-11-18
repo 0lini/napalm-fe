@@ -41,7 +41,7 @@ All notable changes to this project are documented here. The format follows
   (y/n) ?`); the driver now answers it and waits for the save to finish.
 - `ExtremeFEFileTransfer` uploads failed with `No response from server`: the
   switch writes the file but closes the SCP channel without the final
-  acknowledgement (Fabric Engine 8.10, 9.3). This error is ignored, the upload
+  acknowledgement (Fabric Engine 9.3). This error is ignored, the upload
   is verified by size and MD5 as before.
 
 ## [0.1.0]

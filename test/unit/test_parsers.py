@@ -38,7 +38,7 @@ def test_parse_uptime(uptime, expected):
     "descr, expected",
     [
         ("5520-24T (9.0.0.0_B020) BoxType: 5520-24T", "9.0.0.0_B020"),
-        ("VSP-8284XSQ (8.10.1.0)", "8.10.1.0"),
+        ("5520-24T-FabricEngine (9.3.0.0)", "9.3.0.0"),  # 9.3 VM
         ("Fabric Engine 9.1.0.0", "9.1.0.0"),
     ],
 )

@@ -27,19 +27,20 @@ DIR_INTFLASH = """\
 total: 6260543488       used: 202092544         free: 6058450944        bytes
 """
 
-# Real output of "dir /intflash -l" (Fabric Engine 8.10.1 VM, trimmed): trailing
+# Real output of "dir /intflash -l" (Fabric Engine 9.3 VM, trimmed): trailing
 # blanks after the names, tabs in the last line
-DIR_INTFLASH_8_10 = (
+DIR_INTFLASH_9_3 = (
     "\n"
     "       -------- INTFLASH --------\n"
     "  size          date       time       name\n"
     "--------       ------     ------    --------\n"
     "    4096    Nov-17-2026  18:55   /intflash/openapi        <DIR>\n"
-    "    6187    Nov-17-2026  18:55   /intflash/log_of.txt.1        \n"
-    "    9547    Nov-18-2026  18:36   /intflash/napalm_rollback.cfg      \n"
-    "      44    Nov-18-2026  18:37   /intflash/napalm_merge.cfg      \n"
-    "       0    Nov-17-2026  18:54   /intflash/perflog.txt         \n"
-    "total: 6286004224 \tused: 231542784 \tfree: 6054461440 \tbytes\n"
+    "    6277    Nov-17-2026  18:55   /intflash/log_of.txt.1        \n"
+    "       0    Nov-17-2026  18:55   /intflash/perflog.txt         \n"
+    "      55    Nov-18-2026  18:38   /intflash/napalm_merge.cfg      \n"
+    "       0    Nov-17-2026  18:55   /intflash/.openapi.err        \n"
+    "    9777    Nov-18-2026  18:40   /intflash/napalm_rollback.cfg      \n"
+    "total: 6260543488 \tused: 227643392 \tfree: 6032900096 \tbytes\n"
 )
 
 MD5_OUTPUT = "MD5 (/intflash/config.cfg) = 5a922729bc0fa85437e7e3b8c339ea34\n"
@@ -83,13 +84,13 @@ def test_parse_dir():
     assert parse_dir_free("") is None
 
 
-def test_parse_dir_8_10():
-    entries = parse_dir(DIR_INTFLASH_8_10)
-    assert entries["/intflash/napalm_merge.cfg"] == {"size": 44, "is_dir": False}
+def test_parse_dir_9_3():
+    entries = parse_dir(DIR_INTFLASH_9_3)
+    assert entries["/intflash/napalm_merge.cfg"] == {"size": 55, "is_dir": False}
     assert entries["/intflash/perflog.txt"] == {"size": 0, "is_dir": False}
     assert entries["/intflash/openapi"]["is_dir"] is True
-    assert len(entries) == 5
-    assert parse_dir_free(DIR_INTFLASH_8_10) == 6054461440
+    assert len(entries) == 6
+    assert parse_dir_free(DIR_INTFLASH_9_3) == 6032900096
 
 
 class FakeSCPConn:
@@ -106,7 +107,7 @@ class FakeSCPConn:
 
 
 def test_put_file_without_final_ack(local_file):
-    """Fabric Engine 8.10 / 9.3 write the file but do not acknowledge it."""
+    """Fabric Engine 9.3 writes the file but does not acknowledge it."""
     transfer = ExtremeFEFileTransfer(FakeConn(), source_file=local_file, dest_file="a.cfg")
     transfer.scp_conn = FakeSCPConn(SCPException("No response from server"))
     transfer.put_file()  # no error: verify_file() checks the result
@@ -125,9 +126,9 @@ def test_process_md5_real_output():
     # Fabric Engine 9.4 VM, test1.cfg from DIR_INTFLASH
     vm_output = "MD5 (/intflash/test1.cfg) = 1ea7d1fb127766a9b2b25e86e46ed21d\n"
     assert ExtremeFEFileTransfer.process_md5(vm_output) == "1ea7d1fb127766a9b2b25e86e46ed21d"
-    # Fabric Engine 8.10.1 VM, napalm_merge.cfg from DIR_INTFLASH_8_10
-    output_8_10 = "MD5 (/intflash/napalm_merge.cfg) = 1e91b642c02c9edee13ef1c8c237082e\n"
-    assert ExtremeFEFileTransfer.process_md5(output_8_10) == "1e91b642c02c9edee13ef1c8c237082e"
+    # Fabric Engine 9.3 VM, napalm_merge.cfg from DIR_INTFLASH_9_3
+    output_9_3 = "MD5 (/intflash/napalm_merge.cfg) = 8b39bbca1591945c2ddecb77063db158\n"
+    assert ExtremeFEFileTransfer.process_md5(output_9_3) == "8b39bbca1591945c2ddecb77063db158"
 
 
 def test_file_exists_size_and_md5(local_file):

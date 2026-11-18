@@ -71,7 +71,7 @@ Run all of them before every commit, and only commit when they pass
    `show_running_config___include_domain_name.txt`. Look at the existing
    `fabric_engine_9.4` cases for the exact set of files per test (the
    `test_get_config*` tests share the same files). Name the case after the
-   software, not the hardware, e.g. `voss_8.10` or `fabric_engine_9.5_chassis`.
+   software, not the hardware, e.g. `fabric_engine_9.3` or `fabric_engine_9.5_chassis`.
 
 2. **Anonymise and review** before anything else: replace hostnames (own and
    LLDP/FDB tunnel neighbours), domain names, IP addresses (use 192.0.2.0/24,
@@ -125,10 +125,13 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below,
 `save config file`, `show running-config | include`, SCP,
 `terminal more disable` (sent by Netmiko at login; accepted without output).
 
-Confirmed on the Fabric Engine 8.10.1 and 9.3 VMs (GNS3 images of Extreme,
-both report as `5520-24T-FabricEngine`): NAPALM's getter suite (only failures:
-ARP, VRF `TEST` and NTP are empty on a fresh VM) and `TestExtremeFEDriver.py`
-(all 6). Findings there:
+VOSS / Fabric Engine 8.x is end of life (8.10 is the last 8.x release) and is
+not tested; do not add test cases for it.
+
+Confirmed on the Fabric Engine 9.3 VM (GNS3 image of Extreme, reports as
+`5520-24T-FabricEngine`): NAPALM's getter suite (only failures: ARP, VRF
+`TEST` and NTP are empty on a fresh VM) and `TestExtremeFEDriver.py` (all 6).
+Findings there:
 
 - `save config file <file>` to an existing file asks
   `File [<file>] already existing, overwrite (y/n) ?`; anything but `y` prints
@@ -138,12 +141,10 @@ ARP, VRF `TEST` and NTP are empty on a fresh VM) and `TestExtremeFEDriver.py`
 - SCP uploads write the file completely but the switch closes the channel
   without the final acknowledgement (scp library: `No response from server`,
   OpenSSH `scp -O`: `lost connection`), also when overwriting.
-- 8.10 offers only `ssh-rsa` / `ssh-dss` host keys (no setting to change
-  it); paramiko 5 cannot connect, paramiko 4 can.
 - The `rwa` password change forced at the first login is lost on reboot
   unless the configuration is saved (VM: `rwa` / `rwa` again).
 
-1. **`config_method="file"` end to end**: settled on 8.10 / 9.3 - `source
+1. **`config_method="file"` end to end**: settled on 9.3 - `source
    <file>` and `source <file> stop` print nothing, also for a rejected line;
    `source <file> debug` echoes every line after a prompt and prints the
    error (`% Invalid input detected at '^' marker.`), then runs the remaining
@@ -156,7 +157,7 @@ ARP, VRF `TEST` and NTP are empty on a fresh VM) and `TestExtremeFEDriver.py`
    only been seen empty. Capture them from a switch with IP interfaces / ARP
    entries and check `parse_ip_interfaces`, `parse_ipv6_interfaces` (interface
    column is `VID/BID/TID`) and `parse_arp_table`.
-3. **Older releases (VOSS 8.x) and VSP hardware**: check that `show sys-info`,
+3. **Other 9.x releases and VSP hardware**: check that `show sys-info`,
    `show interfaces gigabitEthernet` (does it include the Port Name / Port
    State tables?), `statistics verbose`, `show vlan basic` and
    `show khi performance cpu/memory` still parse; multi-slot chassis output
