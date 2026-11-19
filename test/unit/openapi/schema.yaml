@@ -1,0 +1,4860 @@
+openapi: 3.0.3
+info:
+  contact:
+    email: support@extremenetworks.com
+    name: Extreme Networks Support
+    url: http://www.extremenetworks.com/support
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: https://www.extremenetworks.com/company/legal/terms-of-use/
+  title: Extreme NOS API
+  version: 0.2.0
+servers:
+- url: '{scheme}://{device_management_ip}:{port}/{base_path}'
+  variables:
+    base_path:
+      default: rest/openapi
+    device_management_ip:
+      default: localhost
+    port:
+      default: '8080'
+    scheme:
+      default: http
+      enum:
+      - http
+      - https
+- url: '{scheme}://{device_management_ip}/{base_path}'
+  variables:
+    base_path:
+      default: rest/openapi
+    device_management_ip:
+      default: localhost
+    scheme:
+      default: http
+      enum:
+      - http
+      - https
+paths:
+  /v0/state/system:
+    get:
+      operationId: get_system_state
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemState'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.device_management_controller
+  /v1/state/ports:
+    get:
+      operationId: get_ethernet_interfaces_state_settings_v1
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/EthernetInterfaceStateComponentLevelV1'
+                type: array
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.ethernet_interface_management_controller
+  /v0/configuration/ports:
+    get:
+      operationId: get_ethernet_interface_componenet_settings
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/EthernetInterfaceComponentLevel'
+                type: array
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.ethernet_interface_management_controller
+  /v0/state/lldp:
+    get:
+      operationId: get_lldp_state
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LldpState'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.lldp_management_controller
+  /v0/state/forwarding/ip-arp:
+    get:
+      operationId: get_arp_list
+      parameters:
+      - explode: true
+        in: query
+        name: start
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+        style: form
+      - explode: true
+        in: query
+        name: count
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+        style: form
+      - explode: true
+        in: query
+        name: vr_name
+        required: false
+        schema:
+          maxLength: 32
+          minLength: 1
+          type: string
+        style: form
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IpArpStateAllVrfs'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.forwarding_management_controller
+  /v0/state/forwarding/ipv6-nd:
+    get:
+      operationId: get_ipv6_neighbor_list
+      parameters:
+      - explode: true
+        in: query
+        name: start
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+        style: form
+      - explode: true
+        in: query
+        name: count
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+        style: form
+      - explode: true
+        in: query
+        name: vr_name
+        required: false
+        schema:
+          maxLength: 32
+          minLength: 1
+          type: string
+        style: form
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ipv6NDStateAllVrfs'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.forwarding_management_controller
+  /v0/state/forwarding/mac-fdb:
+    get:
+      operationId: get_vlan_mac_fdb_state
+      parameters:
+      - explode: true
+        in: query
+        name: start
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+        style: form
+      - explode: true
+        in: query
+        name: count
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+        style: form
+      - explode: true
+        in: query
+        name: lag_id
+        required: false
+        schema:
+          $ref: '#/components/schemas/LagId'
+        style: form
+      - explode: true
+        in: query
+        name: port
+        required: false
+        schema:
+          $ref: '#/components/schemas/PortName'
+        style: form
+      - explode: true
+        in: query
+        name: vlan_id
+        required: false
+        schema:
+          $ref: '#/components/schemas/VlanIdNonObject'
+        style: form
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/VlanMacFdbState'
+                type: array
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.forwarding_management_controller
+  /v0/configuration/vlan:
+    get:
+      operationId: get_vlan_summary_configuration
+      parameters:
+      - explode: true
+        in: query
+        name: start
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+        style: form
+      - explode: true
+        in: query
+        name: count
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/VlanInterfaceGetSettings'
+                type: array
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.vlan_management_controller
+  /v1/state/vlan:
+    get:
+      operationId: get_vlans_state_all_interfaces
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/VlanStateGenericInterface'
+                type: array
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.vlan_management_controller
+  /v0/configuration/ntp:
+    get:
+      operationId: get_ntp_configuration
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NtpSettings'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.ntp_management_controller
+  /v0/configuration/snmp:
+    get:
+      deprecated: true
+      operationId: get_snmp_configuration
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnmpGetSettings'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.snmp_management_controller
+  /v0/configuration/dns:
+    get:
+      operationId: get_dns_configuration
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DnsSettings'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.dns_management_controller
+  /v0/state/system/fans:
+    get:
+      operationId: get_system_fans_state
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/SystemFanTrayState'
+                type: array
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.device_management_controller
+  /v0/state/system/power-supplies:
+    get:
+      operationId: get_system_power_supplies_state
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/SystemPsuState'
+                type: array
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.device_management_controller
+  /v0/configuration/mgmt-interface:
+    get:
+      deprecated: true
+      operationId: get_mgmt_interface_configuration
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MgmtInterfaceSettings'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.management_interface_controller
+  /v0/configuration/loopback:
+    get:
+      operationId: get_loopback_interfaces
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/LoopbackSettings'
+                type: array
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.loopback_interface_management_controller
+  /v0/configuration/vrf:
+    get:
+      operationId: get_vrf_list
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VrfListWithVlanSummary'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.vrf_management_controller
+  /v0/state/route:
+    get:
+      operationId: get_routes_list
+      parameters:
+      - explode: true
+        in: query
+        name: start
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+        style: form
+      - explode: true
+        in: query
+        name: count
+        required: false
+        schema:
+          format: int32
+          minimum: 0
+          type: integer
+        style: form
+      - explode: true
+        in: query
+        name: ip_type
+        required: false
+        schema:
+          enum:
+          - IPv4
+          - IPv6
+          type: string
+        style: form
+      - explode: true
+        in: query
+        name: vr_name
+        required: false
+        schema:
+          type: string
+        style: form
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IpRouteStateListAllVrs'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.vrf_management_controller
+  /v0/state/transceiver/{port}:
+    get:
+      operationId: get_tranceiver_port_state_settings
+      parameters:
+      - explode: false
+        in: path
+        name: port
+        required: true
+        schema:
+          $ref: '#/components/schemas/PortName'
+        style: simple
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransceiverState'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.ethernet_interface_management_controller
+  /v0/configuration/accounts:
+    get:
+      operationId: get_username_list
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsernameList'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.user_account_management_controller
+  /v0/state/capabilities/urls:
+    get:
+      operationId: get_system_urls
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Urls'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.capabilities_management_controller
+  /v0/state/openapi/schema:
+    get:
+      operationId: get_openapi_yaml
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      responses:
+        '200':
+          content:
+            application/x-yaml:
+              schema:
+                format: binary
+                type: string
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.device_management_controller
+  /v0/operation/auth-token/:generate:
+    post:
+      operationId: generate_auth_token
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthTokenGenerate'
+        description: na
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.device_management_controller
+  /v0/operation/system/cli:
+    post:
+      operationId: execute_cli_commands
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      - explode: true
+        in: query
+        name: continue_on_failure
+        required: false
+        schema:
+          default: false
+          type: boolean
+        style: form
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemCliCommandRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemCliCommandExecution'
+          description: na
+        '207':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemCliCommandExecution'
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.device_management_controller
+  /v0/operation/system/config/:save:
+    post:
+      operationId: execute_save_config_file
+      parameters:
+      - explode: false
+        in: header
+        name: X-Auth-Token
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: Accept-encoding
+        required: false
+        schema:
+          type: string
+        style: simple
+      - explode: false
+        in: header
+        name: context-id
+        required: false
+        schema:
+          maxLength: 64
+          minLength: 1
+          type: string
+        style: simple
+      - explode: true
+        in: query
+        name: debug
+        required: false
+        schema:
+          type: boolean
+        style: form
+      - explode: true
+        in: query
+        name: debugLvl
+        required: false
+        schema:
+          maximum: 3
+          minimum: 1
+          type: integer
+        style: form
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemSaveConfigFile'
+      responses:
+        '204':
+          description: na
+        '405':
+          description: na
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorList'
+          description: na
+      x-openapi-router-controller: openapi_server.controllers.device_management_controller
+components:
+  securitySchemes:
+    basicAuth:
+      scheme: basic
+      type: http
+      x-basicInfoFunc: openapi_server.controllers.security_controller_.info_from_basicAuth
+    cookieAuth:
+      in: cookie
+      name: x-auth-token
+      type: apiKey
+      x-apikeyInfoFunc: openapi_server.controllers.security_controller_.info_from_cookieAuth
+  schemas:
+    AaaSecret:
+      properties:
+        isEncrypted:
+          title: isEncrypted
+          type: boolean
+        value:
+          maxLength: 512
+          minLength: 0
+          title: value
+          type: string
+      title: AaaSecret
+      type: object
+    AccountType:
+      properties:
+        level:
+          enum:
+          - ADMIN
+          - ADMIN_LIMITED
+          - L3_LIMITED
+          - L2_LIMITED
+          - L1_LIMITED
+          - READ_ONLY
+          title: level
+          type: string
+      title: AccountType
+      type: object
+    AddressFamilyNumbers:
+      enum:
+      - ALL802
+      - APPLE_TALK
+      - AS_NUMBER
+      - BANYAN_VINES
+      - BBN1822
+      - DEC_NET_4
+      - DISTINGUISHD_NAME
+      - DNS
+      - E163
+      - E164
+      - E164_NSAP
+      - F69
+      - FIBRE_CHANNEL_WWPN
+      - FIBRE_CHANNEL_WWNN
+      - GW_ID
+      - HDLC
+      - IPV4
+      - IPV6
+      - IPX
+      - NSAP
+      - OTHER
+      - RESERVED
+      - X121
+      - XTP_NATIVE
+      - XTP_OVER_IPV4
+      - XTP_OVER_IPV6
+      title: AddressFamilyNumbers
+      type: string
+    AdminStatus:
+      enum:
+      - UP
+      - DOWN
+      - TESTING
+      - RESET
+      - ENABLED
+      readOnly: false
+      title: AdminStatus
+      type: string
+    AirFlowDirection:
+      enum:
+      - FrontToBack
+      - BackToFront
+      - LeftToRight
+      - RightToLeft
+      - FRONT_TO_BACK
+      - BACK_TO_FRONT
+      - LEFT_TO_RIGHT
+      - RIGHT_TO_LEFT
+      - UNKNOWN
+      title: AirFlowDirection
+      type: string
+    AuthTokenGenerate:
+      properties:
+        password:
+          maxLength: 80
+          minLength: 0
+          title: password
+          type: string
+        ttl:
+          maximum: 86400
+          minimum: 60
+          title: ttl
+          type: integer
+        username:
+          maxLength: 32
+          minLength: 1
+          title: username
+          type: string
+      title: AuthTokenGenerate
+      type: object
+    AuthTokenResponse:
+      properties:
+        token:
+          type: string
+        ttl:
+          type: integer
+      title: AuthTokenResponse
+      type: object
+    AutoNegotiationAdvertisements:
+      enum:
+      - NONE
+      - 10-HALF
+      - 10-FULL
+      - 100-HALF
+      - 100-FULL
+      - 1000-HALF
+      - 1000-FULL
+      - 2500-FULL
+      - 5000-FULL
+      - 10000-HALF
+      - 10000-FULL
+      - 25000-HALF
+      - 25000-FULL
+      - 40000-FULL
+      - 50000-FULL
+      - 100000-FULL
+      - 400000-FULL
+      title: AutoNegotiationAdvertisements
+      type: string
+    BasicMacFdbState:
+      properties:
+        cvid:
+          maximum: 4096
+          minimum: 0
+          title: cvid
+          type: integer
+        interfaceName:
+          title: interfaceName
+          type: string
+        interfaceType:
+          enum:
+          - ETHERNET
+          - LAG
+          - UNKNOWN
+          title: interfaceType
+          type: string
+        macAddress:
+          allOf:
+          - $ref: '#/components/schemas/MacAddressNonObject'
+          title: macAddress
+        status:
+          enum:
+          - INVALID
+          - LEARNED
+          - MGMT
+          - OTHER
+          - SELF
+          - ANYCAST
+          title: status
+          type: string
+      title: BasicMacFdbState
+      type: object
+    CardList:
+      properties:
+        cards:
+          items:
+            $ref: '#/components/schemas/CardSettings'
+          title: cards
+          type: array
+      title: CardList
+      type: object
+    CardSettings:
+      properties:
+        adminStatus:
+          allOf:
+          - $ref: '#/components/schemas/AdminStatus'
+          readOnly: true
+          title: adminStatus
+        baseMacAddress:
+          pattern: ^([0-9A-Fa-f]{2}[:]){5}([0-9A-Fa-f]{2})$
+          title: baseMacAddress
+          type: string
+        brandName:
+          maxLength: 32
+          minLength: 0
+          readOnly: true
+          title: brandName
+          type: string
+        firmwareVersion:
+          maxLength: 32
+          minLength: 0
+          readOnly: true
+          title: firmwareVersion
+          type: string
+        hardwareRev:
+          maxLength: 20
+          minLength: 0
+          readOnly: true
+          title: hardwareRev
+          type: string
+        isPowerEnabled:
+          readOnly: false
+          title: isPowerEnabled
+          type: boolean
+        macAddrCapacity:
+          format: int32
+          readOnly: true
+          title: macAddrCapacity
+          type: integer
+        modelName:
+          maxLength: 32
+          minLength: 0
+          readOnly: true
+          title: modelName
+          type: string
+        numPorts:
+          maximum: 255
+          minimum: 0
+          readOnly: true
+          title: numPorts
+          type: integer
+        operationStatus:
+          allOf:
+          - $ref: '#/components/schemas/OperationStatus'
+          readOnly: true
+          title: operationStatus
+        partNumber:
+          maxLength: 16
+          minLength: 0
+          readOnly: true
+          title: partNumber
+          type: string
+        serialNumber:
+          maxLength: 16
+          minLength: 0
+          readOnly: true
+          title: serialNumber
+          type: string
+        slotNumber:
+          readOnly: true
+          title: slotNumber
+          type: integer
+        sysBuildTime:
+          readOnly: true
+          title: sysBuildTime
+          type: string
+        sysUpTime:
+          deprecated: true
+          readOnly: true
+          title: sysUpTime
+          type: integer
+        sysUpTimeUint64:
+          format: uint64
+          readOnly: true
+          title: sysUpTimeUint64
+          type: integer
+        vims:
+          items:
+            $ref: '#/components/schemas/VimSettings'
+          title: vims
+          type: array
+      title: CardSettings
+      type: object
+    ChassisIdSubtype:
+      enum:
+      - CHASSIS_COMPONENT
+      - INTERFACE_ALIAS
+      - INTERFACE_NAME
+      - LOCAL
+      - PORT_COMPONENT
+      - MAC_ADDRESS
+      - NETWORK_ADDRESS
+      readOnly: true
+      title: ChassisIdSubtype
+      type: string
+    DdiComponents:
+      properties:
+        highAlarmThreshold:
+          format: float
+          title: highAlarmThreshold
+          type: number
+        highWarningThreshold:
+          format: float
+          title: highWarningThreshold
+          type: number
+        lowAlarmThreshold:
+          format: float
+          title: lowAlarmThreshold
+          type: number
+        lowWarningThreshold:
+          format: float
+          title: lowWarningThreshold
+          type: number
+        status:
+          enum:
+          - NORMAL
+          - HIGH_WARNING
+          - HIGH_ALARM
+          - LOW_WARNING
+          - LOW_ALARM
+          title: status
+          type: string
+        value:
+          format: float
+          title: value
+          type: number
+      title: DdiComponents
+      type: object
+    DnsDomain:
+      properties:
+        dynamic:
+          default: false
+          readOnly: true
+          title: dynamic
+          type: boolean
+        name:
+          title: name
+          type: string
+      title: DnsDomain
+      type: object
+    DnsServer:
+      properties:
+        dynamic:
+          default: false
+          readOnly: true
+          title: dynamic
+          type: boolean
+        ipAddress:
+          $ref: '#/components/schemas/GeneralIpAddress'
+        vrName:
+          maxLength: 32
+          minLength: 1
+          title: vrName
+          type: string
+      title: DnsServer
+      type: object
+    DnsSettings:
+      properties:
+        domains:
+          items:
+            $ref: '#/components/schemas/DnsDomain'
+          title: domains
+          type: array
+        servers:
+          items:
+            $ref: '#/components/schemas/DnsServer'
+          title: servers
+          type: array
+      title: DnsSettings
+      type: object
+    ErrorList:
+      properties:
+        errors:
+          items:
+            $ref: '#/components/schemas/ErrorMessageElement'
+          title: errors
+          type: array
+      title: ErrorList
+      type: object
+    ErrorMessageElement:
+      properties:
+        debugLog:
+          type: string
+        errorCode:
+          type: number
+        errorMessage:
+          type: string
+        resource:
+          type: string
+      title: ErrorMessageElement
+      type: object
+    EthernetInterface:
+      properties:
+        autoAdvertisementsList:
+          default:
+          - NONE
+          items:
+            $ref: '#/components/schemas/AutoNegotiationAdvertisements'
+          title: autoAdvertisementsList
+          type: array
+        autoNegotiationEnabled:
+          default: true
+          title: autoNegotiationEnabled
+          type: boolean
+        channelized:
+          default: false
+          title: channelized
+          type: boolean
+        debounceTimer:
+          default: 0
+          format: int32
+          maximum: 300000
+          minimum: 0
+          title: debounceTimer
+          type: integer
+        description:
+          maxLength: 255
+          title: description
+          type: string
+        duplex:
+          $ref: '#/components/schemas/TransmissionType'
+        eee:
+          default: false
+          title: eee
+          type: boolean
+        enabled:
+          default: true
+          title: enabled
+          type: boolean
+        fec:
+          $ref: '#/components/schemas/ForwardErrorCorrection'
+        flexUni:
+          default: false
+          title: flexUni
+          type: boolean
+        flowControl:
+          $ref: '#/components/schemas/FlowControl'
+        ipArpInspectionTrusted:
+          title: ipArpInspectionTrusted
+          type: boolean
+        nativeVlan:
+          format: int32
+          maximum: 4094
+          minimum: 0
+          title: nativeVlan
+          type: integer
+        partition:
+          $ref: '#/components/schemas/PortPartitions'
+        portLockedForConfigChange:
+          default: false
+          title: portLockedForConfigChange
+          type: boolean
+        portMode:
+          default: false
+          title: portMode
+          type: boolean
+        speed:
+          $ref: '#/components/schemas/TransmissionSpeed'
+        vimGroupSpeedOnly:
+          default: true
+          title: vimGroupSpeedOnly
+          type: boolean
+      title: EthernetInterface
+      type: object
+    EthernetInterfaceComponentLevel:
+      properties:
+        name:
+          pattern: ^((\d{1,3}):(\d{1,3}):?(\d{1,2})?|(\d{1,3}):(s\d)|ge\d{1,3}|wifi\d{1,3}|wifi\d{1,2}\.\d|([1-8]:)?mgmt|([1-8]):(stack[1-2])|eth(\d{0,7})|pse\d{1,3}|agg0|red0|cpp)$
+          title: PortName
+          type: string
+        settings:
+          $ref: '#/components/schemas/EthernetInterface'
+      title: EthernetInterfaceComponentLevel
+      type: object
+    EthernetInterfaceStateComponentLevelV1:
+      properties:
+        name:
+          pattern: ^((\d{1,3}):(\d{1,3}):?(\d{1,2})?|(\d{1,3}):(s\d)|ge\d{1,3}|wifi\d{1,3}|wifi\d{1,2}\.\d|([1-8]:)?mgmt|([1-8]):(stack[1-2])|eth(\d{0,7})|pse\d{1,3}|agg0|red0|cpp)$
+          title: PortName
+          type: string
+        settings:
+          $ref: '#/components/schemas/EthernetInterfaceStateV1'
+      title: EthernetInterfaceStateComponentLevelV1
+      type: object
+    EthernetInterfaceStateV1:
+      allOf:
+      - $ref: '#/components/schemas/MacAddress'
+      - $ref: '#/components/schemas/EthernetInterfaceStateV1_allOf'
+      title: EthernetInterfaceStateV1
+      type: object
+    EthernetInterfaceStateV1_allOf:
+      properties:
+        congPkts:
+          format: uint64
+          minimum: 0
+          readOnly: true
+          title: congPkts
+          type: integer
+        connectorType:
+          enum:
+          - RJ45
+          - TRANSCEIVER
+          - INTERNAL
+          title: connectorType
+          type: string
+        ifIndex:
+          maximum: 2147483647
+          minimum: 0
+          title: ifIndex
+          type: integer
+        localName:
+          title: localName
+          type: string
+        operAutoNegotiation:
+          title: operAutoNegotiation
+          type: boolean
+        operDuplex:
+          enum:
+          - HALF
+          - FULL
+          title: operDuplex
+          type: string
+        operSpeed:
+          enum:
+          - 0M
+          - 10M
+          - 100M
+          - 1G
+          - 2.5G
+          - 5G
+          - 10G
+          - 20G
+          - 25G
+          - 40G
+          - 50G
+          - 100G
+          - 400G
+          title: operSpeed
+          type: string
+        operState:
+          $ref: '#/components/schemas/InterfaceStatus'
+        silkscreenName:
+          title: silkscreenName
+          type: string
+        transceiverCableLength:
+          $ref: '#/components/schemas/TransceiverCableLength'
+        transceiverSpeed:
+          $ref: '#/components/schemas/TransceiverSpeed'
+        transceiverType:
+          $ref: '#/components/schemas/TransceiverType'
+        type:
+          enum:
+          - ETHERNET
+          - SOFTWARE_LOOPBACK
+          - STACK_PORT
+          title: type
+          type: string
+        utilization:
+          $ref: '#/components/schemas/EthernetInterfaceUtilizationStateV1'
+      title: EthernetInterfaceStateV1_allOf
+      type: object
+    EthernetInterfaceUtilizationStateV1:
+      properties:
+        rx:
+          $ref: '#/components/schemas/FloatGauge'
+        tx:
+          $ref: '#/components/schemas/FloatGauge'
+      title: EthernetInterfaceUtilizationStateV1
+      type: object
+    FanState:
+      enum:
+      - Failed
+      - Ok
+      - NotPresent
+      - FAILED
+      - OK
+      - NOT_PRESENT
+      - UNKNOWN
+      title: FanState
+      type: string
+    FloatGauge:
+      properties:
+        avg:
+          format: float
+          type: number
+        max:
+          format: float
+          type: number
+        min:
+          format: float
+          type: number
+      required:
+      - avg
+      title: FloatGauge
+      type: object
+    FlowControl:
+      default: DISABLE
+      enum:
+      - ENABLE
+      - DISABLE
+      - RX_ENABLE
+      - PFC_ENABLE
+      title: FlowControl
+      type: string
+    ForwardErrorCorrection:
+      default: NONE
+      enum:
+      - NONE
+      - CLAUSE_74
+      - CLAUSE_91_108
+      - CLAUSE_91
+      - CLAUSE_108
+      - AUTO
+      title: ForwardErrorCorrection
+      type: string
+    GeneralHostOrIp:
+      anyOf:
+      - $ref: '#/components/schemas/HostName'
+      - $ref: '#/components/schemas/Ipv4Address'
+      - $ref: '#/components/schemas/Ipv6Address'
+      discriminator:
+        mapping:
+          IPv4: '#/components/schemas/Ipv4Address'
+          IPv6: '#/components/schemas/Ipv6Address'
+          hostname: '#/components/schemas/HostName'
+        propertyName: hostType
+      properties:
+        hostType:
+          enum:
+          - hostname
+          - IPv4
+          - IPv6
+          type: string
+      title: GeneralHostOrIp
+      type: object
+    GeneralIpAddress:
+      anyOf:
+      - $ref: '#/components/schemas/Ipv4Address'
+      - $ref: '#/components/schemas/Ipv6Address'
+      discriminator:
+        mapping:
+          IPv4: '#/components/schemas/Ipv4Address'
+          IPv6: '#/components/schemas/Ipv6Address'
+        propertyName: ipAddressType
+      properties:
+        ipAddressType:
+          enum:
+          - IPv4
+          - IPv6
+          type: string
+      title: GeneralIpAddress
+      type: object
+    GeneralIpAddressMask:
+      anyOf:
+      - $ref: '#/components/schemas/Ipv4AddressMask'
+      - $ref: '#/components/schemas/Ipv6AddressMask'
+      discriminator:
+        mapping:
+          IPv4: '#/components/schemas/Ipv4AddressMask'
+          IPv6: '#/components/schemas/Ipv6AddressMask'
+        propertyName: ipAddressType
+      properties:
+        ipAddressType:
+          enum:
+          - IPv4
+          - IPv6
+          type: string
+      title: GeneralIpAddressMask
+      type: object
+    GeneralIpAddressMask0:
+      anyOf:
+      - $ref: '#/components/schemas/Ipv4AddressMask0'
+      - $ref: '#/components/schemas/Ipv6AddressMask0'
+      discriminator:
+        mapping:
+          IPv4: '#/components/schemas/Ipv4AddressMask0'
+          IPv6: '#/components/schemas/Ipv6AddressMask0'
+        propertyName: ipAddressType
+      properties:
+        ipAddressType:
+          enum:
+          - IPv4
+          - IPv6
+          type: string
+      title: GeneralIpAddressMask0
+      type: object
+    GenericInterface:
+      properties:
+        interfaceName:
+          maxLength: 255
+          minLength: 1
+          title: interfaceName
+          type: string
+        interfaceType:
+          $ref: '#/components/schemas/IfType'
+      required:
+      - interfaceName
+      - interfaceType
+      title: GenericInterface
+      type: object
+    HostName:
+      properties:
+        address:
+          title: address
+          type: string
+      title: HostName
+      type: object
+    IfType:
+      enum:
+      - PORT
+      - LAG
+      - ISIS_LOGICAL_INTERFACE
+      title: IfType
+      type: string
+    InterfaceStatus:
+      enum:
+      - Down
+      - Up
+      - UP
+      - DOWN
+      - TESTING
+      - UNKNOWN
+      - DORMANT
+      - NOT-PRESENT
+      - LOWER-LAYER-DOWN
+      title: InterfaceStatus
+      type: string
+    IpArpState:
+      properties:
+        arpType:
+          enum:
+          - OTHER
+          - DYNAMIC
+          - STATIC
+          - LOCAL
+          title: arpType
+          type: string
+        ipAddress:
+          format: ipv4
+          title: ipAddress
+          type: string
+        physicalAddress:
+          title: physicalAddress
+          type: string
+        port:
+          title: port
+          type: string
+        ttl:
+          title: ttl
+          type: integer
+        tunnel:
+          allOf:
+          - $ref: '#/components/schemas/MacAddressNonObject'
+          title: tunnel
+        vlanId:
+          maximum: 4095
+          minimum: 1
+          title: vlanId
+          type: integer
+      title: IpArpState
+      type: object
+    IpArpStateAllVrfs:
+      items:
+        $ref: '#/components/schemas/IpArpStatePerVrf'
+      type: array
+    IpArpStatePerVrf:
+      allOf:
+      - $ref: '#/components/schemas/VrName'
+      - $ref: '#/components/schemas/IpArpStatePerVrf_allOf'
+      title: IpArpStatePerVrf
+    IpArpStatePerVrf_allOf:
+      properties:
+        arpList:
+          items:
+            $ref: '#/components/schemas/IpArpState'
+          title: IpArpStateList
+          type: array
+      title: IpArpStatePerVrf_allOf
+      type: object
+    IpRoute:
+      properties:
+        blackhole:
+          default: false
+          title: blackhole
+          type: boolean
+        defaultRoute:
+          default: false
+          title: defaultRoute
+          type: boolean
+        localInterfaceName:
+          $ref: '#/components/schemas/IpRoute_localInterfaceName'
+        localInterfaceType:
+          $ref: '#/components/schemas/IpRoute_localInterfaceType'
+        name:
+          maxLength: 64
+          minLength: 0
+          title: name
+          type: string
+        nextHop:
+          $ref: '#/components/schemas/GeneralIpAddress'
+        preference:
+          maximum: 65534
+          minimum: 0
+          title: preference
+          type: integer
+        prefix:
+          $ref: '#/components/schemas/GeneralIpAddressMask0'
+        weight:
+          maximum: 65535
+          minimum: 1
+          title: weight
+          type: integer
+      title: IpRoute
+      type: object
+    IpRouteOrigin:
+      enum:
+      - STATIC
+      - OSPF
+      - OSPF_INTER
+      - OSPF_INTRA
+      - OSPF_EXT1
+      - OSPF_EXT2
+      - OSPF_AS_EXT
+      - ISIS
+      - DIRECT
+      - RIP
+      - BGP
+      - BLACKHOLE
+      - EBGP
+      - IBGP
+      - BOOTP
+      - DVMRP
+      - HARD_CODED
+      - INTER_VRF
+      - ICMP
+      - ISIS_L1
+      - ISIS_L1_EXT
+      - ISIS_L2
+      - ISIS_L2_EXT
+      - MBGP
+      - MBGP_EXT
+      - MBGP_INTER
+      - MPLS
+      - MPLS_INTRA
+      - MPLS_INTER
+      - MRT
+      - MOSPF
+      - OSPFV3
+      - OSPFV3_EXT1
+      - OSPFV3_EXT2
+      - OSPFV3_INTRA
+      - OSPFV3_AS_EXT
+      - OSPFV3_INTER
+      - PIM_DM
+      - PIM_SM
+      - RIPNG
+      - ROUTER_ADVERTISEMENT
+      - SPBM_L1
+      - DVR
+      - NLS
+      - HOST_MOBILITY
+      - AUTO_PEERING
+      - AUTO_CONF
+      - OSPF_INTER_VR
+      - DIRECT_INTER_VR
+      - EVPN
+      - UNKNOWN
+      title: IpRouteOrigin
+      type: string
+    IpRouteState:
+      allOf:
+      - $ref: '#/components/schemas/IpRoute'
+      - $ref: '#/components/schemas/IpRouteState_allOf'
+      title: IpRouteState
+    IpRouteStateListAllVrs:
+      items:
+        $ref: '#/components/schemas/IpRouteStateWithVr'
+      type: array
+    IpRouteStateWithVr:
+      allOf:
+      - $ref: '#/components/schemas/VrName'
+      - $ref: '#/components/schemas/IpRouteState'
+      title: IpRouteStateWithVr
+    IpRouteState_allOf:
+      properties:
+        age:
+          format: int32
+          title: age
+          type: integer
+        isid:
+          format: int32
+          maximum: 16777215
+          minimum: 0
+          title: isid
+          type: integer
+        isidName:
+          maxLength: 64
+          minLength: 0
+          title: name
+          type: string
+        nextHopId:
+          maxLength: 64
+          minLength: 0
+          title: nextHopId
+          type: string
+        origin:
+          $ref: '#/components/schemas/IpRouteOrigin'
+        status:
+          $ref: '#/components/schemas/IpRouteStatus'
+        vlanId:
+          maximum: 4095
+          minimum: 0
+          title: VlanIdIncMgmtZeroNonObject
+          type: integer
+        vlanName:
+          maxLength: 64
+          minLength: 0
+          title: vlanName
+          type: string
+      title: IpRouteState_allOf
+      type: object
+    IpRouteStatus:
+      enum:
+      - UNKNOWN
+      - INACTIVE
+      - ACTIVE
+      title: IpRouteStatus
+      type: string
+    IpRoute_localInterfaceName:
+      anyOf:
+      - $ref: '#/components/schemas/LocalIfName'
+      - enum:
+        - ''
+        type: string
+      title: IpRoute_localInterfaceName
+    IpRoute_localInterfaceType:
+      oneOf:
+      - $ref: '#/components/schemas/LocalIfType'
+      - enum:
+        - NONE
+        type: string
+      title: IpRoute_localInterfaceType
+    IpTunnelIdNonObject:
+      maximum: 2000
+      minimum: 1
+      type: integer
+    Ipv4Address:
+      properties:
+        address:
+          format: ipv4
+          title: address
+          type: string
+      title: Ipv4Address
+      type: object
+    Ipv4AddressMask:
+      properties:
+        address:
+          format: ipv4
+          title: address
+          type: string
+        maskLength:
+          maximum: 32
+          minimum: 1
+          title: maskLength
+          type: integer
+      title: Ipv4AddressMask
+      type: object
+    Ipv4AddressMask0:
+      properties:
+        address:
+          format: ipv4
+          title: address
+          type: string
+        maskLength:
+          maximum: 32
+          minimum: 0
+          title: maskLength
+          type: integer
+      title: Ipv4AddressMask0
+      type: object
+    Ipv4AddressNonObject:
+      format: ipv4
+      title: ipAddress
+      type: string
+    Ipv6Address:
+      properties:
+        address:
+          format: ipv6
+          type: string
+      title: Ipv6Address
+      type: object
+    Ipv6AddressMask:
+      properties:
+        address:
+          format: ipv6
+          title: address
+          type: string
+        maskLength:
+          maximum: 128
+          minimum: 1
+          title: maskLength
+          type: integer
+      title: Ipv6AddressMask
+      type: object
+    Ipv6AddressMask0:
+      properties:
+        address:
+          format: ipv6
+          title: address
+          type: string
+        maskLength:
+          maximum: 128
+          minimum: 0
+          title: maskLength
+          type: integer
+      title: Ipv6AddressMask0
+      type: object
+    Ipv6NDState:
+      properties:
+        interfaceName:
+          title: interfaceName
+          type: string
+        interfaceType:
+          enum:
+          - MANAGEMENT_INTERFACE
+          - VLAN
+          - CIRCUITLESS_IP
+          - TUNNEL
+          - BROUTER
+          title: interfaceType
+          type: string
+        ipAddress:
+          format: ipv6
+          title: ipAddress
+          type: string
+        lastUpdatedTime:
+          title: lastUpdatedTime
+          type: integer
+        nbrDetectionState:
+          enum:
+          - REACHABLE
+          - STALE
+          - DELAY
+          - PROBE
+          - INVALID
+          - UNKNOWN
+          - INCOMPLETE
+          title: nbrDetectionState
+          type: string
+        nbrType:
+          enum:
+          - OTHER
+          - DYNAMIC
+          - STATIC
+          - LOCAL
+          title: nbrType
+          type: string
+        physicalAddress:
+          title: physicalAddress
+          type: string
+        port:
+          title: port
+          type: string
+        tunnel:
+          allOf:
+          - $ref: '#/components/schemas/MacAddressNonObject'
+          title: tunnel
+      title: Ipv6NDState
+      type: object
+    Ipv6NDStateAllVrfs:
+      items:
+        $ref: '#/components/schemas/Ipv6NDStatePerVrf'
+      type: array
+    Ipv6NDStatePerVrf:
+      allOf:
+      - $ref: '#/components/schemas/VrName'
+      - $ref: '#/components/schemas/Ipv6NDStatePerVrf_allOf'
+      title: Ipv6NDStatePerVrf
+    Ipv6NDStatePerVrf_allOf:
+      properties:
+        ipv6NdList:
+          items:
+            $ref: '#/components/schemas/Ipv6NDState'
+          title: Ipv6NDStateList
+          type: array
+      title: Ipv6NDStatePerVrf_allOf
+      type: object
+    LagId:
+      maxLength: 32
+      minLength: 1
+      title: lagId
+      type: string
+    LldpChassisId:
+      maxLength: 255
+      minLength: 1
+      readOnly: true
+      type: string
+    LldpChassisIdSubtype:
+      enum:
+      - CHASSIS_COMPONENT
+      - INTERFACE_ALIAS
+      - INTERFACE_NAME
+      - LOCAL
+      - PORT_COMPONENT
+      - MAC_ADDRESS
+      - NETWORK_ADDRESS
+      readOnly: true
+      title: LldpChassisIdSubtype
+      type: string
+    LldpManagementAddressIfSubtype:
+      enum:
+      - IFINDEX
+      - SYS_PORT_NUMBER
+      - UNKNOWN
+      readOnly: true
+      title: LldpManagementAddressIfSubtype
+      type: string
+    LldpNeighbor:
+      allOf:
+      - $ref: '#/components/schemas/LldpNeighborKey'
+      - $ref: '#/components/schemas/LldpNeighborBasic'
+      title: LldpNeighbor
+    LldpNeighborBasic:
+      properties:
+        chassisId:
+          allOf:
+          - $ref: '#/components/schemas/LldpChassisId'
+          readOnly: true
+          title: chassisId
+        chassisIdSubtype:
+          allOf:
+          - $ref: '#/components/schemas/LldpChassisIdSubtype'
+          readOnly: true
+          title: chassisIdSubtype
+        fabricAttach:
+          $ref: '#/components/schemas/LldpNeighborFabricAttach'
+        ipAddressList:
+          items:
+            type: string
+          readOnly: true
+          title: ipAddressList
+          type: array
+        managementAddressList:
+          items:
+            $ref: '#/components/schemas/LldpNeighborManagementAddress'
+          title: managementAddressList
+          type: array
+        med:
+          $ref: '#/components/schemas/LldpNeighborXMed'
+        portDesc:
+          maxLength: 255
+          readOnly: true
+          title: portDesc
+          type: string
+        portId:
+          allOf:
+          - $ref: '#/components/schemas/LldpPortId'
+          readOnly: true
+          title: portId
+        portIdSubtype:
+          allOf:
+          - $ref: '#/components/schemas/LldpPortIdSubtype'
+          readOnly: true
+          title: portIdSubtype
+        sysCapEnabled:
+          items:
+            $ref: '#/components/schemas/LldpSystemCapability'
+          title: sysCapEnabled
+          type: array
+        sysCapSupported:
+          items:
+            $ref: '#/components/schemas/LldpSystemCapability'
+          title: sysCapSupported
+          type: array
+        sysDesc:
+          maxLength: 255
+          minLength: 0
+          readOnly: true
+          title: sysDesc
+          type: string
+        sysName:
+          maxLength: 255
+          minLength: 0
+          readOnly: true
+          title: sysName
+          type: string
+        ztf:
+          $ref: '#/components/schemas/LldpNeighborZtf'
+      title: LldpNeighborBasic
+      type: object
+    LldpNeighborFabricAttach:
+      properties:
+        authEnabled:
+          readOnly: true
+          title: authEnabled
+          type: boolean
+        macAddr:
+          pattern: ^([0-9A-Fa-f]{2}[:]){5}([0-9A-Fa-f]{2})$
+          title: baseMacAddress
+          type: string
+        mgmtVlanId:
+          $ref: '#/components/schemas/LldpNeighborFabricAttach_mgmtVlanId'
+        reserved:
+          readOnly: true
+          title: reserved
+          type: integer
+        state:
+          readOnly: true
+          title: state
+          type: integer
+        type:
+          enum:
+          - CLIENT_ENDPT
+          - CLIENT_IPCAMERA
+          - CLIENT_IPPHONE
+          - CLIENT_IPVIDEO
+          - CLIENT_ONA_SDN
+          - CLIENT_ONA_SPBOIP
+          - CLIENT_ROUTER
+          - CLIENT_SECDEV
+          - CLIENT_SWITCH
+          - CLIENT_VSWITCH
+          - CLIENT_WAP1
+          - CLIENT_WAP2
+          - NOT_SUPPORTED
+          - PROXY
+          - PROXY_NOAUTH
+          - PROXY_RING
+          - SERVER
+          - SERVER_NOAUTH
+          - UNKNOWN
+          readOnly: true
+          title: type
+          type: string
+        vlanIdIsidMapList:
+          items:
+            $ref: '#/components/schemas/LldpNeighborFabricAttachVlanIsidMap'
+          readOnly: true
+          title: vlanIdIsidMapList
+          type: array
+      title: LldpNeighborFabricAttach
+      type: object
+    LldpNeighborFabricAttachVlanIsidMap:
+      properties:
+        isid:
+          format: int32
+          maximum: 16777215
+          minimum: 1
+          title: isid
+          type: integer
+        status:
+          enum:
+          - ACTIVE
+          - PENDING
+          - REJECTED_APPLICATION_INTERACTION
+          - REJECTED_DUPLICATE
+          - REJECTED_INVALID_VLAN
+          - REJECTED_NO_REASON
+          - REJECTED_PEER_ACCEPTANCE
+          - REJECTED_RESOURCE
+          - REJECTED_RESOURCE_VLAN
+          - REJECTED_UNKNOWN_VLAN
+          - UNKNOWN
+          readOnly: true
+          title: status
+          type: string
+        vlanId:
+          maximum: 4094
+          minimum: 1
+          title: vlanId
+          type: integer
+      title: LldpNeighborFabricAttachVlanIsidMap
+      type: object
+    LldpNeighborFabricAttach_mgmtVlanId:
+      anyOf:
+      - enum:
+        - 0
+        type: integer
+      - $ref: '#/components/schemas/VlanIdNonObject'
+      title: LldpNeighborFabricAttach_mgmtVlanId
+    LldpNeighborKey:
+      properties:
+        index:
+          format: int32
+          maximum: 2147483647
+          minimum: 1
+          readOnly: true
+          title: index
+          type: integer
+        portName:
+          readOnly: true
+          title: portName
+          type: string
+        timeMark:
+          readOnly: true
+          title: timeMark
+          type: integer
+      required:
+      - index
+      - portName
+      - timeMark
+      title: LldpNeighborKey
+      type: object
+    LldpNeighborManagementAddress:
+      properties:
+        address:
+          readOnly: true
+          title: address
+          type: string
+        addressIfId:
+          format: int32
+          readOnly: true
+          title: addressIfId
+          type: integer
+        addressIfSubtype:
+          allOf:
+          - $ref: '#/components/schemas/LldpManagementAddressIfSubtype'
+          readOnly: true
+          title: addressIfSubtype
+        addressSubtype:
+          $ref: '#/components/schemas/AddressFamilyNumbers'
+      required:
+      - address
+      - addressSubtype
+      title: LldpNeighborManagementAddress
+      type: object
+    LldpNeighborXMed:
+      properties:
+        capCurrent:
+          items:
+            $ref: '#/components/schemas/LldpXMedCapability'
+          title: capCurrent
+          type: array
+        capSupported:
+          items:
+            $ref: '#/components/schemas/LldpXMedCapability'
+          title: capSupported
+          type: array
+        deviceClass:
+          allOf:
+          - $ref: '#/components/schemas/LldpXMedDeviceClass'
+          title: deviceClass
+        inventory:
+          $ref: '#/components/schemas/LldpNeighborXMedInventory'
+        location:
+          $ref: '#/components/schemas/PortLldpLocation'
+        poe:
+          $ref: '#/components/schemas/LldpNeighborXMedPoe'
+        policyList:
+          items:
+            $ref: '#/components/schemas/LldpNeighborXMedPolicy'
+          title: policyList
+          type: array
+      title: LldpNeighborXMed
+      type: object
+    LldpNeighborXMedInventory:
+      properties:
+        assetId:
+          readOnly: true
+          title: assetId
+          type: string
+        firmwareRev:
+          readOnly: true
+          title: firmwareRev
+          type: string
+        hardwareRev:
+          readOnly: true
+          title: hardwareRev
+          type: string
+        mfgName:
+          readOnly: true
+          title: mfgName
+          type: string
+        modelName:
+          readOnly: true
+          title: modelName
+          type: string
+        serialNum:
+          readOnly: true
+          title: serialNum
+          type: string
+        softwareRev:
+          readOnly: true
+          title: softwareRev
+          type: string
+      title: LldpNeighborXMedInventory
+      type: object
+    LldpNeighborXMedPoe:
+      properties:
+        deviceType:
+          $ref: '#/components/schemas/PoeDeviceType'
+        pd:
+          $ref: '#/components/schemas/LldpNeighborXMedPoe_pd'
+        pse:
+          $ref: '#/components/schemas/LldpNeighborXMedPoe_pse'
+      title: LldpNeighborXMedPoe
+      type: object
+    LldpNeighborXMedPoe_pd:
+      properties:
+        powerPriority:
+          $ref: '#/components/schemas/PowerPriority'
+        powerReq:
+          maximum: 1023
+          minimum: 0
+          readOnly: true
+          title: powerReq
+          type: integer
+        powerSource:
+          enum:
+          - LOCAL
+          - LOCAL_PSE
+          - PSE
+          - UNKNOWN
+          readOnly: true
+          title: powerSource
+          type: string
+      title: LldpNeighborXMedPoe_pd
+      type: object
+    LldpNeighborXMedPoe_pse:
+      properties:
+        powerAv:
+          maximum: 1023
+          minimum: 0
+          readOnly: true
+          title: powerAv
+          type: integer
+        powerPriority:
+          $ref: '#/components/schemas/PowerPriority'
+        powerSource:
+          enum:
+          - BACKUP
+          - PRIMARY
+          - UNKNOWN
+          readOnly: true
+          title: powerSource
+          type: string
+      title: LldpNeighborXMedPoe_pse
+      type: object
+    LldpNeighborXMedPolicy:
+      properties:
+        appType:
+          items:
+            $ref: '#/components/schemas/PortLldpMedPolicyAppType'
+          readOnly: true
+          title: appType
+          type: array
+        dscp:
+          maximum: 63
+          minimum: 0
+          readOnly: true
+          title: dscp
+          type: integer
+        priority:
+          maximum: 7
+          minimum: 0
+          readOnly: true
+          title: priority
+          type: integer
+        taggedEnabled:
+          readOnly: true
+          title: taggedEnabled
+          type: boolean
+        vlanId:
+          $ref: '#/components/schemas/LldpNeighborXMedPolicy_vlanId'
+      required:
+      - appType
+      title: LldpNeighborXMedPolicy
+      type: object
+    LldpNeighborXMedPolicy_vlanId:
+      anyOf:
+      - $ref: '#/components/schemas/VlanIdNonObject'
+      - enum:
+        - 0
+        - 4095
+        type: integer
+      title: LldpNeighborXMedPolicy_vlanId
+    LldpNeighborZtf:
+      properties:
+        fabricExtendAuth:
+          enum:
+          - OK
+          - FAILED
+          - UNKNOWN
+          readOnly: true
+          title: fabricExtendAuth
+          type: string
+        gatewayIpAddress:
+          allOf:
+          - $ref: '#/components/schemas/Ipv4AddressNonObject'
+          readOnly: true
+          title: gatewayIpAddress
+        localIpAddress:
+          $ref: '#/components/schemas/LldpNeighborZtf_localIpAddress'
+        mtu:
+          readOnly: true
+          title: mtu
+          type: integer
+        tunnelGroupList:
+          items:
+            $ref: '#/components/schemas/LldpNeighborZtfTunnelGroup'
+          readOnly: true
+          title: tunnelGroupList
+          type: array
+      title: LldpNeighborZtf
+      type: object
+    LldpNeighborZtfTunnelGroup:
+      properties:
+        destinationTunnelList:
+          items:
+            $ref: '#/components/schemas/Ipv4AddressNonObject'
+          readOnly: true
+          title: destinationTunnelList
+          type: array
+        enabled:
+          readOnly: true
+          title: enabled
+          type: boolean
+        id:
+          readOnly: true
+          title: id
+          type: integer
+        metric:
+          format: int64
+          maximum: 4294967295
+          minimum: 0
+          title: metric
+          type: integer
+      title: LldpNeighborZtfTunnelGroup
+      type: object
+    LldpNeighborZtf_localIpAddress:
+      allOf:
+      - $ref: '#/components/schemas/Ipv4AddressMask0'
+      readOnly: true
+      title: LldpNeighborZtf_localIpAddress
+    LldpPortId:
+      maxLength: 255
+      minLength: 1
+      readOnly: true
+      type: string
+    LldpPortIdSubtype:
+      enum:
+      - AGENT_CIRCUIT_ID
+      - INTERFACE_ALIAS
+      - INTERFACE_NAME
+      - LOCAL
+      - PORT_COMPONENT
+      - MAC_ADDRESS
+      - NETWORK_ADDRESS
+      - UNKNOWN
+      readOnly: true
+      title: LldpPortIdSubtype
+      type: string
+    LldpState:
+      allOf:
+      - $ref: '#/components/schemas/LldpState_allOf'
+      title: LldpState
+    LldpState_allOf:
+      properties:
+        neighbors:
+          items:
+            $ref: '#/components/schemas/LldpNeighbor'
+          title: LldpNeighborList
+          type: array
+      title: LldpState_allOf
+      type: object
+    LldpSystemCapability:
+      enum:
+      - BRIDGE
+      - DOCSIS
+      - OTHER
+      - REPEATER
+      - ROUTER
+      - WLAN_AP
+      - STATION_ONLY
+      - TELEPHONE
+      title: LldpSystemCapability
+      type: string
+    LldpXMedCapability:
+      enum:
+      - CAPABILITIES
+      - EXTENDED_PD
+      - EXTENDED_PSE
+      - INVENTORY
+      - LOCATION
+      - NETWORK_POLICY
+      title: LldpXMedCapability
+      type: string
+    LldpXMedDeviceClass:
+      enum:
+      - ENDPOINT_CLASS_1
+      - ENDPOINT_CLASS_2
+      - ENDPOINT_CLASS_3
+      - NETWORK_CONNECTIVITY
+      - NOT_DEFINED
+      title: LldpXMedDeviceClass
+      type: string
+    LocalIfName:
+      anyOf:
+      - $ref: '#/components/schemas/PortName'
+      - $ref: '#/components/schemas/VlanIdIncMgmtZeroNonObject'
+      - $ref: '#/components/schemas/IpTunnelIdNonObject'
+      - $ref: '#/components/schemas/MgmtOobName'
+      title: LocalIfName
+    LocalIfType:
+      enum:
+      - PORT
+      - VLAN
+      - IP_TUNNEL
+      - OOB
+      title: LocalIfType
+      type: string
+    LoopbackSettings:
+      allOf:
+      - $ref: '#/components/schemas/LoopbackSettingsById'
+      - $ref: '#/components/schemas/LoopbackSettings_allOf'
+      required:
+      - id
+      - ipAddressList
+      title: LoopbackSettings
+      type: object
+    LoopbackSettingsById:
+      properties:
+        ipAddressList:
+          items:
+            $ref: '#/components/schemas/GeneralIpAddressMask'
+          title: ipAddressList
+          type: array
+        multiAreaVirtualLink:
+          enum:
+          - NONE
+          - HOME
+          - REMOTE
+          title: multiAreaVirtualLink
+          type: string
+        type:
+          enum:
+          - LOOPBACK_INTERFACE
+          - LOOPBACK_VLAN
+          readOnly: true
+          title: type
+          type: string
+        vrName:
+          allOf:
+          - $ref: '#/components/schemas/VrNameNonObject'
+          title: vrName
+      title: LoopbackSettingsById
+      type: object
+    LoopbackSettings_allOf:
+      properties:
+        id:
+          maximum: 4094
+          minimum: 1
+          title: id
+          type: integer
+      title: LoopbackSettings_allOf
+      type: object
+    MacAddress:
+      properties:
+        macAddress:
+          pattern: ^([0-9A-Fa-f]{2}[:]){5}([0-9A-Fa-f]{2})$
+          title: macAddress
+          type: string
+      title: MacAddress
+      type: object
+    MacAddressNonObject:
+      pattern: ^([0-9A-Fa-f]{2}[:]){5}([0-9A-Fa-f]{2})$
+      title: baseMacAddress
+      type: string
+    MgmtInterfaceSettings:
+      properties:
+        addresses:
+          items:
+            $ref: '#/components/schemas/GeneralIpAddressMask'
+          title: addresses
+          type: array
+        dhcpClient:
+          enum:
+          - OOB
+          - VLAN
+          - CYCLE
+          - DISABLE
+          title: dhcpClient
+          type: string
+        enabled:
+          title: enabled
+          type: boolean
+        mode:
+          enum:
+          - OOB
+          title: mode
+          type: string
+        vlanId:
+          readOnly: true
+          title: vlanId
+          type: integer
+      title: MgmtInterfaceSettings
+      type: object
+    MgmtOobName:
+      type: string
+    NtpServer:
+      properties:
+        enabled:
+          default: true
+          title: enabled
+          type: boolean
+        ipAddress:
+          $ref: '#/components/schemas/GeneralHostOrIp'
+      title: NtpServer
+      type: object
+    NtpSettings:
+      properties:
+        vrBasedSettings:
+          items:
+            $ref: '#/components/schemas/NtpSettingsByVr'
+          title: vrBasedSettings
+          type: array
+      title: NtpSettings
+      type: object
+    NtpSettingsByVr:
+      properties:
+        enabled:
+          default: false
+          title: enabled
+          type: boolean
+        pollInterval:
+          default: 8
+          maximum: 17
+          minimum: 4
+          title: pollInterval
+          type: integer
+        servers:
+          items:
+            $ref: '#/components/schemas/NtpServer'
+          title: servers
+          type: array
+        vrName:
+          maxLength: 32
+          minLength: 1
+          readOnly: true
+          title: vrName
+          type: string
+      title: NtpSettingsByVr
+      type: object
+    OperationStatus:
+      enum:
+      - UP
+      - DOWN
+      - TESTING
+      - UNKNOWN
+      - DORMANT
+      - UP_MASTER
+      - UP_DORMANT
+      - UP_WARMSTANDBY
+      - EMPTY
+      - PRESENT
+      - FAILED
+      - POWEROFF
+      - POWEREDOFF
+      - MISMATCH
+      - POWERON
+      - POWERON_DONE
+      - EPOST
+      - EPOST_DONE
+      - DOWNLOADING
+      - DOWNLOADED
+      - BOOTING
+      - BOOTING_DONE
+      - DIAG
+      - DIAG_DONE
+      - OFFLINING
+      - OFFLINE
+      - INIT
+      - INIT_DONE
+      - VLAN_SYNC
+      - VLAN_SYNCED
+      - FDB_SYNC
+      - FDB_SYNCED
+      - ACL_SYNC
+      - ACL_SYNCED
+      - RT_SYNC
+      - RT_SYNCED
+      - OPERATIONAL
+      - REBOOTING
+      readOnly: true
+      title: OperationStatus
+      type: string
+    PoeDeviceType:
+      enum:
+      - NONE
+      - PD_DEVICE
+      - PSE_DEVICE
+      - UNKNOWN
+      title: PoeDeviceType
+      type: string
+    PortLldpLocation:
+      properties:
+        civicAddress:
+          title: civicAddress
+          type: string
+        coordinate:
+          title: coordinate
+          type: string
+        ecsElin:
+          maxLength: 25
+          title: ecsElin
+          type: string
+      title: PortLldpLocation
+      type: object
+    PortLldpMedPolicyAppType:
+      enum:
+      - GUEST_VOICE
+      - GUEST_VOICE_SIGNALING
+      - SOFT_PHONE_VOICE
+      - STREAMING_VIDEO
+      - VIDEO_CONFERENCING
+      - VIDEO_SIGNALING
+      - VOICE
+      - VOICE_SIGNALING
+      title: PortLldpMedPolicyAppType
+      type: string
+    PortName:
+      pattern: ^((\d{1,3}):(\d{1,3}):?(\d{1,2})?|(\d{1,3}):(s\d)|ge\d{1,3}|wifi\d{1,3}|wifi\d{1,2}\.\d|([1-8]:)?mgmt|([1-8]):(stack[1-2])|eth(\d{0,7})|pse\d{1,3}|agg0|red0|cpp)$
+      title: PortName
+      type: string
+    PortPartitions:
+      default: 1X100G
+      enum:
+      - 1X400G
+      - 1X100G
+      - 1X40G
+      - 1X20G
+      - 4X10G
+      - 4X25G
+      - 2X50G
+      - 2X10G
+      - 3X25G
+      - 3X10G
+      - 3X1G
+      - 4X100G
+      title: PortPartitions
+      type: string
+    PowerPriority:
+      enum:
+      - CRITICAL
+      - HIGH
+      - LOW
+      - UNKNOWN
+      title: PowerPriority
+      type: string
+    PrivateVlanName:
+      type: object
+    PsuState:
+      enum:
+      - Failed
+      - Ok
+      - NotPresent
+      - Unplugged
+      - FAILED
+      - OK
+      - NOT_PRESENT
+      - UNPLUGGED
+      - UNKNOWN
+      title: PsuState
+      type: string
+    QsfpRx:
+      properties:
+        power:
+          $ref: '#/components/schemas/QsfpTx_power'
+      title: QsfpRx
+      type: object
+    QsfpTx:
+      properties:
+        bias:
+          $ref: '#/components/schemas/QsfpTx_bias'
+        power:
+          $ref: '#/components/schemas/QsfpTx_power'
+      title: QsfpTx
+      type: object
+    QsfpTx_bias:
+      allOf:
+      - {}
+      - $ref: '#/components/schemas/DdiComponents'
+      title: QsfpTx_bias
+    QsfpTx_power:
+      allOf:
+      - {}
+      - $ref: '#/components/schemas/DdiComponents'
+      title: QsfpTx_power
+    Secret:
+      properties:
+        isEncrypted:
+          title: isEncrypted
+          type: boolean
+        value:
+          format: password
+          maxLength: 605
+          minLength: 1
+          title: value
+          type: string
+      title: Secret
+      type: object
+    SnmpAccess:
+      properties:
+        accessView:
+          $ref: '#/components/schemas/SnmpV1V2AccessView'
+        community:
+          maxLength: 32
+          minLength: 1
+          title: community
+          type: string
+        groupName:
+          maxLength: 32
+          minLength: 1
+          title: groupName
+          type: string
+        index:
+          maxLength: 32
+          minLength: 1
+          title: index
+          type: string
+        notifyViewName:
+          maxLength: 32
+          minLength: 0
+          title: notifyViewName
+          type: string
+        readViewName:
+          maxLength: 32
+          minLength: 0
+          title: notifyViewName
+          type: string
+        securityLevel:
+          $ref: '#/components/schemas/SnmpV1V2SecurityLevel'
+        securityName:
+          maxLength: 32
+          minLength: 1
+          title: securityName
+          type: string
+        vrName:
+          maxLength: 32
+          minLength: 1
+          title: vrName
+          type: string
+        writeViewName:
+          maxLength: 32
+          minLength: 0
+          title: notifyViewName
+          type: string
+      title: SnmpAccess
+      type: object
+    SnmpGetGroup:
+      allOf:
+      - $ref: '#/components/schemas/SnmpSetGroup'
+      - $ref: '#/components/schemas/SnmpGetGroup_allOf'
+      title: SnmpGetGroup
+    SnmpGetGroup_allOf:
+      properties:
+        model:
+          maxLength: 32
+          minLength: 1
+          title: model
+          type: string
+        securityName:
+          maxLength: 32
+          minLength: 0
+          title: securityName
+          type: string
+      title: SnmpGetGroup_allOf
+      type: object
+    SnmpGetSettings:
+      properties:
+        contact:
+          maxLength: 255
+          minLength: 0
+          title: contact
+          type: string
+        groups:
+          items:
+            $ref: '#/components/schemas/SnmpGetGroup'
+          title: groups
+          type: array
+        location:
+          maxLength: 255
+          minLength: 0
+          title: location
+          type: string
+        name:
+          maxLength: 255
+          minLength: 0
+          title: name
+          type: string
+        v1v2:
+          $ref: '#/components/schemas/SnmpV1V2Get'
+        v3:
+          $ref: '#/components/schemas/SnmpV3Get'
+        view:
+          items:
+            $ref: '#/components/schemas/SnmpView'
+          title: view
+          type: array
+      title: SnmpGetSettings
+      type: object
+    SnmpSetGroup:
+      properties:
+        groupName:
+          maxLength: 32
+          minLength: 1
+          title: groupName
+          type: string
+        notifyViewName:
+          maxLength: 32
+          minLength: 0
+          title: notifyViewName
+          type: string
+        readViewName:
+          maxLength: 32
+          minLength: 0
+          title: notifyViewName
+          type: string
+        securityLevel:
+          $ref: '#/components/schemas/SnmpV1V2SecurityLevel'
+        vrName:
+          maxLength: 32
+          minLength: 0
+          title: vrName
+          type: string
+        writeViewName:
+          maxLength: 32
+          minLength: 0
+          title: notifyViewName
+          type: string
+      title: SnmpSetGroup
+      type: object
+    SnmpTrapReceiver:
+      properties:
+        inform:
+          title: inform
+          type: boolean
+        ipAddress:
+          $ref: '#/components/schemas/GeneralIpAddress'
+        name:
+          maxLength: 32
+          minLength: 1
+          title: name
+          type: string
+        port:
+          maximum: 65535
+          minimum: 1
+          title: port
+          type: integer
+        version:
+          enum:
+          - v1
+          - v2c
+          title: version
+          type: string
+      title: SnmpTrapReceiver
+      type: object
+    SnmpV1V2AccessView:
+      enum:
+      - READ_ONLY
+      - READ_WRITE
+      title: SnmpV1V2AccessView
+      type: string
+    SnmpV1V2Get:
+      properties:
+        access:
+          items:
+            $ref: '#/components/schemas/SnmpAccess'
+          title: access
+          type: array
+        enable:
+          default: false
+          title: enable
+          type: boolean
+        trapReceiver:
+          items:
+            $ref: '#/components/schemas/SnmpTrapReceiver'
+          title: trapReceiver
+          type: array
+      title: SnmpV1V2Get
+      type: object
+    SnmpV1V2SecurityLevel:
+      enum:
+      - AUTH_NO_PRIV
+      - AUTH_PRIV
+      - NO_AUTH_NO_PRIV
+      - NONE
+      title: SnmpV1V2SecurityLevel
+      type: string
+    SnmpV3Access:
+      properties:
+        access:
+          $ref: '#/components/schemas/SnmpV3AccessView'
+        authenticationMethod:
+          $ref: '#/components/schemas/SnmpV3AuthMethod'
+        authenticationPassword:
+          $ref: '#/components/schemas/Secret'
+        encryptionMethod:
+          $ref: '#/components/schemas/SnmpV3EncryptionMethod'
+        encryptionPassword:
+          $ref: '#/components/schemas/Secret'
+        groupName:
+          maxLength: 32
+          minLength: 1
+          title: groupName
+          type: string
+        notifyViewName:
+          maxLength: 32
+          minLength: 0
+          title: notifyViewName
+          type: string
+        readViewName:
+          maxLength: 32
+          minLength: 0
+          title: notifyViewName
+          type: string
+        type:
+          $ref: '#/components/schemas/SnmpV3Type'
+        username:
+          maxLength: 32
+          minLength: 1
+          title: username
+          type: string
+        vrName:
+          maxLength: 32
+          minLength: 1
+          title: vrName
+          type: string
+        writeViewName:
+          maxLength: 32
+          minLength: 0
+          title: notifyViewName
+          type: string
+      title: SnmpV3Access
+      type: object
+    SnmpV3AccessView:
+      enum:
+      - READ_ONLY
+      - READ_WRITE
+      - NOTIFY
+      - READ_ONLY_NOTIFY
+      - READ_WRITE_NOTIFY
+      readOnly: true
+      title: SnmpV3AccessView
+      type: string
+    SnmpV3AuthMethod:
+      enum:
+      - MD5
+      - SHA
+      title: SnmpV3AuthMethod
+      type: string
+    SnmpV3EncryptionMethod:
+      enum:
+      - DES
+      - AES_128
+      - AES_192
+      - AES_256
+      - 3_DES
+      title: SnmpV3EncryptionMethod
+      type: string
+    SnmpV3Get:
+      properties:
+        access:
+          items:
+            $ref: '#/components/schemas/SnmpV3Access'
+          title: access
+          type: array
+        enable:
+          default: false
+          title: enable
+          type: boolean
+        trapReceiver:
+          items:
+            $ref: '#/components/schemas/SnmpV3TrapReceiver'
+          title: trapReceiver
+          type: array
+      title: SnmpV3Get
+      type: object
+    SnmpV3SecurityLevel:
+      enum:
+      - AUTH_NO_PRIV
+      - AUTH_PRIV
+      - NO_AUTH_NO_PRIV
+      title: SnmpV3SecurityLevel
+      type: string
+    SnmpV3TrapReceiver:
+      properties:
+        inform:
+          title: inform
+          type: boolean
+        ipAddress:
+          $ref: '#/components/schemas/GeneralIpAddress'
+        port:
+          maximum: 65535
+          minimum: 1
+          title: port
+          type: integer
+        securityLevel:
+          $ref: '#/components/schemas/SnmpV3SecurityLevel'
+        username:
+          maxLength: 32
+          minLength: 1
+          title: username
+          type: string
+        vrName:
+          maxLength: 32
+          minLength: 1
+          title: vrName
+          type: string
+      title: SnmpV3TrapReceiver
+      type: object
+    SnmpV3Type:
+      enum:
+      - NO_AUTH
+      - PRIV
+      - AUTH
+      title: SnmpV3Type
+      type: string
+    SnmpView:
+      properties:
+        oids:
+          items:
+            maxLength: 32
+            minLength: 1
+            type: string
+          title: oids
+          type: array
+        viewName:
+          maxLength: 32
+          minLength: 0
+          title: notifyViewName
+          type: string
+      title: SnmpView
+      type: object
+    SystemCliCommandExecution:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/SystemCliCommandExecution_data_inner'
+          title: data
+          type: array
+        metadata:
+          $ref: '#/components/schemas/SystemCliCommandExecution_metadata'
+      title: SystemCliCommandExecution
+      type: object
+    SystemCliCommandExecution_data_inner:
+      properties:
+        cliInput:
+          title: cliInput
+          type: string
+        cliOutput:
+          title: cliOutput
+          type: string
+        statusCode:
+          enum:
+          - 200
+          - 400
+          - 409
+          title: statusCode
+          type: integer
+      title: SystemCliCommandExecution_data_inner
+      type: object
+    SystemCliCommandExecution_metadata:
+      properties:
+        failed:
+          title: failed
+          type: integer
+        skipped:
+          title: skipped
+          type: integer
+        succeeded:
+          title: succeeded
+          type: integer
+      title: SystemCliCommandExecution_metadata
+      type: object
+    SystemCliCommandRequest:
+      items:
+        type: string
+      type: array
+    SystemComponentsSupportedOps:
+      enum:
+      - POST
+      - PUT
+      - GET
+      - PATCH
+      - DELETE
+      title: SystemComponentsSupportedOps
+      type: string
+    SystemFanState:
+      properties:
+        fan:
+          minimum: 1
+          title: fan
+          type: integer
+        operStatus:
+          $ref: '#/components/schemas/FanState'
+        pwm:
+          minimum: 0
+          title: pwm
+          type: integer
+        rpm:
+          minimum: 0
+          title: rpm
+          type: integer
+      title: SystemFanState
+      type: object
+    SystemFanTrayState:
+      properties:
+        airFlowDirection:
+          $ref: '#/components/schemas/AirFlowDirection'
+        fans:
+          items:
+            $ref: '#/components/schemas/SystemFanState'
+          title: fans
+          type: array
+        numOfFans:
+          title: numOfFans
+          type: integer
+        presence:
+          title: presence
+          type: boolean
+        slot:
+          maximum: 8
+          minimum: 1
+          title: slot
+          type: integer
+        tray:
+          minimum: 1
+          title: tray
+          type: integer
+        trayType:
+          enum:
+          - FIXED
+          - MODULAR
+          title: trayType
+          type: string
+      title: SystemFanTrayState
+      type: object
+    SystemPsuState:
+      properties:
+        airFlowDirection:
+          $ref: '#/components/schemas/AirFlowDirection'
+        capacity:
+          format: float
+          title: capacity
+          type: number
+        inputCurrent:
+          format: float
+          title: inputCurrent
+          type: number
+        inputVoltage:
+          format: float
+          title: inputVoltage
+          type: number
+        modelName:
+          maxLength: 512
+          minLength: 0
+          title: modelName
+          type: string
+        operStatus:
+          $ref: '#/components/schemas/PsuState'
+        outputCurrent:
+          format: float
+          title: outputCurrent
+          type: number
+        outputPower:
+          format: float
+          title: outputPower
+          type: number
+        outputVoltage:
+          format: float
+          title: outputVoltage
+          type: number
+        partNumber:
+          maxLength: 512
+          minLength: 0
+          title: partNumber
+          type: string
+        powerMeasurementCapability:
+          title: powerMeasurementCapability
+          type: boolean
+        revision:
+          maxLength: 512
+          minLength: 0
+          title: revision
+          type: string
+        serialNumber:
+          maxLength: 512
+          minLength: 0
+          title: serialNumber
+          type: string
+        slot:
+          maximum: 8
+          minimum: 1
+          title: slot
+          type: integer
+        unit:
+          minimum: 1
+          title: unit
+          type: integer
+        unitType:
+          enum:
+          - FIXED
+          - MODULAR
+          title: unitType
+          type: string
+      title: SystemPsuState
+      type: object
+    SystemSaveConfigFile:
+      properties:
+        name:
+          title: name
+          type: string
+        verbose:
+          title: verbose
+          type: boolean
+      title: SystemSaveConfigFile
+      type: object
+    SystemSettings:
+      properties:
+        bootConfigType:
+          enum:
+          - FACTORY_DEFAULT
+          - CONFIG_FILE
+          title: bootConfigType
+          type: string
+        chassisId:
+          maxLength: 255
+          minLength: 1
+          readOnly: true
+          title: chassisId
+          type: string
+        chassisIdSubtype:
+          allOf:
+          - $ref: '#/components/schemas/ChassisIdSubtype'
+          readOnly: true
+          title: chassisIdSubtype
+        inletsVersion:
+          readOnly: true
+          title: inletsVersion
+          type: string
+        iqAgentVersion:
+          readOnly: true
+          title: iqAgentVersion
+          type: string
+        isConfigDirty:
+          title: isConfigDirty
+          type: boolean
+        isDigitalTwin:
+          readOnly: true
+          title: isDigitalTwin
+          type: boolean
+        nosType:
+          enum:
+          - SWITCH_ENGINE
+          - EXOS
+          - FABRIC_ENGINE
+          - VOSS
+          readOnly: true
+          title: nosType
+          type: string
+        numSlots:
+          maximum: 12
+          minimum: 1
+          readOnly: true
+          title: numSlots
+          type: integer
+        openApiAppVersion:
+          readOnly: true
+          title: openApiAppVersion
+          type: string
+        openApiSchemaVersion:
+          readOnly: true
+          title: openApiSchemaVersion
+          type: string
+        pythonVersion:
+          readOnly: true
+          title: pythonVersion
+          type: string
+        rebootCount:
+          format: int64
+          maximum: 4294967295
+          minimum: 0
+          title: rebootCount
+          type: integer
+        sysDescription:
+          maxLength: 255
+          minLength: 0
+          readOnly: true
+          title: sysDescription
+          type: string
+        sysName:
+          maxLength: 255
+          minLength: 0
+          readOnly: true
+          title: sysName
+          type: string
+        telegrafVersion:
+          readOnly: true
+          title: telegrafVersion
+          type: string
+      title: SystemSettings
+      type: object
+    SystemState:
+      allOf:
+      - $ref: '#/components/schemas/SystemSettings'
+      - $ref: '#/components/schemas/CardList'
+      title: SystemState
+    TransceiverCableLength:
+      enum:
+      - 100M
+      - 10M
+      - 15M
+      - 1M
+      - 20M
+      - 2M
+      - 3M
+      - 50M
+      - 5M
+      - 7M
+      - NOT_APPLICABLE
+      - NOT_AVAILABLE
+      - ZM
+      title: TransceiverCableLength
+      type: string
+    TransceiverSpeed:
+      enum:
+      - 10M_100M_1G
+      - 100M_1000M_10G
+      - 100G
+      - 100M
+      - 100M_1G
+      - 10G
+      - 10G_25G
+      - 1G
+      - 1G_10G
+      - 20G
+      - 25G
+      - 400G
+      - 40G
+      - NOT_APPLICABLE
+      - UNKNOWN
+      title: TransceiverSpeed
+      type: string
+    TransceiverState:
+      properties:
+        ddi:
+          $ref: '#/components/schemas/TransceiverState_ddi'
+        partNumber:
+          title: partNumber
+          type: string
+        populated:
+          title: populated
+          type: boolean
+        transceiverCableLength:
+          $ref: '#/components/schemas/TransceiverCableLength'
+        transceiverSpeed:
+          $ref: '#/components/schemas/TransceiverSpeed'
+        transceiverType:
+          $ref: '#/components/schemas/TransceiverType'
+        vendorDate:
+          title: vendorDate
+          type: string
+        vendorName:
+          title: vendorName
+          type: string
+        vendorRev:
+          title: vendorRev
+          type: string
+        vendorSn:
+          title: vendorSn
+          type: string
+        wavelength:
+          format: float
+          title: wavelength
+          type: number
+      title: TransceiverState
+      type: object
+    TransceiverState_ddi:
+      properties:
+        bias:
+          $ref: '#/components/schemas/TransceiverState_ddi_bias'
+        qsfpRx1:
+          $ref: '#/components/schemas/QsfpRx'
+        qsfpRx2:
+          $ref: '#/components/schemas/QsfpRx'
+        qsfpRx3:
+          $ref: '#/components/schemas/QsfpRx'
+        qsfpRx4:
+          $ref: '#/components/schemas/QsfpRx'
+        qsfpTx1:
+          $ref: '#/components/schemas/QsfpTx'
+        qsfpTx2:
+          $ref: '#/components/schemas/QsfpTx'
+        qsfpTx3:
+          $ref: '#/components/schemas/QsfpTx'
+        qsfpTx4:
+          $ref: '#/components/schemas/QsfpTx'
+        rxPower:
+          $ref: '#/components/schemas/QsfpTx_power'
+        temperature:
+          $ref: '#/components/schemas/TransceiverState_ddi_temperature'
+        txPower:
+          $ref: '#/components/schemas/QsfpTx_power'
+        voltage:
+          $ref: '#/components/schemas/TransceiverState_ddi_voltage'
+      title: TransceiverState_ddi
+      type: object
+    TransceiverState_ddi_bias:
+      allOf:
+      - {}
+      - $ref: '#/components/schemas/DdiComponents'
+      title: TransceiverState_ddi_bias
+    TransceiverState_ddi_temperature:
+      allOf:
+      - {}
+      - $ref: '#/components/schemas/DdiComponents'
+      title: TransceiverState_ddi_temperature
+    TransceiverState_ddi_voltage:
+      allOf:
+      - {}
+      - $ref: '#/components/schemas/DdiComponents'
+      title: TransceiverState_ddi_voltage
+    TransceiverType:
+      enum:
+      - 10GBASET
+      - 1GBASET
+      - 4WDM10_KM
+      - 4WDM20_KM
+      - 4WDM40_KM
+      - AOC
+      - AOC_BREAK_OUT
+      - AOC_BREAK_OUT_2X50G
+      - BIDI
+      - BX
+      - BX_10KM_1270
+      - BX_10KM_1330
+      - BX_40KM_1270
+      - BX_40KM_1330
+      - BX_D
+      - BX_U
+      - BX10_D
+      - BX10_U
+      - BX40_D
+      - BX40_U
+      - CR4
+      - CWDM4
+      - CWDM4_LITE
+      - CX
+      - DAC
+      - DAC_ACTIVE
+      - DAC_ACTIVE_BREAK_OUT
+      - DAC_ACTIVE_BREAK_OUT_2X50G
+      - DAC_BREAK_OUT
+      - DAC_PASSIVE
+      - DAC_PASSIVE_BREAK_OUT
+      - DAC_PASSIVE_BREAK_OUT_2X10G
+      - DAC_PASSIVE_BREAK_OUT_2X50G
+      - DR
+      - DR4
+      - DWDM
+      - ER
+      - ER_1470
+      - ER_1490
+      - ER_1510
+      - ER_1530
+      - ER_1550
+      - ER_1570
+      - ER_1590
+      - ER_1610
+      - ER_CWDM
+      - ER4
+      - ER4_LITE
+      - ESR
+      - EX
+      - FR
+      - FR4
+      - FX
+      - FX_NO_PHY
+      - FXLX
+      - FXT1
+      - LM4
+      - LR
+      - LR_1271
+      - LR_1291
+      - LR_1311
+      - LR_1331
+      - LR4
+      - LRM
+      - LX
+      - NONE
+      - NOT_SUPPORTED
+      - PSM4
+      - SR
+      - SR4
+      - SRLITE
+      - SWDM4
+      - SX
+      - TDWDM
+      - TriSpeed_BASET
+      - UNKNOWN
+      - USR
+      - XD
+      - ZR
+      - ZR_1470
+      - ZR_1490
+      - ZR_1510
+      - ZR_1530
+      - ZR_1550
+      - ZR_1570
+      - ZR_1590
+      - ZR_1610
+      - ZR_CWDM
+      - ZX
+      title: TransceiverType
+      type: string
+    TransmissionSpeed:
+      default: 100M
+      enum:
+      - 0M
+      - 10M
+      - 100M
+      - 1G
+      - 2.5G
+      - 5G
+      - 10G
+      - 20G
+      - 25G
+      - 40G
+      - 50G
+      - 100G
+      - 400G
+      - AUTO
+      title: TransmissionSpeed
+      type: string
+    TransmissionType:
+      default: FULL_DUPLEX
+      enum:
+      - HALF_DUPLEX
+      - FULL_DUPLEX
+      - NONE
+      title: TransmissionType
+      type: string
+    Urls:
+      items:
+        $ref: '#/components/schemas/Urls_inner'
+      title: urls
+      type: array
+    Urls_inner:
+      properties:
+        supportedAttributes:
+          items:
+            $ref: '#/components/schemas/Urls_inner_supportedAttributes_inner'
+          title: supportedAttributes
+          type: array
+        supportedOps:
+          items:
+            $ref: '#/components/schemas/SystemComponentsSupportedOps'
+          title: supportedOps
+          type: array
+        url:
+          title: url
+          type: string
+      title: Urls_inner
+      type: object
+    Urls_inner_supportedAttributes_inner:
+      properties:
+        operationType:
+          enum:
+          - DELETE
+          - GET
+          - PATCH
+          - POST
+          - PUT
+          title: operationType
+          type: string
+        requestAttributes:
+          items:
+            type: string
+          title: requestAttributes
+          type: array
+        responseAttributes:
+          items:
+            type: string
+          title: responseAttributes
+          type: array
+      title: Urls_inner_supportedAttributes_inner
+      type: object
+    UserAccount:
+      allOf:
+      - $ref: '#/components/schemas/AccountType'
+      - $ref: '#/components/schemas/Username'
+      - $ref: '#/components/schemas/UserAccountState'
+      - $ref: '#/components/schemas/UserAccountType'
+      - $ref: '#/components/schemas/UserAccount_allOf'
+      title: UserAccount
+      type: object
+    UserAccountState:
+      properties:
+        enabled:
+          title: enabled
+          type: boolean
+      title: UserAccountState
+      type: object
+    UserAccountType:
+      properties:
+        removable:
+          title: removable
+          type: boolean
+      title: UserAccountType
+      type: object
+    UserAccount_allOf:
+      properties:
+        secret:
+          $ref: '#/components/schemas/AaaSecret'
+      title: UserAccount_allOf
+      type: object
+    Username:
+      properties:
+        username:
+          maxLength: 32
+          minLength: 1
+          title: username
+          type: string
+      title: Username
+      type: object
+    UsernameList:
+      items:
+        $ref: '#/components/schemas/UserAccount'
+      title: accounts
+      type: array
+    VimSettings:
+      properties:
+        adminStatus:
+          allOf:
+          - $ref: '#/components/schemas/AdminStatus'
+          readOnly: true
+          title: adminStatus
+        operationStatus:
+          allOf:
+          - $ref: '#/components/schemas/OperationStatus'
+          readOnly: true
+          title: operationStatus
+        partNumber:
+          maxLength: 16
+          minLength: 0
+          readOnly: true
+          title: partNumber
+          type: string
+        serialNumber:
+          maxLength: 16
+          minLength: 0
+          readOnly: true
+          title: serialNumber
+          type: string
+        type:
+          readOnly: true
+          title: type
+          type: string
+      title: VimSettings
+      type: object
+    VlanCreateSettings:
+      properties:
+        name:
+          maxLength: 64
+          minLength: 0
+          title: name
+          type: string
+        secondaryIdList:
+          items:
+            format: int32
+            type: integer
+          title: secondaryIdList
+          type: array
+        stpName:
+          maxLength: 32
+          minLength: 0
+          title: stpName
+          type: string
+      title: VlanCreateSettings
+      type: object
+    VlanIdIncMgmt:
+      properties:
+        id:
+          maximum: 4095
+          minimum: 1
+          title: id
+          type: integer
+      title: VlanIdIncMgmt
+      type: object
+    VlanIdIncMgmtZeroNonObject:
+      maximum: 4095
+      minimum: 0
+      title: VlanIdIncMgmtZeroNonObject
+      type: integer
+    VlanIdNonObject:
+      maximum: 4094
+      minimum: 1
+      title: vlanId
+      type: integer
+    VlanInterfaceAdditionalDetailSettings:
+      properties:
+        dhcpEnabled:
+          default: false
+          title: dhcpEnabled
+          type: boolean
+        ipArpInspectionEnabled:
+          title: ipArpInspectionEnabled
+          type: boolean
+        mvpnIsid:
+          $ref: '#/components/schemas/VlanInterfaceMvpnSettings'
+        spbMcastEnabled:
+          default: false
+          title: spbMcastEnabled
+          type: boolean
+      title: VlanInterfaceAdditionalDetailSettings
+      type: object
+    VlanInterfaceAdditionalSummarySettings:
+      properties:
+        dynamic:
+          default: false
+          readOnly: true
+          title: dynamic
+          type: boolean
+        ipInterfaceEnabled:
+          default: false
+          title: ipInterfaceEnabled
+          type: boolean
+        isMgmtInterface:
+          title: isMgmtInterface
+          type: boolean
+        l3Mtu:
+          format: int32
+          maximum: 9500
+          minimum: 1280
+          title: l3Mtu
+          type: integer
+      title: VlanInterfaceAdditionalSummarySettings
+      type: object
+    VlanInterfaceGetSettings:
+      allOf:
+      - $ref: '#/components/schemas/VlanObjectIncMgmt'
+      - $ref: '#/components/schemas/VrName'
+      - $ref: '#/components/schemas/VlanMembership'
+      title: VlanInterfaceGetSettings
+    VlanInterfaceIpAddress:
+      properties:
+        address:
+          $ref: '#/components/schemas/GeneralIpAddressMask'
+        dynamic:
+          default: false
+          readOnly: true
+          title: dynamic
+          type: boolean
+        name:
+          maxLength: 32
+          title: name
+          type: string
+      title: VlanInterfaceIpAddress
+      type: object
+    VlanInterfaceMvpnSettings:
+      properties:
+        isid:
+          maximum: 15999999
+          minimum: -1
+          title: isid
+          type: integer
+        macOffset:
+          maximum: 511
+          minimum: 0
+          title: macOffset
+          type: integer
+      required:
+      - isid
+      title: VlanInterfaceMvpnSettings
+      type: object
+    VlanInterfaceState_allOf:
+      properties:
+        vlanId:
+          maximum: 4095
+          minimum: 1
+          title: id
+          type: integer
+      title: VlanInterfaceState_allOf
+      type: object
+    VlanIpAddressList:
+      properties:
+        addressList:
+          items:
+            $ref: '#/components/schemas/VlanInterfaceIpAddress'
+          title: addressList
+          type: array
+      title: VlanIpAddressList
+      type: object
+    VlanMacFdbState:
+      allOf:
+      - $ref: '#/components/schemas/VlanMacFdbState_allOf'
+      - $ref: '#/components/schemas/BasicMacFdbState'
+      title: VlanMacFdbState
+    VlanMacFdbState_allOf:
+      properties:
+        bmac:
+          allOf:
+          - $ref: '#/components/schemas/MacAddressNonObject'
+          title: bmac
+        smltRemote:
+          title: smltRemote
+          type: boolean
+        vlanId:
+          maximum: 4094
+          minimum: 1
+          title: vlanId
+          type: integer
+      title: VlanMacFdbState_allOf
+      type: object
+    VlanMembership:
+      properties:
+        taggedInterfaces:
+          items:
+            $ref: '#/components/schemas/GenericInterface'
+          title: taggedInterfaces
+          type: array
+        untaggedInterfaces:
+          items:
+            $ref: '#/components/schemas/GenericInterface'
+          title: untaggedInterfaces
+          type: array
+      title: VlanMembership
+      type: object
+    VlanObjectIncMgmt:
+      allOf:
+      - $ref: '#/components/schemas/VlanIdIncMgmt'
+      - $ref: '#/components/schemas/VlanType'
+      - $ref: '#/components/schemas/VlanCreateSettings'
+      - $ref: '#/components/schemas/VlanUpdateSettings'
+      - $ref: '#/components/schemas/VlanInterfaceAdditionalSummarySettings'
+      - $ref: '#/components/schemas/VlanInterfaceAdditionalDetailSettings'
+      - $ref: '#/components/schemas/VlanIpAddressList'
+      - $ref: '#/components/schemas/PrivateVlanName'
+      title: VlanObjectIncMgmt
+    VlanState:
+      enum:
+      - DISABLE
+      - DOWN
+      - UP
+      title: VlanState
+      type: string
+    VlanStateGenericInterface:
+      allOf:
+      - $ref: '#/components/schemas/VlanInterfaceState_allOf'
+      - $ref: '#/components/schemas/VlanStateGenericInterfacePerVlanId'
+      title: VlanStateGenericInterface
+      type: object
+    VlanStateGenericInterfacePerVlanId:
+      properties:
+        activeInterfaces:
+          items:
+            $ref: '#/components/schemas/GenericInterface'
+          title: activeInterfaces
+          type: array
+        blockedInterfaces:
+          items:
+            $ref: '#/components/schemas/GenericInterface'
+          title: blockedInterfaces
+          type: array
+        dynamicInterfaces:
+          items:
+            $ref: '#/components/schemas/GenericInterface'
+          title: dynamicInterfaces
+          type: array
+        ipArpInspectionOrigin:
+          enum:
+          - CONFIG
+          - RADIUS
+          - NONE
+          title: ipArpInspectionOrigin
+          type: string
+        memberInterfaces:
+          items:
+            $ref: '#/components/schemas/GenericInterface'
+          title: memberInterfaces
+          type: array
+        name:
+          maxLength: 64
+          minLength: 0
+          title: name
+          type: string
+        state:
+          $ref: '#/components/schemas/VlanState'
+        upInterfaces:
+          items:
+            $ref: '#/components/schemas/GenericInterface'
+          title: upInterfaces
+          type: array
+      title: VlanStateGenericInterfacePerVlanId
+      type: object
+    VlanType:
+      properties:
+        vlanType:
+          enum:
+          - PORT_MSTP_RSTP
+          - PROTOCOL_MSTP_RSTP
+          - PVLAN_MSTP_RSTP
+          - SPBM_BVLAN
+          - VLAN
+          - VMAN
+          - BROUTER
+          - PVLAN_ISOLATED_SUBSCRIBER
+          - PVLAN_NONISOLATED_SUBSCRIBER
+          - PVLAN_NETWORK
+          title: vlanType
+          type: string
+      title: VlanType
+      type: object
+    VlanUpdateSettings:
+      properties:
+        name:
+          maxLength: 64
+          minLength: 0
+          title: name
+          type: string
+        protocol:
+          maxLength: 32
+          minLength: 1
+          title: protocol
+          type: string
+      title: VlanUpdateSettings
+      type: object
+    VrName:
+      properties:
+        vrName:
+          maxLength: 32
+          minLength: 1
+          title: vrName
+          type: string
+      title: VrName
+      type: object
+    VrNameNonObject:
+      maxLength: 32
+      minLength: 1
+      title: vrName
+      type: string
+    VrType:
+      enum:
+      - VR
+      - VRF
+      title: VrType
+      type: string
+    VrfIdentifier:
+      properties:
+        dynamic:
+          default: false
+          readOnly: true
+          title: dynamic
+          type: boolean
+        dynamicPortList:
+          items:
+            $ref: '#/components/schemas/PortName'
+          readOnly: true
+          title: dynamicPortList
+          type: array
+        id:
+          format: int32
+          title: id
+          type: integer
+        ipRoutingEnabled:
+          title: ipRoutingEnabled
+          type: boolean
+        isMgmt:
+          title: isMgmt
+          type: boolean
+        name:
+          maxLength: 32
+          minLength: 1
+          title: name
+          type: string
+        portList:
+          items:
+            $ref: '#/components/schemas/PortName'
+          title: portList
+          type: array
+        vrType:
+          $ref: '#/components/schemas/VrType'
+      required:
+      - name
+      title: VrfIdentifier
+      type: object
+    VrfListWithVlanSummary:
+      items:
+        $ref: '#/components/schemas/VrfWithVlanSummary'
+      title: vrf
+      type: array
+    VrfWithVlanSummary:
+      allOf:
+      - $ref: '#/components/schemas/VrfIdentifier'
+      - $ref: '#/components/schemas/VrfWithVlanSummary_allOf'
+      title: VrfWithVlanSummary
+    VrfWithVlanSummary_allOf:
+      properties:
+        vlanIdList:
+          items:
+            format: int32
+            type: integer
+          title: vlanIdList
+          type: array
+      title: VrfWithVlanSummary_allOf
+      type: object

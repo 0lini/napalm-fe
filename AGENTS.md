@@ -13,6 +13,7 @@ Read `README.md` first for the user-facing behaviour.
 | `test/unit/mocked_data/<test>/<case>/` | Getter test data: raw output per command + `expected_result.json` (same layout as NAPALM's IOS tests) |
 | `test/unit/test_getters.py` | NAPALM's getter test suite, run for every case in `mocked_data` |
 | `test/unit/test_*.py` | Unit tests for parsers, config management, file transfer |
+| `test/unit/openapi/` | Trimmed OpenAPI schema and supported operations of the switch (Fabric Engine 9.4), see "Planned: OpenAPI transport" |
 | `test/unit/TestExtremeFeDriver.py` | Config tests against a live lab switch (not collected by default), fixtures in `test/unit/extreme_fe/` |
 
 ## Commands
@@ -172,7 +173,8 @@ Findings there:
    strings (not in the running config, masked in `show snmp-server community`,
    per the VOSS 9.2 user guide stored encrypted in `snmp_comm_moc.txt`), so
    `community` is always empty and `get_snmp_information` does not read the
-   running config.
+   running config. The OpenAPI (`configuration/snmp`) does return them in
+   plain text (9.4), see "Planned: OpenAPI transport".
 5. **Replace / rollback** (reboot): prompts confirmed on 9.4 (`copy` to an
    existing file asks `File [...] already existing, overwrite (y/n) ?`; the
    driver uses `reset -y`). Still to check: that the switch boots the copied
@@ -214,17 +216,47 @@ modelled on NAPALM's Arista **EOS** driver: one driver, selected with
 default until the API is validated; `"openapi"` = new). Not the NX-OS model
 (separate `nxos` / `nxos_ssh` drivers), which would need a second package.
 
-What is known (Extreme docs, not yet verified on a switch):
+Verified on the Fabric Engine 9.4.0.0 VM (GNS3 image FEGNS3.9.4.0.0, OpenAPI
+server 0.1.13.12, schema "Extreme NOS API" 0.2.0, OpenAPI 3.0.3):
 
-- enabled with `enable openapi` (application configuration); Fabric Engine 9.3
-  also has `openapi local-mgmt enable`; served at
-  `https://<switch>:9443/rest/openapi` (TLS by default)
-- authentication: a token from `/auth/token` (user needs access level `rwa`),
-  sent as `x-auth-token`; token lifetime differs between docs (60 s in 9.3,
-  one day in older RESTCONF guides)
-- example endpoint `/rest/openapi/v0/state/system`; the switch serves its own
-  OpenAPI schema at `/rest/openapi`
-- the Fabric Engine 9.4 VM (GNS3) has OpenAPI available
+- needs a Premier (or Pilot / Platform ONE) license; the 9.4 VM has one. The
+  9.3.0.0 GNS3 image refuses it (`Software License Violation` in the log, the
+  setting is not applied); 9.3.1.0 should work (Extreme community)
+- enabled with `application` / `openapi local-mgmt enable`; the server then
+  listens on TCP 9443, TLS 1.2, self-signed certificate. After enabling, it
+  takes up to ~3 minutes until `show application openapi` shows
+  `Server State Local Port : Enabled` (connection refused until then)
+- token: `POST /rest/openapi/v0/operation/auth-token/:generate` with
+  `{"username": ..., "password": ...}` -> `200 {"token": "...", "ttl": 86400}`;
+  sent as header `X-Auth-Token` (the schema also allows a cookie
+  `x-auth-token`). Valid 24 h unless the server restarts
+  (`TTL(in seconds) : 86400` in `show application openapi`);
+  `.../auth-token/:disable` ends it. The schema declares HTTP basic auth as
+  well, but the switch rejects it (401) - a token is required
+- concurrency limits (`/v0/state/capabilities/openapi`): 7 requests at a time
+  in total, 3 per client
+- schema: `GET /rest/openapi/v0/state/openapi/schema` (YAML, 1.4 MB, 358
+  paths); `/rest/openapi/openapi.json` exists but answers 404 "not available
+  in this OS version". `GET /v0/state/capabilities/urls` lists what this
+  switch supports (348 URLs, with request / response attribute types); the
+  schema's extra paths (PoE, certificates) are missing on the VM
+- trimmed copies in `test/unit/openapi/`: `schema.yaml` (the paths of the
+  coverage map below and the components they use) and
+  `supported_operations.txt` (method + path of every supported URL)
+- errors: `{"errorCode": 404, "errorMessage": ..., "resource": ...,
+  "debugLog": ...}` - `debugLog` contains the decoded token (user, source IP,
+  expiry): never log or store error bodies unfiltered
+- `configuration/snmp` returns the SNMPv1/v2c community strings in plain text
+  (the CLI never shows them): API responses are secrets, anonymise them
+- port names are `1:1` in the API (`localName` / CLI: `1/1`); speeds are
+  strings (`"1000M"`, `"0M"`); `sysUpTime` is in 1/100 s
+- CPU, memory, temperatures and interface counters are only in the telemetry
+  the switch pushes (`subscription/stats`, `...CallbackElement` schemas), not
+  in any GET endpoint
+- `POST /v0/operation/system/cli` runs a list of CLI commands
+  (`["show ...", ...]` -> `{"data": [{"cliInput", "cliOutput",
+  "statusCode": 200|400|409}], "metadata": {"succeeded", "failed",
+  "skipped"}}`, HTTP 200 or 207); not tried yet (POST, see Safety)
 
 Tasks, in order:
 
@@ -247,6 +279,27 @@ Tasks, in order:
    transports. Real responses only (anonymised), no invented JSON.
 6. **Docs**: README (transport option, enabling OpenAPI on the switch,
    required access level) and CHANGELOG.
+
+Coverage map (step 2; from the schema and real responses of the 9.4 VM -
+LLDP and ARP were empty there, their field names are from the schema only):
+
+| NAPALM method | OpenAPI (GET unless noted) | Not in the API (CLI) |
+|---------------|----------------------------|----------------------|
+| `get_facts` | `state/system` (`sysName`, `cards[].modelName` / `serialNumber` / `firmwareVersion`, `sysUpTime` / 100), `configuration/dns` (`domains`), `v1/state/ports` (`localName`) | - |
+| `get_environment` | `state/system/fans` (`operStatus`), `state/system/power-supplies` (`operStatus`, `capacity`, `outputPower` - more than the CLI) | temperature, CPU, memory |
+| `get_interfaces` | `v1/state/ports` (`operState`, `operSpeed`, `macAddress`), `configuration/ports` (`enabled`, `description`) | MTU, `last_flapped` |
+| `get_interfaces_ip` | `configuration/vlan` (`addressList` per VLAN interface, `vrName`), `configuration/mgmt-interface`, `configuration/loopback` | - |
+| `get_interfaces_counters` | - | all counters |
+| `get_lldp_neighbors[_detail]` | `state/lldp` (`neighbors[]`: `portName`, `sysName`, `portId`, `portDesc`, `chassisId`, `sysDesc`, `sysCapSupported` / `sysCapEnabled`), `state/lldp/ports/{port}` | - |
+| `get_arp_table` | `state/forwarding/ip-arp?vr_name=` (`arpList[]`, paginated `start` / `count`) | - |
+| `get_mac_address_table` | `state/forwarding/mac-fdb` (`status`, `interfaceName`, `vlanId`) | - |
+| `get_vlans` | `configuration/vlan` (`name`), `v1/state/vlan` (`memberInterfaces`) | - |
+| `get_ntp_servers` | `configuration/ntp` (`vrBasedSettings[].servers`; also lists the server the cloud agent sets, which the running config does not show) | - |
+| `get_snmp_information` | `configuration/snmp` (`contact`, `location`, `v1v2.access[]` with `community` and `accessView`) | - |
+| `get_config` | - (`/v0/configuration` is JSON, not the CLI text NAPALM returns) | running / startup config |
+| `cli` | POST `operation/system/cli` | - |
+| config management | POST `operation/system/config/:save`; `configuration/*` PATCH / PUT exist, but no candidate / diff / commit and no file transfer | merge, replace, rollback, commit confirm |
+| new getters (not implemented today) | `state/forwarding/ipv6-nd` (`get_ipv6_neighbors_table`), `state/transceiver/{port}` (`get_optics`), `configuration/accounts` (`get_users`), `state/route` (`get_route_to`) | - |
 
 Safety: only `GET` requests against the switch until step 3 is agreed; never
 store tokens or passwords in the repository.
