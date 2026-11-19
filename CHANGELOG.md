@@ -36,6 +36,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `get_interfaces_ip` listed the IPv6 addresses of a VLAN interface under a
+  separate `V-<vid>` interface and uncompressed (`2001:db8:10:0:0:0:0:1`);
+  they are now merged into `Vlan<vid>` with the IPv4 addresses and compressed.
+
 - Every commit after the first one failed: `save config file` asks before
   overwriting the existing `rollback_cfg` (`... already existing, overwrite
   (y/n) ?`); the driver now answers it and waits for the save to finish.

@@ -1,0 +1,525 @@
+************************************************************************************
+		Command Execution Time: Wed Nov 18 19:21:31 2026 UTC
+************************************************************************************
+Preparing to Display Configuration...
+#
+# Wed Nov 18 19:21:31 2026 UTC
+# box type             : 5520-24T-FabricEngine
+# software version     : 9.3.0.0
+# cli mode             : ECLI
+#
+
+#Card Info : 
+
+#  Slot 1 : 
+#	CardType          : 5520-24T-FabricEngine
+#	CardDescription   : 5520-24T-FabricEngine
+#	CardSerial#       : SIM378C-0000
+#	CardPart#         : DSGDPM624
+#	CardAssemblyDate  : 
+#	CardHWRevision    : 1
+#	CardHWConfig      : 
+#	AdminStatus       : up
+#	OperStatus        : up
+
+#
+#!end
+#
+config terminal
+
+
+boot config flags advanced-feature-bandwidth-reservation vim
+boot config flags sshd
+#boot config sio console baud 115200 1
+# end boot flags
+
+
+spbm
+spbm ethertype 0x8100
+
+
+password hash sha2
+
+
+
+
+
+
+
+
+
+
+
+ssh
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ip vrf test vrfid 1
+
+
+
+
+
+
+
+
+
+
+
+
+router isis
+exit
+
+
+
+
+
+auto-sense auto-mlt enable
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+vlan members remove 1 1/1-1/26 portmember
+vlan create 10 name "napalm-grt" type port-mstprstp 0 
+vlan members 10 1/2 portmember
+interface Vlan 10
+ip address 192.0.2.1 255.255.255.0 1 
+ipv6 interface mac-offset 1
+ipv6 interface enable
+ipv6 interface address 2001:db8:10:0:0:0:0:1/64
+
+exit
+vlan create 20 name "napalm-vrf" type port-mstprstp 0 
+vlan members 20 1/3 portmember
+interface Vlan 20
+vrf test
+ip address 198.51.100.1 255.255.255.0 2 
+exit
+vlan create 4048 name "onboarding-vlan" type pvlan-mstprstp 0 secondary 4049
+vlan i-sid 4048 15999999
+
+
+
+
+
+
+mgmt oob
+enable
+exit
+mgmt vlan 4048
+mac-offset 0
+enable
+exit
+mgmt dhcp-client cycle oob-first
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+interface GigabitEthernet 1/1
+auto-sense enable
+no shutdown
+exit
+interface GigabitEthernet 1/2
+no shutdown
+exit
+interface GigabitEthernet 1/3
+no shutdown
+exit
+interface GigabitEthernet 1/4
+auto-sense enable
+no shutdown
+exit
+
+#
+# LINK-STATE TRACKING 
+#
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#
+# TOPOLOGY-CLIP-IP
+#
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+router isis
+is-type l1
+exit
+router isis enable
+
+
+
+
+
+
+qos queue-profile 1 member add 1/1-1/26
+
+
+cfm spbm enable
+
+
+
+
+no ntp
+ntp server 192.0.2.123 
+
+
+
+#
+#  OSPF CONFIGURATION - GlobalRouter 
+#
+
+router ospf
+exit
+
+#
+#  OSPF CONFIGURATION - VRF 
+#
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+router isis
+exit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#
+#  IPV6 OSPFV3 CONFIGURATION - GlobalRouter 
+#
+
+
+#
+#  IPV6 OSPFV3 CONFIGURATION - VRF 
+#
+
+
+
+router rip
+exit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+i-sid name 15999999 "Onboarding I-SID"
+
+
+
+
+
+
+auto-sense onboarding i-sid 15999999
+
+
+
+
+
+
+
+
+
+
+
+
+
+#
+# MACSEC CONFIGURATION
+# 
+
+# GLOBAL MACSec CA Configured
+
+
+# GLOBAL MACsec Keychain Configured
+
+
+
+
+
+
+
+
+
+#
+#  APPLICATION CONFIGURATION  
+#
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#
+#  SYSTEM CONFIGURATION Phase 2  
+#
+
+
+
+router isis
+exit
+
+
+
+
+
+
+end
+
+
+
+#
+# IP REDISTRIBUTE APPLY CONFIGURATIONS
+
+#
+#
+
+
+#
+# IP ECMP APPLY CONFIGURATIONS
+
+
+
+
+
+
+
+
+

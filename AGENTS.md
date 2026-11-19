@@ -152,11 +152,16 @@ Findings there:
    the `config terminal` / `end` wrapper. Still to check: 9.4 and hardware.
    `show running-config` during a running save is not detected as an error
    yet (see above).
-2. **Routed interfaces**: `show ip interface vrfids 0-512`,
-   `show ipv6 address interface`, `show ip arp` and `show ip arp vrf <vrf>` have
-   only been seen empty. Capture them from a switch with IP interfaces / ARP
-   entries and check `parse_ip_interfaces`, `parse_ipv6_interfaces` (interface
-   column is `VID/BID/TID`) and `parse_arp_table`.
+2. **Routed interfaces**: settled for VLAN interfaces on the 9.3 VM
+   (`fabric_engine_9.3` cases: VLAN 10 with IPv4/IPv6 in the GlobalRouter,
+   VLAN 20 in VRF `TEST`, hosts on 1/2 and 1/3). `show ipv6 address interface`
+   names the interface `V-<vid>` in its `VID/BID/TID` column and prints
+   addresses uncompressed (`2001:db8:10:0:0:0:0:1`); `show ip interface`
+   lists the out-of-band port as `mgmt-oob` (VRF MgmtRouter). The switch
+   stores VRF names in lower case (`ip vrf TEST` -> `ip vrf test`, tables
+   titled `VRF test`); `show ip arp vrf TEST` still works. Still to check:
+   brouter ports and tunnels (`B-` / `T-` in `VID/BID/TID`, IPv4 name of a
+   brouter port), hardware.
 3. **Other 9.x releases and VSP hardware**: check that `show sys-info`,
    `show interfaces gigabitEthernet` (does it include the Port Name / Port
    State tables?), `statistics verbose`, `show vlan basic` and

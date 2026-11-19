@@ -1,0 +1,68 @@
+{
+    "fans": {
+        "Tray 1 Fan 1": {
+            "status": true
+        },
+        "Tray 1 Fan 2": {
+            "status": true
+        }
+    },
+    "temperature": {
+        "Sensor 1": {
+            "temperature": 0.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "Sensor 2": {
+            "temperature": 0.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "Sensor 3": {
+            "temperature": 0.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "Sensor 4": {
+            "temperature": 0.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "Sensor 5": {
+            "temperature": 0.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "Sensor 6": {
+            "temperature": 0.0,
+            "is_alert": false,
+            "is_critical": false
+        },
+        "Sensor 7": {
+            "temperature": 0.0,
+            "is_alert": false,
+            "is_critical": false
+        }
+    },
+    "power": {
+        "Ps#1": {
+            "status": true,
+            "capacity": -1.0,
+            "output": -1.0
+        },
+        "Ps#2": {
+            "status": true,
+            "capacity": -1.0,
+            "output": -1.0
+        }
+    },
+    "cpu": {
+        "1": {
+            "%usage": 4.0
+        }
+    },
+    "memory": {
+        "used_ram": 1468999680,
+        "available_ram": 2076897280
+    }
+}

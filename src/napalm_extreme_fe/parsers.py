@@ -5,6 +5,7 @@ Python data structures. Keeping them separate from the driver makes them easy
 to unit test without a device or a mocked SSH session.
 """
 
+import ipaddress
 import re
 from datetime import datetime
 from typing import Dict, Iterator, List, Optional, Tuple
@@ -425,9 +426,15 @@ def parse_ip_interfaces(output: str) -> Dict[str, Dict]:
 def parse_ipv6_interfaces(output: str) -> Dict[str, Dict]:
     """Parse ``show ipv6 address interface``.
 
-    Rows look like::
+    Rows look like (Fabric Engine 9.3)::
 
-        2001:db8:10::1/64    Vlan10    PREFERRED   MANUAL    ...
+        IPV6 ADDRESS/PREFIX LENGTH        VID/BID/TID  TYPE    ORIGIN    STATUS ...
+        2001:db8:10:0:0:0:0:1/64          V-10         UNICAST MANUAL    PREFERRED ...
+
+    ``V-<vid>`` is returned as ``Vlan<vid>``, the name ``show ip interface``
+    uses, so both address families end up under the same interface; other
+    values (``B-``/``T-``, not seen yet) are kept. Addresses are returned in
+    their compressed form (``2001:db8:10::1``).
     """
     result: Dict[str, Dict] = {}
     for row in table_rows(output):
@@ -437,7 +444,11 @@ def parse_ipv6_interfaces(output: str) -> Dict[str, Dict]:
         address, _, plen = tokens[0].partition("/")
         if not plen.isdigit():
             continue
-        intf = tokens[1]
+        try:
+            address = ipaddress.IPv6Address(address).compressed
+        except ValueError:
+            continue
+        intf = re.sub(r"^V-(\d+)$", r"Vlan\1", tokens[1])
         entry = result.setdefault(intf, {"ipv6": {}})
         entry.setdefault("ipv6", {})[address] = {"prefix_length": int(plen)}
     return result

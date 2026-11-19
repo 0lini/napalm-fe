@@ -1,0 +1,18 @@
+************************************************************************************
+		Command Execution Time: Wed Nov 18 19:21:25 2026 UTC
+************************************************************************************
+
+============================================================================================================
+                                            Vlan Basic
+============================================================================================================
+VLAN                                MSTP   
+ID    NAME             TYPE         INST_ID PROTOCOLID   SUBNETADDR      SUBNETMASK      VRFID ORIGIN  
+------------------------------------------------------------------------------------------------------------
+1     Default          byPort       0       none         N/A             N/A             0     CONFIG  
+10    napalm-grt       byPort       0       none         N/A             N/A             0     CONFIG  
+20    napalm-vrf       byPort       0       none         N/A             N/A             1     CONFIG  
+4048  onboarding-vlan  private      0       none         N/A             N/A             0     CONFIG  
+4051  VLAN-4051        spbm-bvlan   62      none         N/A             N/A             0     ZTF     
+4052  VLAN-4052        spbm-bvlan   62      none         N/A             N/A             0     ZTF     
+
+All 6 out of 6 Total Num of Vlans displayed
