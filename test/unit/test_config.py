@@ -6,12 +6,12 @@ import pytest
 from napalm.base.exceptions import MergeConfigException, ReplaceConfigException
 from netmiko.exceptions import ConfigInvalidException
 
-from .conftest import PatchedExtremeFEDriver
+from .conftest import PatchedExtremeFeDriver
 
 
 @pytest.fixture
 def driver():
-    driver = PatchedExtremeFEDriver("host", "user", "pass")
+    driver = PatchedExtremeFeDriver("host", "user", "pass")
     # compare_config() reads the running config of the real Fabric Engine 9.4 capture
     driver.device.current_test = "test_get_config"
     driver.device.current_test_case = "fabric_engine_9.4"
@@ -158,8 +158,8 @@ def _make_driver(monkeypatch, **optional_args):
     from napalm_extreme_fe import extreme_fe
 
     FakeTransfer.instances = []
-    monkeypatch.setattr(extreme_fe, "ExtremeFEFileTransfer", FakeTransfer)
-    driver = PatchedExtremeFEDriver("host", "user", "pass", optional_args=optional_args)
+    monkeypatch.setattr(extreme_fe, "ExtremeFeFileTransfer", FakeTransfer)
+    driver = PatchedExtremeFeDriver("host", "user", "pass", optional_args=optional_args)
     # compare_config() reads the running config of the real Fabric Engine 9.4 capture
     driver.device.current_test = "test_get_config"
     driver.device.current_test_case = "fabric_engine_9.4"
@@ -206,7 +206,7 @@ def test_file_method_source_error(file_driver):
 
 def test_invalid_config_method():
     with pytest.raises(ValueError):
-        PatchedExtremeFEDriver("host", "user", "pass", optional_args={"config_method": "x"})
+        PatchedExtremeFeDriver("host", "user", "pass", optional_args={"config_method": "x"})
 
 
 def test_save_failure_detected(driver):
@@ -385,11 +385,11 @@ PROMPT = "5520-24T-FabricEngine:1>"
 
 
 def test_log_messages_are_removed_from_output():
-    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+    from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
 
     output = f"VLAN    PORT\n{LOG_LINE}\n1       1/1\n{PROMPT}{LOG_LINE}\n10      1/2\n"
     assert (
-        ExtremeFEDriver._send_command_postprocess(output)
+        ExtremeFeDriver._send_command_postprocess(output)
         == "VLAN    PORT\n1       1/1\n10      1/2"
     )
 
@@ -431,12 +431,12 @@ def test_log_message_formats(line):
 
 def test_log_message_in_the_middle_of_a_line():
     """A message that interrupts a line is removed and the line is joined again."""
-    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+    from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
 
     row = "1/1      192   10GbNone         true  false    1950  00:51:00:ce:20:00 up     up"
     split = row.index("1950") + 4  # interrupted right after a number
     output = f"PORT\n{row[:split]}{LOG_LINE}\n{row[split:]}\n1/2      193"
-    assert ExtremeFEDriver._send_command_postprocess(output) == f"PORT\n{row}\n1/2      193"
+    assert ExtremeFeDriver._send_command_postprocess(output) == f"PORT\n{row}\n1/2      193"
 
 
 def test_confirm_prompt_followed_by_log_message(reboot_driver):
@@ -476,9 +476,9 @@ SOURCE_OUTPUT = """\
 
 
 def test_file_method_real_source_output(file_driver):
-    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+    from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
 
-    assert ExtremeFEDriver._send_command_postprocess(SOURCE_OUTPUT) == ""
+    assert ExtremeFeDriver._send_command_postprocess(SOURCE_OUTPUT) == ""
     original = file_driver.device.send_command
 
     def send_command(command, **kwargs):
@@ -497,7 +497,7 @@ def test_file_method_real_source_output(file_driver):
 
 
 # Real output of "source /intflash/napalm_merge.cfg debug" (Fabric Engine 9.3 VM,
-# TestExtremeFEDriver.py) as Netmiko returns it: echo and final prompt removed.
+# TestExtremeFeDriver.py) as Netmiko returns it: echo and final prompt removed.
 # Without "debug" the switch prints nothing, also for the rejected line.
 SOURCE_DEBUG_TYPO = """\
 
@@ -550,19 +550,19 @@ def test_file_method_source_debug_output(file_driver, output, fails):
     [(60, "1"), (300, "5"), (359, "5"), (3600, "01:00"), (5400, "01:30"), (90000, "1:01:00")],
 )
 def test_revert_time(seconds, expected):
-    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+    from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
 
-    assert ExtremeFEDriver._revert_time(seconds) == expected
+    assert ExtremeFeDriver._revert_time(seconds) == expected
 
 
 @pytest.mark.parametrize("seconds", [0, 59, 10 * 86400])
 def test_revert_time_out_of_range(seconds):
     from napalm.base.exceptions import CommitConfirmException
 
-    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+    from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
 
     with pytest.raises(CommitConfirmException):
-        ExtremeFEDriver._revert_time(seconds)
+        ExtremeFeDriver._revert_time(seconds)
 
 
 def test_commit_with_revert_and_confirm(reboot_driver):
@@ -772,11 +772,11 @@ CP1  [11/17/26 16:41:43.000] LifeCycle: INFO: Stopping all  processes
 
 
 def test_reset_countdown_and_legacy_log_removed():
-    from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+    from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
 
-    assert ExtremeFEDriver._send_command_postprocess(RESET_IN_1_OUTPUT) == ""
+    assert ExtremeFeDriver._send_command_postprocess(RESET_IN_1_OUTPUT) == ""
     output = "VLAN    PORT\n" + RESET_IN_1_OUTPUT + "1       1/1"
-    assert ExtremeFEDriver._send_command_postprocess(output) == "VLAN    PORT\n1       1/1"
+    assert ExtremeFeDriver._send_command_postprocess(output) == "VLAN    PORT\n1       1/1"
 
 
 def test_schedule_with_countdown_output(reboot_driver):
@@ -872,7 +872,7 @@ def test_upload_stops_if_free_space_unknown(monkeypatch):
     from napalm_extreme_fe import extreme_fe
 
     driver = _make_driver(monkeypatch, config_method="file")
-    monkeypatch.setattr(extreme_fe, "ExtremeFEFileTransfer", NoSpaceInfo)
+    monkeypatch.setattr(extreme_fe, "ExtremeFeFileTransfer", NoSpaceInfo)
     with pytest.raises(MergeConfigException, match="Free space not found"):
         driver.load_merge_candidate(config="ntp server 192.0.2.99")
 
@@ -894,15 +894,27 @@ def test_discard_survives_failed_delete(reboot_driver):
     assert reboot_driver.compare_config() == ""
 
 
-def test_transport_option():
-    from .conftest import PatchedExtremeFEDriver
+def test_old_class_names():
+    # renamed after 0.1.0 (FE -> Fe); the old names still work
+    from napalm import get_network_driver
 
-    assert PatchedExtremeFEDriver("h", "u", "p").transport == "ssh"
+    import napalm_extreme_fe
+    from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer, ExtremeFeFileTransfer
+
+    assert napalm_extreme_fe.ExtremeFEDriver is napalm_extreme_fe.ExtremeFeDriver
+    assert ExtremeFEFileTransfer is ExtremeFeFileTransfer
+    assert get_network_driver("extreme_fe").__name__ == "ExtremeFeDriver"
+
+
+def test_transport_option():
+    from .conftest import PatchedExtremeFeDriver
+
+    assert PatchedExtremeFeDriver("h", "u", "p").transport == "ssh"
     assert (
-        PatchedExtremeFEDriver("h", "u", "p", optional_args={"transport": "ssh"}).transport == "ssh"
+        PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "ssh"}).transport == "ssh"
     )
     with pytest.raises(ValueError, match="openapi"):
-        PatchedExtremeFEDriver("h", "u", "p", optional_args={"transport": "openapi"})
+        PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "openapi"})
 
 
 def test_failed_merge_message(driver):

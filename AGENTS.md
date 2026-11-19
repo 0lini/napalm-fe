@@ -7,13 +7,13 @@ Read `README.md` first for the user-facing behaviour.
 
 | Path | What |
 |------|------|
-| `src/napalm_extreme_fe/extreme_fe.py` | The driver (`ExtremeFEDriver`): connection, getters, config management |
+| `src/napalm_extreme_fe/extreme_fe.py` | The driver (`ExtremeFeDriver`): connection, getters, config management |
 | `src/napalm_extreme_fe/parsers.py` | Pure text parsers, one per CLI output; no device access |
 | `src/napalm_extreme_fe/file_transfer.py` | Netmiko `BaseFileTransfer` for Fabric Engine (SCP) |
 | `test/unit/mocked_data/<test>/<case>/` | Getter test data: raw output per command + `expected_result.json` (same layout as NAPALM's IOS tests) |
 | `test/unit/test_getters.py` | NAPALM's getter test suite, run for every case in `mocked_data` |
 | `test/unit/test_*.py` | Unit tests for parsers, config management, file transfer |
-| `test/unit/TestExtremeFEDriver.py` | Config tests against a live lab switch (not collected by default), fixtures in `test/unit/extreme_fe/` |
+| `test/unit/TestExtremeFeDriver.py` | Config tests against a live lab switch (not collected by default), fixtures in `test/unit/extreme_fe/` |
 
 ## Commands
 
@@ -100,7 +100,7 @@ Run all of them before every commit, and only commit when they pass
 
    ```bash
    NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<pw> \
-   NAPALM_OPTIONAL_ARGS='{"port": 22}' pytest test/unit/TestExtremeFEDriver.py -v
+   NAPALM_OPTIONAL_ARGS='{"port": 22}' pytest test/unit/TestExtremeFeDriver.py -v
    ```
 
    Runs merge, typo and discard tests for `config_method="cli"` and `"file"`.
@@ -111,7 +111,7 @@ Run all of them before every commit, and only commit when they pass
 ### Safety rules for the switch
 
 - Only send read-only commands (`show`, `dir`, `ls`, `more`, `file-checksum`), except
-  through `TestExtremeFEDriver.py` (step 5).
+  through `TestExtremeFeDriver.py` (step 5).
 - Never save the configuration (`save_config=False`) and never run
   `save config`, `boot`, `reset`, `delete`, `copy` or `source` by hand.
 - `config_method="file"` leaves `napalm_merge.cfg` and `napalm_rollback.cfg`
@@ -129,8 +129,9 @@ VOSS / Fabric Engine 8.x is end of life (8.10 is the last 8.x release) and is
 not tested; do not add test cases for it.
 
 Confirmed on the Fabric Engine 9.3 VM (GNS3 image of Extreme, reports as
-`5520-24T-FabricEngine`): NAPALM's getter suite (only failures: ARP, VRF
-`TEST` and NTP are empty on a fresh VM) and `TestExtremeFEDriver.py` (all 6).
+`5520-24T-FabricEngine`): NAPALM's getter suite (all 39 with the test data of
+the `fabric_engine_9.3` cases; on a fresh VM ARP, VRF `TEST` and NTP are
+empty) and `TestExtremeFeDriver.py` (all 6).
 Findings there:
 
 - `save config file <file>` to an existing file asks

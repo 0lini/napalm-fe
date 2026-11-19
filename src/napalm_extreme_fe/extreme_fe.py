@@ -25,7 +25,7 @@ from netmiko.exceptions import ConfigInvalidException
 from netmiko.ssh_dispatcher import CLASS_MAPPER
 
 from napalm_extreme_fe import parsers
-from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer, parse_dir
+from napalm_extreme_fe.file_transfer import ExtremeFeFileTransfer, parse_dir
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ SANITIZE_FILTERS = {
 }
 
 
-class ExtremeFEDriver(NetworkDriver):
+class ExtremeFeDriver(NetworkDriver):
     """NAPALM driver for Extreme Networks Fabric Engine."""
 
     platform = "extreme_fe"
@@ -638,7 +638,7 @@ class ExtremeFEDriver(NetworkDriver):
         try:
             with os.fdopen(handle, "w") as tmp:
                 tmp.write(content + "\n")
-            with ExtremeFEFileTransfer(
+            with ExtremeFeFileTransfer(
                 ssh_conn=self.device,
                 source_file=tmp_file,
                 dest_file=dest_file,
@@ -957,3 +957,7 @@ class ExtremeFEDriver(NetworkDriver):
             return
         if self._has_cli_error(output) or re.search(r"can't|cannot|fail", output, re.I):
             logger.warning("%s: could not delete %s: %s", self.hostname, path, output.strip())
+
+
+# Name up to 0.1.0, kept so that existing imports keep working
+ExtremeFEDriver = ExtremeFeDriver

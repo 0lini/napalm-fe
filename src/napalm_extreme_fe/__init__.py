@@ -2,11 +2,11 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from napalm_extreme_fe.extreme_fe import ExtremeFEDriver
+from napalm_extreme_fe.extreme_fe import ExtremeFEDriver, ExtremeFeDriver
 
 try:
     __version__ = version("napalm-extreme-fe")
 except PackageNotFoundError:  # pragma: no cover - not installed
     __version__ = "0.0.0"
 
-__all__ = ("ExtremeFEDriver", "__version__")
+__all__ = ("ExtremeFeDriver", "ExtremeFEDriver", "__version__")

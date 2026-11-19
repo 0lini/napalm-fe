@@ -144,7 +144,7 @@ device.confirm_commit()  # ... unless confirmed
 
 ### File transfer
 
-`napalm_extreme_fe.file_transfer.ExtremeFEFileTransfer` implements Netmiko's
+`napalm_extreme_fe.file_transfer.ExtremeFeFileTransfer` implements Netmiko's
 `BaseFileTransfer` interface for Fabric Engine (SCP via the SSH server,
 `dir <directory> -l` for existence, size and free space, `file-checksum md5` to
 verify transfers). It is
@@ -173,12 +173,12 @@ Tests are organised like NAPALM's IOS driver tests:
   output; `synthetic` cases are hand-written.
 - `test/unit/test_parsers.py`, `test_config.py` and `test_file_transfer.py`
   are unit tests for parsers, configuration management and file transfer.
-- `test/unit/TestExtremeFEDriver.py` runs configuration tests against a live
+- `test/unit/TestExtremeFeDriver.py` runs configuration tests against a live
   lab switch (like `TestIOSDriver.py`); it is not part of the normal test run:
 
   ```bash
   NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<password> \
-  pytest test/unit/TestExtremeFEDriver.py
+  pytest test/unit/TestExtremeFeDriver.py
   ```
 
 Releases: bump `version` in `pyproject.toml`, update `CHANGELOG.md`, push a tag

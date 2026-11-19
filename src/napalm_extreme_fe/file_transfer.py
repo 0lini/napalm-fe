@@ -54,7 +54,7 @@ def parse_dir_free(output: str) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
-class ExtremeFEFileTransfer(BaseFileTransfer):
+class ExtremeFeFileTransfer(BaseFileTransfer):
     """SCP file transfer for Fabric Engine (formerly VOSS / VSP)."""
 
     def __init__(
@@ -181,3 +181,7 @@ class ExtremeFEFileTransfer(BaseFileTransfer):
     def disable_scp(self, cmd: str = "") -> None:
         """SCP is served by the SSH server (``boot config flags sshd``)."""
         raise NotImplementedError("SCP is part of the SSH server on Fabric Engine")
+
+
+# Name up to 0.1.0, kept so that existing imports keep working
+ExtremeFEFileTransfer = ExtremeFeFileTransfer

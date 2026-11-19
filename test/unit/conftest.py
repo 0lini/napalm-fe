@@ -19,8 +19,8 @@ def set_device_parameters(request):
 
     request.addfinalizer(fin)
 
-    request.cls.driver = extreme_fe.ExtremeFEDriver
-    request.cls.patched_driver = PatchedExtremeFEDriver
+    request.cls.driver = extreme_fe.ExtremeFeDriver
+    request.cls.patched_driver = PatchedExtremeFeDriver
     request.cls.vendor = "extreme_fe"
     parent_conftest.set_device_parameters(request)
 
@@ -30,13 +30,13 @@ def pytest_generate_tests(metafunc):
     parent_conftest.pytest_generate_tests(metafunc, __file__)
 
 
-class PatchedExtremeFEDriver(extreme_fe.ExtremeFEDriver):
+class PatchedExtremeFeDriver(extreme_fe.ExtremeFeDriver):
     """Driver whose SSH session is replaced by a fake device."""
 
     def __init__(self, hostname, username, password, timeout=60, optional_args=None):
         super().__init__(hostname, username, password, timeout, optional_args)
         self.patched_attrs = ["device"]
-        self.device = FakeExtremeFEDevice()
+        self.device = FakeExtremeFeDevice()
 
     def open(self):
         pass
@@ -54,7 +54,7 @@ class _FakeRemoteConn:
     transport = _FakeTransport()
 
 
-class FakeExtremeFEDevice(BaseTestDouble):
+class FakeExtremeFeDevice(BaseTestDouble):
     """Netmiko replacement.
 
     ``show`` commands return the content of the mocked_data files. File and

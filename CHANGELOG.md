@@ -26,6 +26,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Classes renamed to `ExtremeFeDriver` and `ExtremeFeFileTransfer`; the old
+  names `ExtremeFEDriver` and `ExtremeFEFileTransfer` still work (aliases).
+
 - Like the IOS driver, the running configuration is saved to `rollback_cfg`
   before every commit (not only with `config_method="file"`).
 - CI: test on Python 3.15; update GitHub Actions (checkout v7,
@@ -43,7 +46,7 @@ All notable changes to this project are documented here. The format follows
 - Every commit after the first one failed: `save config file` asks before
   overwriting the existing `rollback_cfg` (`... already existing, overwrite
   (y/n) ?`); the driver now answers it and waits for the save to finish.
-- `ExtremeFEFileTransfer` uploads failed with `No response from server`: the
+- `ExtremeFeFileTransfer` uploads failed with `No response from server`: the
   switch writes the file but closes the SCP channel without the final
   acknowledgement (Fabric Engine 9.3). This error is ignored, the upload
   is verified by size and MD5 as before.
