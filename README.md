@@ -45,7 +45,7 @@ with driver("192.0.2.10", "admin", "secret", optional_args={"port": 22}) as devi
 | `transport`           | `ssh`                  | How the driver talks to the switch (like NAPALM's EOS driver). Only `ssh` for now; an `openapi` transport is planned |
 | `save_config`         | `True`                 | Run `save config` after a successful commit |
 | `startup_config_file` | `/intflash/config.cfg` | File returned as `startup` by `get_config()` |
-| `force_no_enable`     | `False`                | Do not enter privileged (`enable`) mode. `show running-config` needs it, so `get_config`, `get_ntp_servers`, `get_snmp_information`, the `fqdn` of `get_facts` and configuration changes do not work without it |
+| `force_no_enable`     | `False`                | Do not enter privileged (`enable`) mode. `show running-config` needs it, so `get_config`, `get_ntp_servers`, the `fqdn` of `get_facts` and configuration changes do not work without it |
 | `config_method`       | `cli`                  | How a merge is applied, see [Configuration management](#configuration-management) |
 | `allow_reboot`        | `False`                | Allow replace commits and `rollback()`, which reboot the switch |
 | `dest_file_system`    | `/intflash`            | Where the driver stores its files on the switch |
@@ -64,16 +64,16 @@ raise it for very large configurations or MAC tables.
 |------------------------------|---------------|
 | `get_facts`                  | `show sys-info`, `show interfaces gigabitEthernet`, `show running-config \| include domain-name` |
 | `get_environment`            | `show sys-info`, `show khi performance cpu`, `show khi performance memory` |
-| `get_interfaces`             | `show interfaces gigabitEthernet` (+ `... name` on releases without the Port Name table) |
+| `get_interfaces`             | `show interfaces gigabitEthernet` |
 | `get_interfaces_ip`          | `show ip interface vrfids 0-512`, `show ipv6 address interface` |
-| `get_interfaces_counters`    | `show interfaces gigabitEthernet statistics [verbose]`, `... error` |
+| `get_interfaces_counters`    | `show interfaces gigabitEthernet statistics`, `... statistics verbose`, `... error` |
 | `get_lldp_neighbors`         | `show lldp neighbor` |
 | `get_lldp_neighbors_detail`  | `show lldp neighbor [port <port>]` |
 | `get_arp_table`              | `show ip arp [vrf <name>]` |
 | `get_mac_address_table`      | `show vlan mac-address-entry` |
 | `get_vlans`                  | `show vlan basic`, `show vlan members` |
 | `get_ntp_servers`            | `show running-config` |
-| `get_snmp_information`       | `show sys-info`, `show running-config` |
+| `get_snmp_information`       | `show sys-info` |
 | `get_config`                 | `show running-config [verbose]`, `more <startup file>` (banners and timestamps removed; `sanitized=True` masks keys, secrets and communities) |
 | `cli`                        | any command; CLI errors are returned as output (like the IOS driver) |
 | `is_alive`                   | |

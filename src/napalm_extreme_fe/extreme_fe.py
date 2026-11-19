@@ -7,7 +7,6 @@ device type and parses the CLI output.
 import logging
 import os
 import re
-import socket
 import tempfile
 from typing import Any, Dict, List, Optional, Union
 
@@ -22,21 +21,18 @@ from napalm.base.exceptions import (
 from napalm.base.helpers import sanitize_configs
 from napalm.base.netmiko_helpers import netmiko_args
 from netmiko.exceptions import ConfigInvalidException
-from netmiko.ssh_dispatcher import CLASS_MAPPER
 
 from napalm_extreme_fe import parsers
 from napalm_extreme_fe.file_transfer import ExtremeFeFileTransfer, parse_dir
 
 logger = logging.getLogger(__name__)
 
-# Extreme renamed VOSS (VSP Operating System Software) to Fabric Engine;
-# Netmiko still calls it "extreme_vsp". Use the newest name Netmiko provides.
 SUPPORTED_TRANSPORTS = ("ssh",)
 
-NETMIKO_DEVICE_TYPES = ("extreme_fe", "extreme_voss", "extreme_vsp")
-NETMIKO_DEVICE_TYPE = next(t for t in NETMIKO_DEVICE_TYPES if t in CLASS_MAPPER)
+# Extreme renamed VOSS (VSP Operating System Software) to Fabric Engine;
+# Netmiko still calls it "extreme_vsp".
+NETMIKO_DEVICE_TYPE = "extreme_vsp"
 
-# Strings that indicate that the CLI rejected a command
 # Log messages printed into the session when "logging screen" is enabled
 # (a switch-wide setting the driver does not change), RFC 5424 format (seen
 # on the serial console and in SSH sessions):
@@ -53,20 +49,6 @@ LOG_MESSAGE_RE = re.compile(
     re.M,
 )
 
-# The same, in the older format (seen on the serial console while the switch
-# shuts down; probably never in SSH sessions - removed in case it appears):
-#   CP1  [11/17/26 16:41:43.000] LifeCycle: INFO: Stopping all  processes
-LEGACY_LOG_MESSAGE_RE = re.compile(
-    r"(?:^\S+:\d+(?:\([^)\s]*\))?[>#])?"
-    r"(?:CP|IO)\d+\s+\[\d{2}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?\][^\n]*\n?",
-    re.M,
-)
-
-# Countdown of a scheduled reset ("reset -in"), seen on the serial console
-# only (not in SSH sessions) - removed in case it appears:
-#           20 seconds remaining until unit resets.
-RESET_COUNTDOWN_RE = re.compile(r"^[ \t]*\d+ seconds? remaining until unit resets\.[ \t]*\n?", re.M)
-
 # Commands that display the log: their output consists of log messages, so the
 # filter above must not be applied to them.
 LOG_DISPLAY_COMMAND_RE = re.compile(r"^\s*show\s+log", re.I)
@@ -76,22 +58,14 @@ EVENT_RESET_SCHEDULED = "0x0003068e"  # Scheduled reset enabled! Unit will reset
 EVENT_RESET_CANCELED = "0x0003068f"  # Scheduled reset canceled!
 EVENT_SYSTEM_BOOT = "0x00034594"  # System boot
 
-CLI_ERROR_PATTERNS = (
-    r"% Invalid input",
-    r"% Incomplete command",
-    r"% Ambiguous command",
-    r"% Unrecognized command",
-    r"% Cannot ",
-    r"^\s*Error\s*:",
-    r"% Error",
-)
-
-# Same, as a single pattern for Netmiko's send_config_set(error_pattern=...)
-# Fabric Engine 9.4 also reports errors as e.g. "Error: The community entry
-# already exists." (no "%"); Netmiko applies the pattern with re.M.
-CONFIG_ERROR_PATTERN = (
-    r"% (?:Invalid input|Incomplete command|Ambiguous command|Unrecognized)|% Error"
-    r"|^\s*Error\s*:"
+# Output that shows that the CLI rejected a command. Fabric Engine 9.4 also
+# reports errors as e.g. "Error: The community entry already exists." (no
+# "%"). Also passed to Netmiko's send_config_set(error_pattern=...), which
+# applies it with re.M as well.
+CLI_ERROR_RE = re.compile(
+    r"% (?:Invalid input|Incomplete command|Ambiguous command|Unrecognized command|Cannot |Error)"
+    r"|^\s*Error\s*:",
+    re.M,
 )
 
 # Lines of "show running-config" / the saved config file that change on every
@@ -215,37 +189,27 @@ class ExtremeFeDriver(NetworkDriver):
             # Send an ASCII NUL to keep the session alive, then ask the transport
             self.device.write_channel(chr(0))
             return {"is_alive": bool(self.device.remote_conn.transport.is_active())}
-        except (socket.error, EOFError, OSError, AttributeError):
+        except (OSError, EOFError, AttributeError):
             return {"is_alive": False}
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
-    def _send_command(self, command: Union[str, List[str]], **kwargs: Any) -> str:
-        """Send a command and return its post-processed output.
-
-        If ``command`` is a list, the commands are tried in order until one is
-        accepted by the CLI (useful when the syntax differs between releases).
-        """
+    def _send_command(self, command: str, **kwargs: Any) -> str:
+        """Send a command and return its post-processed output."""
         if self.device is None:
             raise ConnectionClosedException("Not connected to the device, call open() first")
-        commands = command if isinstance(command, list) else [command]
         # Large tables (running-config, FDB on a chassis) can take longer than
         # Netmiko's 10 second default; use the driver timeout instead.
         kwargs.setdefault("read_timeout", self.timeout)
-        output = ""
+        logger.debug("%s: sending %r", self.hostname, command)
         try:
-            for cmd in commands:
-                logger.debug("%s: sending %r", self.hostname, cmd)
-                output = self.device.send_command(cmd, **kwargs)
-                output = output if isinstance(output, str) else str(output)
-                if not self._has_cli_error(output):
-                    break
-        except (socket.error, EOFError) as exc:
+            output = str(self.device.send_command(command, **kwargs))
+        except (OSError, EOFError) as exc:
             raise ConnectionClosedException(str(exc)) from exc
         return self._send_command_postprocess(
-            output, remove_log_messages=not LOG_DISPLAY_COMMAND_RE.match(cmd)
+            output, remove_log_messages=not LOG_DISPLAY_COMMAND_RE.match(command)
         )
 
     # Transport primitives (like NAPALM's NX-OS drivers): everything that talks
@@ -264,7 +228,7 @@ class ExtremeFeDriver(NetworkDriver):
         try:
             return str(
                 self.device.send_config_set(
-                    lines, cmd_verify=False, error_pattern=CONFIG_ERROR_PATTERN
+                    lines, cmd_verify=False, error_pattern=CLI_ERROR_RE.pattern
                 )
             )
         except ConfigInvalidException:
@@ -317,15 +281,12 @@ class ExtremeFeDriver(NetworkDriver):
         """Remove CLI noise from command output (like the IOS driver).
 
         Removes log messages printed into the session ("logging screen") -
-        except for commands that display the log ("show logging ...") - the
-        countdown of a scheduled reset and the "Please widen the terminal"
-        hint. The "Command Execution Time"
+        except for commands that display the log ("show logging ...") - and
+        the "Please widen the terminal" hint. The "Command Execution Time"
         banner is kept: it is used to compute ``last_flapped``.
         """
         if remove_log_messages:
             output = LOG_MESSAGE_RE.sub("", output)
-            output = LEGACY_LOG_MESSAGE_RE.sub("", output)
-        output = RESET_COUNTDOWN_RE.sub("", output)
         output = re.sub(r"^Please widen the terminal.*$", "", output, flags=re.M)
         return output.strip()
 
@@ -338,7 +299,7 @@ class ExtremeFeDriver(NetworkDriver):
 
     @staticmethod
     def _has_cli_error(output: str) -> bool:
-        return any(re.search(p, output, re.MULTILINE) for p in CLI_ERROR_PATTERNS)
+        return bool(CLI_ERROR_RE.search(output))
 
     # ------------------------------------------------------------------
     # CLI
@@ -373,7 +334,7 @@ class ExtremeFeDriver(NetworkDriver):
         hostname = sys_info.get("SysName", "")
         model = sys_info.get("ModelName") or sys_info.get("Chassis", "")
         domain = parsers.parse_domain_name(
-            self._send_command(["show running-config | include domain-name", "show running-config"])
+            self._send_command("show running-config | include domain-name")
         )
         return {
             "hostname": hostname,
@@ -407,13 +368,7 @@ class ExtremeFeDriver(NetworkDriver):
         """Return the physical interfaces of the device."""
         output = self._send_command("show interfaces gigabitEthernet")
         interfaces = parsers.parse_interfaces(output)
-        # Recent releases include the "Port Name" table in the plain command
-        if parsers.has_table(output, "Port Name"):
-            names = parsers.parse_interfaces_name(output)
-        else:
-            names = parsers.parse_interfaces_name(
-                self._send_command("show interfaces gigabitEthernet name")
-            )
+        names = parsers.parse_interfaces_name(output)
         now = parsers.command_execution_time(output)
         state_changes = parsers.parse_port_state(output)
 
@@ -440,32 +395,20 @@ class ExtremeFeDriver(NetworkDriver):
             self._send_command("show ip interface vrfids 0-512")
         )
         ipv6_output = self._send_command("show ipv6 address interface")
-        if not self._has_cli_error(ipv6_output):
-            for intf, data in parsers.parse_ipv6_interfaces(ipv6_output).items():
-                result.setdefault(intf, {}).setdefault("ipv6", {}).update(data["ipv6"])
+        for intf, data in parsers.parse_ipv6_interfaces(ipv6_output).items():
+            result.setdefault(intf, {})["ipv6"] = data["ipv6"]
         return result
 
     def get_interfaces_counters(self) -> Dict[str, models.InterfaceCounterDict]:
         """Return interface counters.
 
-        ``statistics verbose`` holds the unicast/multicast/broadcast counters,
-        ``error`` the discards and errors. Octets are only in the plain
-        ``statistics`` output on 9.x, which is fetched if they are missing.
+        ``statistics`` holds the octets, ``statistics verbose`` the unicast /
+        multicast / broadcast packets, ``error`` the discards and errors.
         """
-        outputs = []
-        for command in (
-            "show interfaces gigabitEthernet statistics verbose",
-            "show interfaces gigabitEthernet error",
-        ):
-            output = self._send_command(command)
-            if not self._has_cli_error(output):
-                outputs.append(output)
-        if not any(
-            c["rx_octets"] >= 0
-            for c in parsers.parse_interface_counters("\n".join(outputs)).values()
-        ):
-            outputs.append(self._send_command("show interfaces gigabitEthernet statistics"))
-        output = "\n".join(outputs)
+        output = "\n".join(
+            self._send_command(f"show interfaces gigabitEthernet {table}")
+            for table in ("statistics", "statistics verbose", "error")
+        )
         return parsers.parse_interface_counters(output)
 
     def get_lldp_neighbors(self) -> Dict[str, List[models.LLDPNeighborDict]]:
@@ -501,10 +444,7 @@ class ExtremeFeDriver(NetworkDriver):
         output = self._send_command(command)
         if self._has_cli_error(output):
             raise CommandErrorException(f"Command '{command}' failed: {output.strip()}")
-        return [
-            {"interface": e["interface"], "mac": e["mac"], "ip": e["ip"], "age": e["age"]}
-            for e in parsers.parse_arp_table(output)
-        ]
+        return parsers.parse_arp_table(output)
 
     def get_mac_address_table(self) -> List[models.MACAdressTable]:
         """Return the MAC address table."""
@@ -525,14 +465,18 @@ class ExtremeFeDriver(NetworkDriver):
         return {server: {} for server in parsers.parse_ntp_servers(running)}
 
     def get_snmp_information(self) -> models.SNMPDict:
-        """Return SNMP information."""
+        """Return SNMP information.
+
+        ``community`` is always empty: Fabric Engine never displays SNMPv1/v2c
+        community strings (stored encrypted outside the configuration, masked
+        in ``show snmp-server community``).
+        """
         sys_info = parsers.parse_sys_info(self._send_command("show sys-info"))
-        running = self._send_command("show running-config")
         return {
             "chassis_id": sys_info.get("Serial#", ""),
             "contact": sys_info.get("SysContact", ""),
             "location": sys_info.get("SysLocation", ""),
-            "community": parsers.parse_snmp_communities(running),
+            "community": {},
         }
 
     def get_config(
@@ -671,7 +615,7 @@ class ExtremeFeDriver(NetworkDriver):
             return ""
         running = self._send_command("show running-config")
         if self.config_replace:
-            return parsers.replace_diff(running, self.candidate_config)
+            return parsers.replace_diff(self._clean_config(running), self.candidate_config)
         return parsers.merge_diff(running, self.candidate_config)
 
     def commit_config(self, message: str = "", revert_in: Optional[int] = None) -> None:
@@ -702,7 +646,7 @@ class ExtremeFeDriver(NetworkDriver):
         """
         if message:
             raise NotImplementedError("Commit message not implemented for this platform")
-        if self.pending_revert or (revert_in is not None and self._reset_scheduled_on_switch()):
+        if self.pending_revert or (revert_in is not None and self.has_pending_commit()):
             raise CommitConfirmException("A commit is waiting for confirm_commit() or rollback()")
         revert_time = None
         if revert_in is not None:
@@ -777,14 +721,15 @@ class ExtremeFeDriver(NetworkDriver):
         self.pending_revert = True
         logger.info("%s: revert reset scheduled in %s", self.hostname, revert_time)
 
-    def _reset_scheduled_on_switch(self) -> bool:
-        """Read the switch's log to find out whether a reset is scheduled.
+    def has_pending_commit(self) -> bool:
+        """Whether a reset is scheduled on the switch (like IOS, asks the switch).
 
         Fabric Engine has no command that shows a scheduled reset, but logs
         scheduling, cancelling and booting. A reset is pending if the newest
         "Scheduled reset enabled" entry is newer than the newest "Scheduled
         reset canceled" and "System boot" entries (an expired timer reboots
-        the switch, which logs "System boot").
+        the switch, which logs "System boot"). So a commit with ``revert_in``
+        made by another session is found too.
         """
         latest = {}
         for code in (EVENT_RESET_SCHEDULED, EVENT_RESET_CANCELED, EVENT_SYSTEM_BOOT):
@@ -797,17 +742,9 @@ class ExtremeFeDriver(NetworkDriver):
         others = [t for c, t in latest.items() if c != EVENT_RESET_SCHEDULED and t]
         return all(scheduled > other for other in others)
 
-    def has_pending_commit(self) -> bool:
-        """Whether a reset is scheduled on the switch (like IOS, asks the switch).
-
-        Reads the switch's log (see ``_reset_scheduled_on_switch``), so a
-        commit with ``revert_in`` made by another session is found too.
-        """
-        return self._reset_scheduled_on_switch()
-
     def confirm_commit(self) -> None:
         """Cancel the scheduled revert reset and save the configuration."""
-        if not (self.pending_revert or self._reset_scheduled_on_switch()):
+        if not (self.pending_revert or self.has_pending_commit()):
             raise CommitConfirmException("No pending configuration")
         output = self._send_command_timing("reset -cancel")
         output = LOG_MESSAGE_RE.sub("", output)
@@ -886,7 +823,7 @@ class ExtremeFeDriver(NetworkDriver):
         """
         # a log message may arrive after the prompt: remove it before looking
         output = LOG_MESSAGE_RE.sub("", self._send_command_timing(command))
-        if re.search(r"\(y/n\)|\[y/n\]|y/n\s*\??\s*$", output.rstrip(), re.I):
+        if re.search(r"\(y/n\)", output):
             answer = self._send_command_timing("y")
             output += LOG_MESSAGE_RE.sub("", answer)
         return output
@@ -927,7 +864,7 @@ class ExtremeFeDriver(NetworkDriver):
         that commit (like IOS ``configure revert now``).
         """
         self._check_reboot_allowed("rollback()")
-        if self.pending_revert or self._reset_scheduled_on_switch():
+        if self.pending_revert or self.has_pending_commit():
             logger.warning("%s: reverting the pending commit now (reboot)", self.hostname)
             self.pending_revert = False
             self._reboot()

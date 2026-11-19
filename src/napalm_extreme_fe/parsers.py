@@ -5,6 +5,7 @@ Python data structures. Keeping them separate from the driver makes them easy
 to unit test without a device or a mocked SSH session.
 """
 
+import difflib
 import ipaddress
 import re
 from datetime import datetime
@@ -27,43 +28,23 @@ LLDP_CAPABILITIES = {
     "S": "station",
 }
 
-# Column names seen in the various "show interfaces gigabitEthernet ..."
-# counter tables, mapped to NAPALM counter keys.
+# Columns of the "show interfaces gigabitEthernet statistics [verbose]" and
+# "... error" tables, mapped to NAPALM counter keys. Fabric Engine reports no
+# transmit errors / discards (they stay -1).
 COUNTER_COLUMNS = {
     "IN_OCTETS": "rx_octets",
     "OUT_OCTETS": "tx_octets",
     "IN_UNICST": "rx_unicast_packets",
-    "IN_UNICAST": "rx_unicast_packets",
-    "IN_UCAST": "rx_unicast_packets",
     "OUT_UNICST": "tx_unicast_packets",
-    "OUT_UNICAST": "tx_unicast_packets",
-    "OUT_UCAST": "tx_unicast_packets",
     "IN_MULTICST": "rx_multicast_packets",
-    "IN_MULTICAST": "rx_multicast_packets",
-    "IN_MCAST": "rx_multicast_packets",
     "OUT_MULTICST": "tx_multicast_packets",
-    "OUT_MULTICAST": "tx_multicast_packets",
-    "OUT_MCAST": "tx_multicast_packets",
     "IN_BRDCST": "rx_broadcast_packets",
-    "IN_BROADCAST": "rx_broadcast_packets",
-    "IN_BCAST": "rx_broadcast_packets",
     "OUT_BRDCST": "tx_broadcast_packets",
-    "OUT_BROADCAST": "tx_broadcast_packets",
-    "OUT_BCAST": "tx_broadcast_packets",
-    "IFINDISCARD": "rx_discards",
     "IN_DISCARD": "rx_discards",
-    "IN_DISCARDS": "rx_discards",
-    "IFOUTDISCARD": "tx_discards",
-    "OUT_DISCARD": "tx_discards",
-    "OUT_DISCARDS": "tx_discards",
-    "IFINERRORS": "rx_errors",
-    "IN_ERRORS": "rx_errors",
-    "IFOUTERRORS": "tx_errors",
-    "OUT_ERRORS": "tx_errors",
 }
 
-# Error columns that are summed up into rx_errors when no total is reported
-# (e.g. the "Port Ethernet Error" table of Fabric Engine 9.x)
+# Receive error columns of the "error" table, summed up into rx_errors (there
+# is no total)
 RX_ERROR_COLUMNS = {"ERROR_ALIGN", "ERROR_FCS", "FRAMES_LONG", "TOO_SHORT"}
 
 COUNTER_KEYS = (
@@ -216,16 +197,11 @@ def _rows_of(output: str, title: str) -> List[str]:
     """Rows of the tables titled ``title``; all rows if no table has a title."""
     tables = list(iter_tables(output))
     if any(t[0] for t in tables):
-        tables = [t for t in tables if t[0].lower() == title.lower()]
+        tables = tables_by_title(output, title)
     rows: List[str] = []
     for _, _, data in tables:
         rows.extend(data)
     return rows
-
-
-def has_table(output: str, title: str) -> bool:
-    """Return whether ``output`` contains a table titled ``title``."""
-    return bool(tables_by_title(output, title))
 
 
 def table_rows(output: str) -> List[str]:
@@ -331,9 +307,6 @@ def parse_os_version(sys_descr: str) -> str:
     ``5520-24T (9.0.0.0_B020) BoxType: 5520-24T`` -> ``9.0.0.0_B020``
     """
     match = re.search(r"\(([\w.\-]+)\)", sys_descr)
-    if match:
-        return match.group(1)
-    match = re.search(r"\b(\d+\.\d+\.\d+\.\d+\S*)", sys_descr)
     return match.group(1) if match else ""
 
 
@@ -364,7 +337,7 @@ def parse_interfaces(output: str) -> Dict[str, Dict]:
 
 
 def parse_interfaces_name(output: str) -> Dict[str, Dict]:
-    """Parse ``show interfaces gigabitEthernet name``.
+    """Parse the ``Port Name`` table of ``show interfaces gigabitEthernet``.
 
     Columns: PORT NUM, NAME, DESCRIPTION, OPERATE STATUS, OPERATE DUPLEX,
     OPERATE SPEED, VLAN. The NAME column is optional and may contain spaces,
@@ -377,11 +350,7 @@ def parse_interfaces_name(output: str) -> Dict[str, Dict]:
             continue
         port = tokens[0]
         speed = _to_int(tokens[-2], default=0)
-        result[port] = {
-            "name": " ".join(tokens[1:-5]),
-            "speed": float(speed),
-            "oper_status": tokens[-4].lower(),
-        }
+        result[port] = {"name": " ".join(tokens[1:-5]), "speed": float(speed)}
     return result
 
 
@@ -472,14 +441,13 @@ def parse_interface_counters(output: str) -> Dict[str, Dict[str, int]]:
             if len(tokens) != len(columns) or not re.match(r"^\d+/\d+", tokens[0]):
                 continue
             counters = result.setdefault(tokens[0], {k: -1 for k in COUNTER_KEYS})
-            has_total_rx_errors = any(COUNTER_COLUMNS.get(c) == "rx_errors" for c in columns)
             for column, value in zip(columns[1:], tokens[1:], strict=True):
                 if not value.isdigit():
                     continue
                 key = COUNTER_COLUMNS.get(column)
                 if key:
                     counters[key] = int(value)
-                elif column in RX_ERROR_COLUMNS and not has_total_rx_errors:
+                elif column in RX_ERROR_COLUMNS:
                     counters["rx_errors"] = max(counters["rx_errors"], 0) + int(value)
     return result
 
@@ -559,7 +527,7 @@ def parse_arp_table(output: str) -> List[Dict]:
     for row in table_rows(output):
         match = re.match(
             r"^(?P<ip>" + IPV4_RE + r")\s+(?P<mac>" + MAC_RE + r")\s+"
-            r"(?P<vlan>\S+)\s+(?P<port>\S+)\s+(?P<type>\S+)",
+            r"(?P<vlan>\S+)\s+(?P<port>\S+)",
             row.strip(),
         )
         if not match:
@@ -579,33 +547,23 @@ def parse_arp_table(output: str) -> List[Dict]:
                 "mac": match.group("mac"),
                 "ip": match.group("ip"),
                 "age": -1.0,
-                "type": match.group("type").upper(),
             }
         )
     return entries
 
 
 def parse_mac_address_table(output: str) -> List[Dict]:
-    """Parse ``show vlan mac-address-entry`` / the ``Port Fdb`` table.
+    """Parse ``show vlan mac-address-entry``.
 
-    Two layouts are supported:
-    ``VLAN  MAC  INTERFACE  TYPE ...`` and ``VLAN  STATUS  MAC  INTERFACE ...``.
+    Columns: VLAN ID, STATUS, MAC ADDRESS, INTERFACE, SMLT REMOTE, TUNNEL.
     Interfaces like ``Port-1/56`` or ``c1:1/3`` are normalised to ``1/56`` / ``1/3``.
     """
     entries: List[Dict] = []
     for row in table_rows(output):
         tokens = row.split()
-        if len(tokens) < 3 or not tokens[0].isdigit():
+        if len(tokens) < 4 or not tokens[0].isdigit() or not re.fullmatch(MAC_RE, tokens[2]):
             continue
-        if re.fullmatch(MAC_RE, tokens[1]):
-            # VLAN  MAC  INTERFACE  TYPE ...
-            mac, port = tokens[1], tokens[2]
-            mac_type = tokens[3] if len(tokens) > 3 else ""
-        elif len(tokens) >= 4 and re.fullmatch(MAC_RE, tokens[2]):
-            # VLAN  STATUS  MAC  INTERFACE ...
-            mac_type, mac, port = tokens[1], tokens[2], tokens[3]
-        else:
-            continue
+        mac_type, mac, port = tokens[1], tokens[2], tokens[3]
         port = re.sub(r"^(?:[cu]\d*:|Port-)", "", port)
         if port in ("-", "--"):
             port = ""
@@ -626,9 +584,8 @@ def parse_mac_address_table(output: str) -> List[Dict]:
 def parse_vlan_basic(output: str) -> Dict[int, str]:
     """Parse ``show vlan basic``.
 
-    The number of columns after NAME differs between releases (VRFNAME on
-    older ones; VRFID, ORIGIN, L3 ACCESS on 9.x), so it is derived from the
-    header. VLAN names may contain spaces.
+    VLAN names may contain spaces, so the number of columns after NAME is
+    taken from the header.
     """
     vlans: Dict[int, str] = {}
     for _, header, data in iter_tables(output):
@@ -679,31 +636,10 @@ def parse_ntp_servers(running_config: str) -> List[str]:
     """Extract configured NTP servers from the running configuration."""
     servers: List[str] = []
     for line in running_config.splitlines():
-        match = re.match(r"^\s*ntp server (?:address )?(\S+)", line)
+        match = re.match(r"^\s*ntp server (\S+)", line)
         if match and match.group(1) not in servers:
             servers.append(match.group(1))
     return servers
-
-
-def parse_snmp_communities(running_config: str) -> Dict[str, Dict[str, str]]:
-    """Extract SNMPv1/v2c communities from the running configuration.
-
-    Fabric Engine stores communities as
-    ``snmp-server community "public" index first secname readgrp``.
-    Communities are often stored encrypted / hidden; those are skipped.
-    """
-    communities: Dict[str, Dict[str, str]] = {}
-    for line in running_config.splitlines():
-        match = re.match(
-            r'^\s*snmp-server community\s+"?([^"\s]+)"?.*?\bsecname\s+"?([^"\s]+)"?',
-            line,
-        )
-        if not match:
-            continue
-        name, secname = match.groups()
-        mode = "rw" if ("rw" in secname.lower() or "v1v2" in secname.lower()) else "ro"
-        communities[name] = {"acl": "N/A", "mode": mode}
-    return communities
 
 
 def split_sections(output: str) -> Dict[str, List[str]]:
@@ -934,56 +870,40 @@ def merge_diff(running_config: str, candidate: str) -> str:
 
 
 def _config_lines(config: str) -> List[str]:
-    """Configuration lines without comments, blank lines and banners."""
-    lines = []
-    for raw in config.splitlines():
-        line = raw.rstrip()
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or set(stripped) == {"*"}:
-            continue
-        if stripped.startswith(("Command Execution Time:", "Preparing to Display Configuration")):
-            continue
-        lines.append(line)
-    return lines
+    """Configuration lines without comments and blank lines."""
+    return [
+        line.rstrip()
+        for line in config.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
 
 
 def replace_diff(running_config: str, candidate: str) -> str:
-    """Line diff for a replace: ``-line`` (removed) / ``+line`` (added)."""
-    import difflib
+    """Line diff for a replace: ``-line`` (removed) / ``+line`` (added).
 
+    ``running_config`` without banners (``ExtremeFeDriver._clean_config``).
+    """
     diff = difflib.unified_diff(
         _config_lines(running_config), _config_lines(candidate), lineterm="", n=0
     )
     return "\n".join(line for line in diff if not line.startswith(("---", "+++", "@@")))
 
 
+# Timestamp of a "show logging file" entry (RFC 5424 format):
+#   1 2026-11-17T16:33:05.861Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 ...
 LOG_ENTRY_RE = re.compile(
-    r"^\s*1 (?P<time>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?)(?:Z|[+-]\d{2}:?\d{2})? "
-    r"\S+ \S+ - (?P<code>0x[0-9a-fA-F]+) - \S+ (?P<message>.*)$"
+    r"^\s*1 (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(?:Z|[+-]\d{2}:?\d{2})? "
+    r"\S+ \S+ - 0x[0-9a-fA-F]+ - ",
+    re.M,
 )
-
-
-def parse_log_entries(output: str) -> List[Tuple[datetime, str, str]]:
-    """Parse ``show logging file`` output (RFC 5424 format).
-
-    Returns ``(timestamp, event code, message)`` tuples in the order of the
-    output (``event-code`` filters list the oldest entry first, ``tail`` the
-    newest first).
-    """
-    entries: List[Tuple[datetime, str, str]] = []
-    for line in output.splitlines():
-        match = LOG_ENTRY_RE.match(line)
-        if not match:
-            continue
-        timestamp = datetime.strptime(match.group("time")[:19], "%Y-%m-%dT%H:%M:%S")
-        fraction = match.group("time")[20:]
-        if fraction:
-            timestamp = timestamp.replace(microsecond=int(fraction.ljust(6, "0")[:6]))
-        entries.append((timestamp, match.group("code").lower(), match.group("message")))
-    return entries
 
 
 def latest_log_time(output: str) -> Optional[datetime]:
     """Timestamp of the newest entry in ``show logging file`` output."""
-    times = [entry[0] for entry in parse_log_entries(output)]
+    times = [
+        datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S").replace(
+            microsecond=int(fraction.ljust(6, "0")[:6]) if fraction else 0
+        )
+        for stamp, fraction in LOG_ENTRY_RE.findall(output)
+    ]
     return max(times) if times else None

@@ -39,7 +39,6 @@ def test_parse_uptime(uptime, expected):
     [
         ("5520-24T (9.0.0.0_B020) BoxType: 5520-24T", "9.0.0.0_B020"),
         ("5520-24T-FabricEngine (9.3.0.0)", "9.3.0.0"),  # 9.3 VM
-        ("Fabric Engine 9.1.0.0", "9.1.0.0"),
     ],
 )
 def test_parse_os_version(descr, expected):
@@ -185,10 +184,7 @@ def test_iter_tables_dash_before_header_and_subtables():
 
 
 def test_replace_diff():
-    running = (
-        "*****\nCommand Execution Time: x\n*****\nPreparing to Display Configuration...\n"
-        "#\n# comment\nconfig terminal\nsys mtu 9600\nntp server 10.0.0.1\nend\n"
-    )
+    running = "#\n# comment\nconfig terminal\nsys mtu 9600\nntp server 10.0.0.1\nend\n"
     candidate = "config terminal\nsys mtu 9600\nntp server 10.0.0.2\nend\n"
     assert parsers.replace_diff(running, candidate).splitlines() == [
         "-ntp server 10.0.0.1",

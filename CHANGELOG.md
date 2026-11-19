@@ -28,6 +28,20 @@ All notable changes to this project are documented here. The format follows
 
 - Classes renamed to `ExtremeFeDriver` and `ExtremeFeFileTransfer`; the old
   names `ExtremeFEDriver` and `ExtremeFEFileTransfer` still work (aliases).
+- `get_snmp_information` no longer reads the running configuration (Fabric
+  Engine never shows community strings; `community` was always empty).
+- `get_interfaces_counters` always reads `statistics`, `statistics verbose` and
+  `error`.
+- A merge in `config_method="cli"` also stops at `% Cannot ...` errors.
+
+### Removed
+
+- Fallbacks for output never seen on Fabric Engine 9.x: `show interfaces
+  gigabitEthernet name`, the full running config when `| include` fails,
+  alternative counter column names, a second MAC table layout, `ntp server
+  address`, a version without parentheses in SysDescr.
+- Handling of output only seen on the serial console (`reset -in` countdown,
+  older log format).
 
 - Like the IOS driver, the running configuration is saved to `rollback_cfg`
   before every commit (not only with `config_method="file"`).

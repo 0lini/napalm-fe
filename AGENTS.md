@@ -164,15 +164,15 @@ Findings there:
    brouter ports and tunnels (`B-` / `T-` in `VID/BID/TID`, IPv4 name of a
    brouter port), hardware.
 3. **Other 9.x releases and VSP hardware**: check that `show sys-info`,
-   `show interfaces gigabitEthernet` (does it include the Port Name / Port
-   State tables?), `statistics verbose`, `show vlan basic` and
+   `show interfaces gigabitEthernet` (the driver reads its Port Name and Port
+   State tables, seen on 9.3 / 9.4), `statistics verbose`, `show vlan basic` and
    `show khi performance cpu/memory` still parse; multi-slot chassis output
    for `get_environment` (CPU per slot, memory summed).
 4. **SNMP communities**: settled - Fabric Engine never displays community
    strings (not in the running config, masked in `show snmp-server community`,
    per the VOSS 9.2 user guide stored encrypted in `snmp_comm_moc.txt`), so
-   `community` is always empty. `parse_snmp_communities` only matters for
-   older releases that might still print `snmp-server community` lines.
+   `community` is always empty and `get_snmp_information` does not read the
+   running config.
 5. **Replace / rollback** (reboot): prompts confirmed on 9.4 (`copy` to an
    existing file asks `File [...] already existing, overwrite (y/n) ?`; the
    driver uses `reset -y`). Still to check: that the switch boots the copied
@@ -192,14 +192,13 @@ Findings there:
    change is really gone after the revert reboot, and the log on hardware
    (does it keep entries across a reboot?).
 7. **Log messages in the session** (`logging screen`, switch-wide): the driver
-   removes them from every output (`LOG_MESSAGE_RE`, RFC 5424 format, and
-   `LEGACY_LOG_MESSAGE_RE`, `CP1  [11/17/26 16:41:43.000] ...`, seen while the
-   switch shuts down), as well as the `reset -in` countdown. RFC 5424 log
-   lines appear identically on the serial console and in SSH sessions; the
-   countdown (`20 seconds remaining until unit resets.`) and the legacy format
-   were only seen on the serial console. Still
-   to check: whether a switch with `syslog-rfc5424-format false` prints the
-   legacy format in SSH sessions.
+   removes them from every output (`LOG_MESSAGE_RE`, RFC 5424 format; they
+   appear identically on the serial console and in SSH sessions). Only seen on
+   the serial console, so not handled: the `reset -in` countdown (`20 seconds
+   remaining until unit resets.`) and an older log format (`CP1  [11/17/26
+   16:41:43.000] ...`, while the switch shuts down). Still to check: whether
+   a switch with `syslog-rfc5424-format false` prints the older format in SSH
+   sessions (then it needs handling again, with a real capture).
 8. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
    prompt / login behaviour has not been tested.
 
