@@ -71,7 +71,14 @@ class OpenApiSession:
         self.session = requests.Session()
         self.session.verify = self.verify
         self.session.headers["Accept"] = "application/json"
-        self._login()
+        try:
+            self._login()
+        except ConnectionException as exc:
+            raise ConnectionException(
+                f"{exc}. The OpenAPI needs Fabric Engine 9.3.1 or later, a Premier (or "
+                "Pilot / Extreme Platform ONE) license and 'openapi local-mgmt enable' "
+                "(application mode); without it use optional_args transport='ssh'"
+            ) from exc
 
     def close(self) -> None:
         if self.session is not None:

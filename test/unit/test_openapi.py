@@ -117,6 +117,10 @@ def test_login_failures(monkeypatch):
     session, _ = _session(monkeypatch, [FakeResponse(401, {"errorCode": 401, "errorMessage": "x"})])
     with pytest.raises(ConnectionException, match="login failed"):
         session.open()
+    # Fabric Engine 9.3.0.0 (no OpenAPI): the reply tells what is needed
+    session, _ = _session(monkeypatch, [requests.ConnectionError("Connection reset by peer")])
+    with pytest.raises(ConnectionException, match="9.3.1 or later.*transport='ssh'"):
+        session.open()
     session, _ = _session(monkeypatch, [FakeResponse(200, {"ttl": 86400})])
     with pytest.raises(ConnectionException, match="no token"):
         session.open()
@@ -229,7 +233,9 @@ def test_driver_opens_only_the_api(monkeypatch):
             opened.append("closed")
 
     monkeypatch.setattr("napalm_extreme_fe.extreme_fe.OpenApiSession", Session)
-    driver = ExtremeFeDriver("192.0.2.10", "rwa", "secret", optional_args={"ssl_verify": False})
+    driver = ExtremeFeDriver(
+        "192.0.2.10", "rwa", "secret", optional_args={"transport": "https", "ssl_verify": False}
+    )
     driver.open()
     assert opened == [("192.0.2.10", 9443, False, 60)]
     assert driver.device is None  # no SSH until something needs the CLI

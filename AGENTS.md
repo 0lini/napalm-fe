@@ -39,8 +39,9 @@ Run all of them before every commit, and only commit when they pass
   transport specific code is in a few primitives (`open`, `close`, `is_alive`,
   `_send_command`, `_send_command_timing`, `_send_config`, `_copy_run_start`,
   `_save_config_file`, `_source_file`; the CLI ones reach SSH through `_ssh`,
-  the API ones through `_api` / `_api_get`). The API is the default
-  transport (`https`), like EOS and NX-OS; as in the NX-OS driver, SSH is only
+  the API ones through `_api` / `_api_get`). `ssh` is the default
+  transport (works on every release, like IOS); with `https` (OpenAPI, like
+  EOS / NX-OS), as in the NX-OS driver, SSH is only
   opened on first use, on port 22, for what the API cannot do (see
   "OpenAPI transport"; only SCP uploads). Option names follow NAPALM: `transport`, `port` (of
   the transport), `ssl_verify` (default `False`, like NX-OS). A reference
@@ -146,7 +147,17 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below,
 `terminal more disable` (sent by Netmiko at login; accepted without output).
 
 VOSS / Fabric Engine 8.x is end of life (8.10 is the last 8.x release) and is
-not tested; do not add test cases for it.
+not supported; do not add test cases for it. VOSS 8.10.1.0 (GNS3) passes the
+getter suite and `TestExtremeFeDriver.py` over SSH, but only with paramiko
+3.x: it only offers the host keys `ssh-rsa` / `ssh-dss`.
+
+Version matrix (GNS3 VMs, 2026-11-20; lab nodes fe810 / fe91 / fe92 / fe931,
+see `~/vms/gns3/versions_boot.sh` and `versions_data.sh`): 9.1.0.0, 9.2.0.0,
+9.3.0.0, 9.3.1.0 and 9.4.0.0 pass NAPALM's getter suite (53) and
+`TestExtremeFeDriver.py` (6) over SSH. OpenAPI: 9.1 / 9.2 have no
+`openapi local-mgmt` command (`% Invalid input`), 9.3.0.0 refuses it (license
+of the image), 9.3.1.0 and 9.4.0.0 pass the getter suite and the config tests
+over `https`.
 
 Confirmed on the Fabric Engine 9.3 VM (GNS3 image of Extreme, reports as
 `5520-24T-FabricEngine`): NAPALM's getter suite (all 39 with the test data of
@@ -227,12 +238,14 @@ Not implemented yet (NotImplementedError, skipped in tests): BGP, users,
 optics, route table, NTP stats/peers, network instances, ping/traceroute,
 IPv6 neighbours. Implement them with real captures only.
 
-## OpenAPI transport (`transport="https"`, the default)
+## OpenAPI transport (`transport="https"`)
 
-One driver with a `transport` option like EOS / NX-OS; `https` (default) is
-the switch's OpenAPI, `ssh` the CLI over Netmiko. Changed 2026-11-20 at the
-user's request: the API is primary (was `transport="openapi"`, not default,
-options `openapi_port` / `verify`, never released).
+One driver with a `transport` option like EOS / NX-OS; `ssh` (default) is
+the CLI over Netmiko, `https` the switch's OpenAPI. History (never
+released): `transport="openapi"` with `openapi_port` / `verify`; then
+`https` as the default; back to `ssh` as the default on 2026-11-20 after the
+version matrix showed that OpenAPI only exists from 9.3.1 (with a Premier
+license). Without OpenAPI the login error says what is needed.
 
 Verified on the Fabric Engine 9.4.0.0 VM (GNS3 image FEGNS3.9.4.0.0, OpenAPI
 server 0.1.13.12, schema "Extreme NOS API" 0.2.0, OpenAPI 3.0.3):

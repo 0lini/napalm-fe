@@ -5,11 +5,15 @@
 Software). It works with any switch running Fabric Engine / VOSS; the CLI is the
 same across hardware platforms, so there is no model-specific code.
 
-Like NAPALM's NX-OS driver, it talks to the switch's API (OpenAPI over HTTPS,
-`transport="https"`, the default) and opens an SSH connection
-([Netmiko](https://github.com/ktbyers/netmiko) `extreme_vsp`) only for what the
-API cannot do: uploading files (SCP). `transport="ssh"` uses only SSH and works without the
-OpenAPI license.
+By default it uses the CLI over SSH ([Netmiko](https://github.com/ktbyers/netmiko)
+`extreme_vsp`), which works on every release. With `transport="https"` it uses
+the switch's API (OpenAPI, Fabric Engine 9.3.1 or later with a Premier
+license) and, like NAPALM's NX-OS driver, only opens SSH for what the API
+cannot do: uploading files (SCP).
+
+Tested (GNS3 VMs): Fabric Engine 9.1, 9.2, 9.3, 9.3.1 and 9.4 over SSH, 9.3.1
+and 9.4 over `https`; VOSS 8.10 works over SSH with paramiko 3.x. Details in
+[docs/extreme_fe.rst](docs/extreme_fe.rst#minimum-version).
 
 > **Status: beta.** The getters are tested against real device output (see
 > `test/unit/mocked_data/`). Output formats can differ between releases - if
@@ -28,7 +32,8 @@ pip install napalm-extreme-fe
 
 Requires Python 3.10+, NAPALM 5 and Netmiko 4.
 
-The `https` transport needs the OpenAPI on the switch (Premier license):
+The `https` transport needs the OpenAPI on the switch (Fabric Engine 9.3.1 or
+later, Premier license):
 
 ```
 configure terminal
@@ -42,7 +47,7 @@ openapi local-mgmt enable
 from napalm import get_network_driver
 
 driver = get_network_driver("extreme_fe")
-with driver("192.0.2.10", "admin", "secret") as device:  # https, port 9443
+with driver("192.0.2.10", "admin", "secret") as device:  # ssh, port 22
     print(device.get_facts())
     print(device.get_lldp_neighbors())
 
@@ -50,8 +55,8 @@ with driver("192.0.2.10", "admin", "secret") as device:  # https, port 9443
     print(device.compare_config())  # +snmp-server location "DC1"
     device.commit_config()  # applies the change and runs "save config"
 
-# CLI over SSH only
-with driver("192.0.2.10", "admin", "secret", optional_args={"transport": "ssh"}) as device:
+# OpenAPI (port 9443); ssl_verify=True or a CA bundle to check the certificate
+with driver("192.0.2.10", "admin", "secret", optional_args={"transport": "https"}) as device:
     print(device.get_facts())
 ```
 
@@ -59,8 +64,8 @@ Optional arguments (details in [docs/extreme_fe.rst](docs/extreme_fe.rst#optiona
 
 | Argument              | Default                | Description |
 |-----------------------|------------------------|-------------|
-| `transport`           | `https`                | `https` (OpenAPI) or `ssh` (CLI), like NAPALM's EOS / NX-OS drivers |
-| `port`                | `9443` / `22`          | Port of the transport. With `https`, SSH (when needed) uses port 22, like NX-OS |
+| `transport`           | `ssh`                  | `ssh` (CLI) or `https` (OpenAPI), like NAPALM's EOS / NX-OS drivers |
+| `port`                | `22` / `9443`          | Port of the transport. With `https`, SSH (when needed) uses port 22, like NX-OS |
 | `ssl_verify`          | `False`                | Check the API's TLS certificate (`True` or a CA bundle path), like NX-OS |
 | `save_config`         | `True`                 | Run `save config` after a successful commit |
 | `startup_config_file` | `/intflash/config.cfg` | File returned as `startup` by `get_config()` |

@@ -1,9 +1,10 @@
 """NAPALM driver for Extreme Networks Fabric Engine (formerly VOSS / VSP).
 
-Like NAPALM's NX-OS driver, the default transport (``https``) is the
-switch's API (OpenAPI); an SSH connection (Netmiko ``extreme_vsp``) is only
-opened for what the API cannot do: uploading files (SCP). ``transport="ssh"`` uses SSH for
-everything and parses the CLI output.
+The default transport (``ssh``, like NAPALM's IOS driver) is the CLI over
+Netmiko (``extreme_vsp``); it works on every release. ``transport="https"``
+uses the switch's API (OpenAPI, Fabric Engine 9.3.1 or later with a Premier
+license); like NAPALM's NX-OS driver, an SSH connection is then only opened
+for what the API cannot do: uploading files (SCP).
 """
 
 import logging
@@ -122,13 +123,13 @@ class ExtremeFeDriver(NetworkDriver):
         Supported ``optional_args`` (in addition to the Netmiko arguments such
         as ``port``, ``secret``, ``key_file``, ``ssh_config_file``...):
 
-        * ``transport`` (default ``"https"``): how the driver talks to the
-          switch, like NAPALM's EOS and NX-OS drivers. ``"https"``: the
-          switch's OpenAPI; SSH (port 22, like NX-OS) is opened on first use
-          for file uploads (SCP).
-          ``"ssh"``: CLI via Netmiko only.
-        * ``port``: port of the transport (default ``9443`` for ``https``,
-          ``22`` for ``ssh``).
+        * ``transport`` (default ``"ssh"``): how the driver talks to the
+          switch, like NAPALM's EOS and NX-OS drivers. ``"ssh"``: CLI via
+          Netmiko, every release. ``"https"``: the switch's OpenAPI (Fabric
+          Engine 9.3.1 or later, Premier license); SSH (port 22, like NX-OS)
+          is opened on first use for file uploads (SCP).
+        * ``port``: port of the transport (default ``22`` for ``ssh``,
+          ``9443`` for ``https``).
         * ``ssl_verify`` (default ``False``, like NX-OS): check the API's TLS
           certificate; ``True`` or the path of a CA bundle.
         * ``save_config`` (bool, default ``True``): run ``save config`` after
@@ -157,7 +158,7 @@ class ExtremeFeDriver(NetworkDriver):
         self.timeout = timeout
         optional_args = optional_args or {}
 
-        self.transport = optional_args.get("transport", "https")
+        self.transport = optional_args.get("transport", "ssh")
         if self.transport not in SUPPORTED_TRANSPORTS:
             raise ConnectionException(f"Unknown transport: {self.transport}")
         self.save_on_commit = bool(optional_args.get("save_config", True))

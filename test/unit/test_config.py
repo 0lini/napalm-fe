@@ -871,13 +871,16 @@ def test_transport_option():
 
     from .conftest import PatchedExtremeFeDriver
 
-    # like EOS / NX-OS: the API is the default, "port" is the port of the transport
-    api = PatchedExtremeFeDriver("h", "u", "p", optional_args={"port": 22})
-    assert (api.transport, api.port, api.ssl_verify) == ("https", 22, False)
-    api = PatchedExtremeFeDriver("h", "u", "p")
-    assert (api.transport, api.port) == ("https", 9443)
+    # ssh is the default (every release); "port" is the port of the transport
+    ssh = PatchedExtremeFeDriver("h", "u", "p")
+    assert (ssh.transport, ssh.port) == ("ssh", 22)
+    api = PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "https"})
+    assert (api.transport, api.port, api.ssl_verify) == ("https", 9443, False)
     api = PatchedExtremeFeDriver(
-        "h", "u", "p", optional_args={"port": "8443", "ssl_verify": "/etc/ca.pem"}
+        "h",
+        "u",
+        "p",
+        optional_args={"transport": "https", "port": "8443", "ssl_verify": "/etc/ca.pem"},
     )
     assert (api.port, api.ssl_verify) == (8443, "/etc/ca.pem")
     # the SSH connection of the https transport uses port 22 (like NX-OS)

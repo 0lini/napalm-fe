@@ -8,19 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- `transport` option, like NAPALM's EOS and NX-OS drivers: `https` (the
-  switch's OpenAPI, **the default**) or `ssh` (CLI over Netmiko). With
+- `transport` option, like NAPALM's EOS and NX-OS drivers: `ssh` (CLI over
+  Netmiko, the default as before) or `https` (the switch's OpenAPI, Fabric
+  Engine 9.3.1 or later with a Premier license). With
   `https`, `get_facts`, `get_lldp_neighbors[_detail]`, `get_arp_table`,
   `get_mac_address_table`, `get_vlans`, `get_ntp_servers` and
   `get_snmp_information` read the API's JSON; the other getters, `cli()`,
   configuration management (merge lines, `source`, `save config`, `copy`,
   `delete`, `reset`) run through the API. Like NX-OS, SSH (port 22) is only
   opened for what the API cannot do: SCP uploads (`config_method="file"`,
-  replace candidates). `port` is the port of the transport (9443 /
-  22), `ssl_verify` (default `False`, like NX-OS) checks the certificate.
+  replace candidates). `port` is the port of the transport (22 /
+  9443), `ssl_verify` (default `False`, like NX-OS) checks the certificate.
   Over `https`, `get_snmp_information` returns the community strings.
 - `docs/extreme_fe.rst`: caveats in the format of NAPALM's driver docs,
-  including what uses the API and what still needs SSH.
+  including what uses the API, what still needs SSH and the tested releases
+  (Fabric Engine 9.1 - 9.4; VOSS 8.10 over SSH with paramiko 3.x).
 - `discard_config()` deletes an uploaded replace candidate on the switch
   (like NAPALM's NX-OS drivers).
 
@@ -37,9 +39,6 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- **The default transport is `https` (OpenAPI).** Pass
-  `optional_args={"transport": "ssh"}` for the 0.1.0 behaviour; `port` then
-  is the SSH port as before.
 - An unknown `transport` raises `ConnectionException` (like EOS).
 - Classes renamed to `ExtremeFeDriver` and `ExtremeFeFileTransfer`; the old
   names `ExtremeFEDriver` and `ExtremeFEFileTransfer` still work (aliases).

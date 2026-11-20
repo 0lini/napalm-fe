@@ -9,15 +9,40 @@ Engine (formerly VOSS), in the format of NAPALM's driver caveats
 Minimum Version
 ~~~~~~~~~~~~~~~
 
-Fabric Engine 9.x. Tested on 9.3 (SSH) and 9.4 (both transports). VOSS /
-Fabric Engine 8.x is end of life and not tested.
+Fabric Engine 9.x with ``transport="ssh"`` (the default); the ``https``
+transport needs Fabric Engine 9.3.1 or later.
+
+Tested releases (GNS3 VMs of Extreme, 2026-11; hardware not tested):
+
+================== ======================== ========================= ================================
+Release            ``ssh``: NAPALM getters   ``ssh``: config tests     ``https`` (OpenAPI)
+================== ======================== ========================= ================================
+VOSS 8.10.1.0      pass [#v1]_              pass [#v1]_               no OpenAPI
+Fabric Engine 9.1  pass                     pass                      no OpenAPI
+Fabric Engine 9.2  pass                     pass                      no OpenAPI
+Fabric Engine 9.3  pass                     pass                      refused (license of the image)
+Fabric Engine 9.3.1 pass                    pass                      getters and config tests pass
+Fabric Engine 9.4  pass                     pass                      all, including commit confirm
+                                                                      and ``rollback()``
+================== ======================== ========================= ================================
+
+.. [#v1] VOSS 8.10 only offers the SSH host key types ``ssh-rsa`` and
+   ``ssh-dss``, which paramiko 4 and later reject (``Incompatible ssh peer
+   (no acceptable host key)``); it works with paramiko 3.x. VOSS 8.x is end
+   of life and not supported.
+
+Commit confirm, replace and ``rollback()`` were only run live on 9.4.
 
 
 Prerequisites
 _____________
 
-The default transport ``https`` uses the switch's OpenAPI (REST/JSON). It
-needs a Premier (or Pilot / Platform ONE) license and has to be enabled::
+The default transport ``ssh`` uses the CLI over SSH (Netmiko
+``extreme_vsp``) and works on every release.
+
+The ``https`` transport uses the switch's OpenAPI (REST/JSON). It needs
+Fabric Engine 9.3.1 or later, a Premier (or Pilot / Extreme Platform ONE)
+license and has to be enabled::
 
     configure terminal
     application
@@ -33,30 +58,26 @@ Like NAPALM's NX-OS driver, uploading files needs SSH as well (see
 credentials on port 22 when it is first used. SCP needs
 ``boot config flags sshd`` and the SSH server.
 
-``transport="ssh"`` uses only SSH (Netmiko ``extreme_vsp``) and works without
-the OpenAPI license.
-
-
 The transport argument
 ______________________
 
 =============== ======================================
 _               extreme_fe
 =============== ======================================
-**Default**     ``https``
+**Default**     ``ssh``
 **Supported**   ``https``, ``ssh``
 =============== ======================================
 
-``port`` is the port of the selected transport: ``9443`` for ``https``,
-``22`` for ``ssh`` by default. With ``https``, the additional SSH connection
+``port`` is the port of the selected transport: ``22`` for ``ssh``, ``9443``
+for ``https`` by default. With ``https``, the additional SSH connection
 always uses port 22 (like NX-OS).
 
 
 Optional arguments
 __________________
 
-* :code:`transport` - Protocol to connect with, see `The transport argument`_ (default: ``https``).
-* :code:`port` - Port of the transport (default: ``9443`` for ``https``, ``22`` for ``ssh``).
+* :code:`transport` - Protocol to connect with, see `The transport argument`_ (default: ``ssh``).
+* :code:`port` - Port of the transport (default: ``22`` for ``ssh``, ``9443`` for ``https``).
 * :code:`ssl_verify` - Check the API's TLS certificate: ``True``, ``False`` or the path of a CA bundle, like the NX-OS driver (default: ``False``).
 * :code:`save_config` - Run ``save config`` after a successful commit (default: ``True``).
 * :code:`startup_config_file` - File returned as ``startup`` by ``get_config()`` (default: ``/intflash/config.cfg``).
