@@ -1,5 +1,7 @@
 """Tests for the OpenAPI session and the openapi transport plumbing."""
 
+import re
+
 import pytest
 import requests
 from napalm.base.exceptions import (
@@ -128,6 +130,76 @@ def test_error_without_json(monkeypatch):
     session.open()
     with pytest.raises(CommandErrorException, match="HTTP 500$"):
         session.get("/v0/state/system")
+
+
+# Real reply (Fabric Engine 9.4) of POST operation/system/cli?continue_on_failure=true:
+# "show sys-info" counts as failed because its output contains "System Error Info"
+CLI_REPLY = {
+    "data": [
+        {
+            "cliInput": "show clock",
+            "cliOutput": "\nFri Nov 20 16:31:55 2026 UTC\n\n",
+            "statusCode": 200,
+        },
+        {
+            "cliInput": "show bogus-command",
+            "cliOutput": "        ^\r\n% Invalid input detected at '^' marker.\r\n",
+            "statusCode": 400,
+        },
+        {
+            "cliInput": "show sys-info",
+            "cliOutput": "\nSystem Error Info : \n\tError Code                : 0\n",
+            "statusCode": 400,
+        },
+    ],
+    "metadata": {"failed": 2, "skipped": 0, "succeeded": 1},
+}
+
+
+def test_cli(monkeypatch):
+    session, http = _session(
+        monkeypatch, [FakeResponse(200, {"token": "t1"}), FakeResponse(207, CLI_REPLY)]
+    )
+    session.open()
+    commands = ["show clock", "show bogus-command", "show sys-info"]
+    outputs = session.cli(commands)
+    method, url, _, kwargs = http.requests[-1]
+    assert (method, url.rsplit("/rest/openapi", 1)[1]) == ("POST", "/v0/operation/system/cli")
+    assert kwargs["params"] == {"continue_on_failure": "true"} and kwargs["json"] == commands
+    # all outputs are returned, whatever the switch's statusCode; "\r\n" -> "\n"
+    assert outputs[0] == "\nFri Nov 20 16:31:55 2026 UTC\n\n"
+    assert outputs[1] == "        ^\n% Invalid input detected at '^' marker.\n"
+    assert "System Error Info" in outputs[2]
+
+
+def test_cli_output_count_checked(monkeypatch):
+    reply = {"data": CLI_REPLY["data"][:1], "metadata": {}}
+    session, _ = _session(
+        monkeypatch, [FakeResponse(200, {"token": "t1"}), FakeResponse(200, reply)]
+    )
+    session.open()
+    with pytest.raises(CommandErrorException, match="1 outputs for 2 commands"):
+        session.cli(["show clock", "show sys-info"])
+
+
+def test_openapi_cli_getter_without_ssh():
+    """CLI getters run over the API (same output as SSH, without the banner):
+    last_flapped then comes from "show clock"."""
+    driver = _api_driver("test_get_interfaces", "fabric_engine_9.3")
+    banner = re.compile(r"^\*+\n\s*Command Execution Time:.*\n\*+\n", re.M)
+    files = {
+        "show interfaces gigabitEthernet": banner.sub(
+            "",
+            driver.device.read_txt_file(
+                driver.device.find_file("show_interfaces_gigabitEthernet.txt")
+            ),
+        ),
+        "show clock": "\nWed Nov 18 19:21:18 2026 UTC\n\n",
+    }
+    driver.api.cli = lambda commands: [files[c] for c in commands]
+    interfaces = driver.get_interfaces()
+    assert interfaces["1/1"]["last_flapped"] == 782.0  # as in the SSH case
+    assert driver.device.commands == []  # nothing over SSH
 
 
 def test_not_open():

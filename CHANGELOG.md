@@ -12,8 +12,10 @@ All notable changes to this project are documented here. The format follows
   `openapi`. With `openapi`, `get_facts`, `get_lldp_neighbors[_detail]`,
   `get_arp_table`, `get_mac_address_table`, `get_vlans`, `get_ntp_servers`
   and `get_snmp_information` use the switch's OpenAPI (token login, options
-  `openapi_port` and `verify`); everything else uses SSH, opened on first
-  use. Over the API, `get_snmp_information` returns the community strings.
+  `openapi_port` and `verify`); the other getters and `cli()` run their CLI
+  commands through the API, so reading never needs SSH. Configuration
+  management uses SSH, opened on first use. Over the API,
+  `get_snmp_information` returns the community strings.
 - `discard_config()` deletes an uploaded replace candidate on the switch
   (like NAPALM's NX-OS drivers).
 

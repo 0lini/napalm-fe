@@ -96,6 +96,14 @@ class FakeOpenApiSession(BaseTestDouble):
         self.requests.append(request)
         return self.read_json_file(self.find_file(self.sanitize_text(request) + ".json"))
 
+    def cli(self, commands):
+        """POST operation/system/cli: the CLI output files, like the SSH fake."""
+        self.requests.extend(f"cli: {command}" for command in commands)
+        return [
+            self.read_txt_file(self.find_file(self.sanitize_text(command) + ".txt"))
+            for command in commands
+        ]
+
 
 class _FakeTransport:
     def is_active(self):

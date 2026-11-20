@@ -14,7 +14,7 @@ address, expiry); it is never passed on.
 
 import ipaddress
 import logging
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import requests
 from napalm.base.exceptions import CommandErrorException, ConnectionException
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 BASE_PATH = "/rest/openapi"
 TOKEN_PATH = "/v0/operation/auth-token/:generate"
+CLI_PATH = "/v0/operation/system/cli"
 DEFAULT_PORT = 9443
 
 # Fields of an error body that are safe to show ("debugLog" is not)
@@ -95,18 +96,46 @@ class OpenApiSession:
         self.token = token
         self.session.headers["X-Auth-Token"] = token  # type: ignore[union-attr]
 
-    def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """GET ``path`` (below ``/rest/openapi``) and return the decoded JSON.
-
-        An expired token (401) is renewed once.
-        """
-        response = self._request("GET", path, params=params)
+    def _call(self, method: str, path: str, ok: tuple, **kwargs: Any) -> requests.Response:
+        """Send a request; an expired token (401) is renewed once."""
+        response = self._request(method, path, **kwargs)
         if response.status_code == 401:
             self._login()
-            response = self._request("GET", path, params=params)
-        if response.status_code != 200:
-            raise CommandErrorException(f"OpenAPI GET {path} failed: {self._error(response)}")
-        return response.json()
+            response = self._request(method, path, **kwargs)
+        if response.status_code not in ok:
+            raise CommandErrorException(f"OpenAPI {method} {path} failed: {self._error(response)}")
+        return response
+
+    def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """GET ``path`` (below ``/rest/openapi``) and return the decoded JSON."""
+        return self._call("GET", path, (200,), params=params).json()
+
+    def cli(self, commands: List[str]) -> List[str]:
+        """Run CLI commands (``POST /v0/operation/system/cli``), return their output.
+
+        ``continue_on_failure`` is set: otherwise the switch skips every
+        command after one it counts as failed. Its ``statusCode`` is not used:
+        the switch counts any output containing "Error" as failed (``show
+        sys-info`` prints ``System Error Info``), so the caller checks the
+        output like CLI output over SSH. The output is the same as over SSH,
+        without the ``Command Execution Time`` banner (Fabric Engine 9.4).
+        """
+        reply = self._call(
+            "POST",
+            CLI_PATH,
+            (200, 207),
+            params={"continue_on_failure": "true"},
+            json=list(commands),
+        ).json()
+        # error messages come with "\r\n" (9.4: "^\r\n% Invalid input ..."), as over SSH: "\n"
+        outputs = [
+            entry.get("cliOutput", "").replace("\r\n", "\n") for entry in reply.get("data", [])
+        ]
+        if len(outputs) != len(commands):
+            raise CommandErrorException(
+                f"OpenAPI CLI returned {len(outputs)} outputs for {len(commands)} commands"
+            )
+        return outputs
 
     @staticmethod
     def _error(response: requests.Response) -> str:

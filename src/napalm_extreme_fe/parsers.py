@@ -182,15 +182,25 @@ def tables_by_title(output: str, title: str) -> List[Tuple[str, List[str], List[
     return [t for t in iter_tables(output) if t[0].lower() == title.lower()]
 
 
-def command_execution_time(output: str) -> Optional[datetime]:
-    """Parse the ``Command Execution Time`` banner printed by Fabric Engine."""
-    match = re.search(r"Command Execution Time:\s+\w+\s+(\w+\s+\d+\s+\d+:\d+:\d+\s+\d{4})", output)
+def _switch_time(output: str, prefix: str) -> Optional[datetime]:
+    """``<prefix> Fri Nov 20 16:31:55 2026 UTC`` -> datetime (without the zone)."""
+    match = re.search(prefix + r"\w+\s+(\w+\s+\d+\s+\d+:\d+:\d+\s+\d{4})", output)
     if not match:
         return None
     try:
         return datetime.strptime(" ".join(match.group(1).split()), "%b %d %H:%M:%S %Y")
     except ValueError:
         return None
+
+
+def command_execution_time(output: str) -> Optional[datetime]:
+    """Parse the ``Command Execution Time`` banner printed by Fabric Engine."""
+    return _switch_time(output, r"Command Execution Time:\s+")
+
+
+def parse_clock(output: str) -> Optional[datetime]:
+    """Parse ``show clock`` (``Fri Nov 20 16:31:55 2026 UTC``, Fabric Engine 9.4)."""
+    return _switch_time(output, r"^\s*")
 
 
 def _rows_of(output: str, title: str) -> List[str]:

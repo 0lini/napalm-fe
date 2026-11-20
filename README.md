@@ -103,11 +103,11 @@ from the switch's OpenAPI (REST/JSON over HTTPS) instead of the CLI:
 | `get_ntp_servers` | `v0/configuration/ntp` |
 | `get_snmp_information` | `v0/configuration/snmp`, `v0/state/system` |
 
-Everything else - getters the API covers only partly or not at all
-(counters, CPU, memory, temperature, MTU, the text configuration), `cli()`
-and all configuration management - uses SSH, which the driver opens on first
-use with the same credentials (`port` is the SSH port). A driver that only
-calls the getters above never logs in over SSH.
+All other getters and `cli()` run their CLI commands through the API as well
+(`POST /rest/openapi/v0/operation/system/cli`, the same output as over SSH),
+so reading the switch never needs SSH. Configuration management still uses
+SSH for now, opened on first use with the same credentials (`port` is the SSH
+port).
 
 Differences to the SSH transport (Fabric Engine 9.4):
 

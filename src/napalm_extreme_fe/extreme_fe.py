@@ -242,7 +242,21 @@ class ExtremeFeDriver(NetworkDriver):
         return self.device
 
     def _send_command(self, command: str, **kwargs: Any) -> str:
-        """Send a command and return its post-processed output."""
+        """Send a command and return its post-processed output.
+
+        OpenAPI transport: through ``POST /v0/operation/system/cli`` (same
+        output as over SSH, without the ``Command Execution Time`` banner).
+        Calls with Netmiko arguments (``expect_string``, ``cmd_verify``: the
+        prompts of ``save config file`` / ``source``) use SSH.
+        """
+        if self.transport == "openapi" and not kwargs:
+            if self.api is None:
+                raise ConnectionClosedException("Not connected to the device, call open() first")
+            logger.debug("%s: sending %r (OpenAPI)", self.hostname, command)
+            output = self.api.cli([command])[0]
+            return self._send_command_postprocess(
+                output, remove_log_messages=not LOG_DISPLAY_COMMAND_RE.match(command)
+            )
         device = self._ssh()
         # Large tables (running-config, FDB on a chassis) can take longer than
         # Netmiko's 10 second default; use the driver timeout instead.
@@ -426,6 +440,8 @@ class ExtremeFeDriver(NetworkDriver):
         interfaces = parsers.parse_interfaces(output)
         names = parsers.parse_interfaces_name(output)
         now = parsers.command_execution_time(output)
+        if now is None:  # no banner (OpenAPI transport): the switch's clock
+            now = parsers.parse_clock(self._send_command("show clock"))
         state_changes = parsers.parse_port_state(output)
 
         result: Dict[str, models.InterfaceDict] = {}

@@ -300,10 +300,20 @@ Tasks, in order:
      4092 `Mgmt` and 4094 `Null` (unassigned ports), `get_ntp_servers` also
      the server the cloud agent sets, `get_snmp_information` the
      communities. NAPALM's live getter suite passes for both transports
-   - `cli()` and all configuration management stay on SSH: POST
-     `operation/system/cli` is unreliable (9.4: the first command returned
-     its output with status 400 and the following ones were skipped, 409;
-     no `Command Execution Time` banner), and there is no file transfer
+   - changed 2026-11-20 (the openapi transport should do everything the CLI
+     does): all other getters and `cli()` run their commands through POST
+     `operation/system/cli?continue_on_failure=true` (`_send_command`).
+     Without `continue_on_failure` the switch skips every command after a
+     "failed" one; its `statusCode` is useless (any output containing
+     "Error" counts as failed, e.g. `show sys-info` with `System Error
+     Info`), so the output is checked like SSH output. The output equals
+     the SSH output without the `Command Execution Time` banner (9.4, all
+     getters compared); `get_interfaces` then reads the time from `show
+     clock`. Error lines come with `\r\n`. Configuration management still
+     uses SSH (to do over the API: `operation/system/config/:save` with
+     `name`, `operation/system/reboot/:schedule` / `:cancel` for commit
+     confirm, config lines through the CLI operation; no file transfer, so
+     `config_method="file"` and replace need SSH)
    - default transport stays `ssh`
 4. **Implementation**: API responses are parsed in separate functions (like
    `parsers.py`), returning the same NAPALM structures as the CLI path.
