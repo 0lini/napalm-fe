@@ -8,8 +8,7 @@ same across hardware platforms, so there is no model-specific code.
 Like NAPALM's NX-OS driver, it talks to the switch's API (OpenAPI over HTTPS,
 `transport="https"`, the default) and opens an SSH connection
 ([Netmiko](https://github.com/ktbyers/netmiko) `extreme_vsp`) only for what the
-API cannot do: file transfers (SCP) and commands that ask for confirmation or
-reboot the switch. `transport="ssh"` uses only SSH and works without the
+API cannot do: uploading files (SCP). `transport="ssh"` uses only SSH and works without the
 OpenAPI license.
 
 > **Status: beta.** The getters are tested against real device output (see

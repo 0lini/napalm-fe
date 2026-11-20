@@ -2,8 +2,7 @@
 
 Like NAPALM's NX-OS driver, the default transport (``https``) is the
 switch's API (OpenAPI); an SSH connection (Netmiko ``extreme_vsp``) is only
-opened for what the API cannot do: file transfers (SCP) and commands that ask
-for confirmation or reboot the switch. ``transport="ssh"`` uses SSH for
+opened for what the API cannot do: uploading files (SCP). ``transport="ssh"`` uses SSH for
 everything and parses the CLI output.
 """
 
@@ -36,7 +35,7 @@ logger = logging.getLogger(__name__)
 SUPPORTED_TRANSPORTS = ("https", "ssh")
 
 # Like the NX-OS driver, the SSH connection the https transport opens for file
-# transfers and prompts always uses port 22 ("port" is the API port).
+# uploads always uses port 22 ("port" is the API port).
 SSH_PORT = 22
 
 # Extreme renamed VOSS (VSP Operating System Software) to Fabric Engine;
@@ -67,9 +66,6 @@ LOG_DISPLAY_COMMAND_RE = re.compile(r"^\s*show\s+log", re.I)
 EVENT_RESET_SCHEDULED = "0x0003068e"  # Scheduled reset enabled! Unit will reset in ...
 EVENT_RESET_CANCELED = "0x0003068f"  # Scheduled reset canceled!
 EVENT_SYSTEM_BOOT = "0x00034594"  # System boot
-
-# Range of "delay" (minutes) of the OpenAPI reboot/:schedule (Fabric Engine 9.4)
-API_REBOOT_DELAY = (10, 360)
 
 # Output that shows that the CLI rejected a command. Fabric Engine 9.4 also
 # reports errors as e.g. "Error: The community entry already exists." (no
@@ -129,7 +125,7 @@ class ExtremeFeDriver(NetworkDriver):
         * ``transport`` (default ``"https"``): how the driver talks to the
           switch, like NAPALM's EOS and NX-OS drivers. ``"https"``: the
           switch's OpenAPI; SSH (port 22, like NX-OS) is opened on first use
-          for file transfers and commands with a confirmation prompt.
+          for file uploads (SCP).
           ``"ssh"``: CLI via Netmiko only.
         * ``port``: port of the transport (default ``9443`` for ``https``,
           ``22`` for ``ssh``).
@@ -249,9 +245,8 @@ class ExtremeFeDriver(NetworkDriver):
     # Transport primitives (like NAPALM's NX-OS drivers): everything that
     # talks to the API or to Netmiko is here.
     #
-    # https transport: commands, configuration lines and saving go through
-    # the API; file transfers and commands that ask (y/n) or reboot the
-    # switch (_send_command_timing, _confirm) need SSH, see _ssh().
+    # https transport: everything goes through the API except file uploads
+    # (SCP, _upload_config), which need SSH, see _ssh().
     # ------------------------------------------------------------------
 
     def _api(self) -> OpenApiSession:
@@ -267,7 +262,7 @@ class ExtremeFeDriver(NetworkDriver):
         """The Netmiko session; with the https transport opened on first use.
 
         Like the NX-OS driver's ``ensure_netmiko_conn``: same credentials,
-        port 22.
+        port 22. With https only SCP uploads need it.
         """
         if self.device is None and self.api is not None:
             self._ssh_open()
@@ -300,10 +295,16 @@ class ExtremeFeDriver(NetworkDriver):
         )
 
     def _send_command_timing(self, command: str) -> str:
-        """Send a command that prompts or has no fixed end (copy, reset, y).
+        """Send a command that prompts or has no fixed end (copy, delete, reset, y).
 
-        Always SSH: the API cannot answer a (y/n) prompt.
+        https: through the CLI operation, which confirms (y/n) questions
+        itself (Fabric Engine 9.4: ``copy`` overwrites an existing file and
+        only echoes ``File [...] already existing,``; ``delete`` and ``reset
+        -in`` print nothing), so ``_confirm`` never has to answer.
         """
+        if self.transport == "https":
+            logger.debug("%s: sending %r (API)", self.hostname, command)
+            return self._api().cli([command])[0]
         return str(self._ssh().send_command_timing(command, read_timeout=self.timeout))
 
     def _send_config(self, lines: List[str]) -> str:
@@ -820,13 +821,11 @@ class ExtremeFeDriver(NetworkDriver):
         if self.pending_revert or (revert_in is not None and self.has_pending_commit()):
             raise CommitConfirmException("A commit is waiting for confirm_commit() or rollback()")
         revert_time = None
-        revert_minutes = 0
         if revert_in is not None:
             if self.config_replace:
                 raise NotImplementedError("revert_in is not supported for a replace commit")
             self._check_reboot_allowed("revert_in", CommitConfirmException)
             revert_time = self._revert_time(revert_in)
-            revert_minutes = int(revert_in) // 60
         if not self.candidate_config:
             exc_class = ReplaceConfigException if self.config_replace else MergeConfigException
             raise exc_class("No candidate configuration loaded")
@@ -850,7 +849,7 @@ class ExtremeFeDriver(NetworkDriver):
         if revert_time:
             # the switch reboots into this saved configuration unless confirmed
             self._copy_run_start(CommitConfirmException)
-            self._schedule_reset(revert_time, revert_minutes)
+            self._schedule_reset(revert_time)
         if self.config_method == "file":
             self._commit_from_file()
         else:
@@ -880,28 +879,19 @@ class ExtremeFeDriver(NetworkDriver):
             return f"{hours:02d}:{mins:02d}"
         return str(mins)
 
-    def _schedule_reset(self, revert_time: str, minutes: int) -> None:
-        """Schedule the revert reboot in ``minutes`` (``revert_time``: CLI format).
+    def _schedule_reset(self, revert_time: str) -> None:
+        """Schedule the revert reboot.
 
-        https: ``POST /v0/operation/system/reboot/:schedule`` with ``delay`` in
-        minutes; Fabric Engine 9.4 only accepts 10 to 360 (``Delay must be
-        between 10 and 360.``), so other times use ``reset -in`` over SSH.
-        Both log the same "Scheduled reset enabled! ..." message.
-
-        ssh: the switch asks ``Are you sure you want to perform a scheduled
+        Over SSH the switch asks ``Are you sure you want to perform a scheduled
         reset? (y/n) ?``; any other answer than ``y`` aborts with ``Scheduled
         reset operation aborted!``. On success the switch prints nothing itself
-        (only the log message).
+        (only the log message "Scheduled reset enabled! ..."). The API's CLI
+        operation confirms itself. (Its ``reboot/:schedule`` is not used: it
+        only accepts 10 to 360 minutes.)
         """
-        if self.transport == "https" and API_REBOOT_DELAY[0] <= minutes <= API_REBOOT_DELAY[1]:
-            try:
-                self._api().schedule_reboot(minutes)
-            except CommandErrorException as exc:
-                raise CommitConfirmException(f"Could not schedule the revert reset: {exc}") from exc
-        else:
-            output = self._confirm(f"reset -in {revert_time}")
-            if self._has_cli_error(output) or re.search(r"aborted", output, re.I):
-                raise CommitConfirmException(f"Could not schedule the revert reset:\n{output}")
+        output = self._confirm(f"reset -in {revert_time}")
+        if self._has_cli_error(output) or re.search(r"aborted", output, re.I):
+            raise CommitConfirmException(f"Could not schedule the revert reset:\n{output}")
         self.pending_revert = True
         logger.info("%s: revert reset scheduled in %s", self.hostname, revert_time)
 
@@ -930,15 +920,6 @@ class ExtremeFeDriver(NetworkDriver):
         """Cancel the scheduled revert reset and save the configuration."""
         if not (self.pending_revert or self.has_pending_commit()):
             raise CommitConfirmException("No pending configuration")
-        if self.transport == "https":
-            # 204 also when nothing is scheduled; cancels a "reset -in" as well
-            try:
-                self._api().cancel_reboot()
-            except CommandErrorException as exc:
-                raise CommitConfirmException(f"Could not cancel the revert reset: {exc}") from exc
-            self.pending_revert = False
-            self._copy_run_start(CommitConfirmException)
-            return
         output = self._send_command_timing("reset -cancel")
         output = LOG_MESSAGE_RE.sub("", output)
         self.pending_revert = False
@@ -1068,7 +1049,7 @@ class ExtremeFeDriver(NetworkDriver):
         Like NAPALM's NX-OS drivers, a replace candidate uploaded to the switch
         (``candidate_cfg``) is deleted as well.
         """
-        if self.config_replace and self.candidate_config and self.device is not None:
+        if self.config_replace and self.candidate_config and (self.device or self.api):
             self._delete_file(self._gen_full_path(self.candidate_cfg))
         self.candidate_config = None
         self.config_replace = False

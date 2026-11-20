@@ -13,10 +13,10 @@ All notable changes to this project are documented here. The format follows
   `https`, `get_facts`, `get_lldp_neighbors[_detail]`, `get_arp_table`,
   `get_mac_address_table`, `get_vlans`, `get_ntp_servers` and
   `get_snmp_information` read the API's JSON; the other getters, `cli()`,
-  merge lines, `source`, `save config` and commit confirm
-  (`reboot/:schedule` / `:cancel`, 10 - 360 minutes) run through the API.
-  Like NX-OS, SSH (port 22) is only opened when needed: SCP uploads,
-  `copy` / `delete` (they ask (y/n)) and the reboot of replace / rollback. `port` is the port of the transport (9443 /
+  configuration management (merge lines, `source`, `save config`, `copy`,
+  `delete`, `reset`) run through the API. Like NX-OS, SSH (port 22) is only
+  opened for what the API cannot do: SCP uploads (`config_method="file"`,
+  replace candidates). `port` is the port of the transport (9443 /
   22), `ssl_verify` (default `False`, like NX-OS) checks the certificate.
   Over `https`, `get_snmp_information` returns the community strings.
 - `docs/extreme_fe.rst`: caveats in the format of NAPALM's driver docs,

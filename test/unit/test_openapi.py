@@ -340,17 +340,3 @@ def test_insecure_warning_disabled_without_verify(monkeypatch):
     session, _ = _session(monkeypatch, [FakeResponse(200, {"token": "t1"})], verify=True)
     session.open()
     assert len(disabled) == 1
-
-
-def test_reboot_schedule_and_cancel(monkeypatch):
-    session, http = _session(
-        monkeypatch,
-        [FakeResponse(200, {"token": "t1"}), FakeResponse(204), FakeResponse(204)],
-    )
-    session.open()
-    session.schedule_reboot(15)
-    session.cancel_reboot()
-    (_, url1, _, kwargs1), (_, url2, _, _) = http.requests[1:]
-    assert url1.endswith("/v0/operation/system/reboot/:schedule")
-    assert kwargs1["json"] == {"delay": 15}  # minutes
-    assert url2.endswith("/v0/operation/system/reboot/:cancel")

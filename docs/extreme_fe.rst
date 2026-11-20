@@ -28,9 +28,9 @@ about three minutes later (``show application openapi``). The driver logs in
 with the given user and sends the token it gets (valid for 24 hours, renewed
 when it expires).
 
-Like NAPALM's NX-OS driver, a few operations need SSH as well (see
-`What needs SSH`_). For them the driver opens an SSH connection with the same
-credentials on port 22 when they are first used. SCP needs
+Like NAPALM's NX-OS driver, uploading files needs SSH as well (see
+`What needs SSH`_). For it the driver opens an SSH connection with the same
+credentials on port 22 when it is first used. SCP needs
 ``boot config flags sshd`` and the SSH server.
 
 ``transport="ssh"`` uses only SSH (Netmiko ``extreme_vsp``) and works without
@@ -119,25 +119,10 @@ Differences between the transports (Fabric Engine 9.4):
 What needs SSH
 ______________
 
-With ``https`` only these operations use SSH (Fabric Engine 9.4):
-
-======================================= ============================================ ===============================================================
-Operation                               Command over SSH                             Why not the API
-======================================= ============================================ ===============================================================
-``load_merge_candidate``                SCP upload of ``merge_cfg``                  the API has no file transfer
-(``config_method="file"``)
-``load_replace_candidate``              SCP upload of ``candidate_cfg``              the API has no file transfer
-replace ``commit_config``,              ``copy <file> <startup file>``               ``copy`` asks before overwriting (y/n) and has no option to
-``rollback()``                                                                       skip it; the API's CLI operation cannot answer prompts
-replace ``commit_config``,              ``reset -y``                                 ``reboot/:schedule`` only accepts a delay of 10 - 360 minutes
-``rollback()``, ``rollback()`` while
-a commit is pending
-``discard_config`` (replace candidate)  ``delete <file>``                            asks ``Are you sure (y/n) ?``, no option to skip it
-``commit_config(revert_in=...)``        ``reset -in <time>``                         only if ``revert_in`` is below 10 or above 360 minutes, the range
-                                                                                     of ``reboot/:schedule``
-======================================= ============================================ ===============================================================
-
-Everything else goes through the API, verified on Fabric Engine 9.4:
+With ``https`` only uploading a file needs SSH: the API has no file
+transfer, so ``load_merge_candidate`` with ``config_method="file"`` and
+``load_replace_candidate`` copy the candidate with SCP. Everything else goes
+through the API, verified on Fabric Engine 9.4:
 
 * configuration lines of a merge: the CLI operation with ``configure
   terminal``, the lines and ``end`` (each request starts in privileged EXEC
@@ -146,13 +131,18 @@ Everything else goes through the API, verified on Fabric Engine 9.4:
 * ``save config`` and saving ``rollback_cfg``:
   ``POST v0/operation/system/config/:save`` (overwrites without asking)
 * ``source <file> debug`` (``config_method="file"``)
-* commit confirm: ``POST v0/operation/system/reboot/:schedule`` (``delay`` in
-  minutes, 10 - 360) and ``:cancel`` (also cancels a ``reset -in``)
+* replace and ``rollback()``: ``copy`` and ``reset -y`` through the CLI
+  operation; it confirms (y/n) questions itself (``copy`` overwrites the boot
+  configuration). Tested: ``rollback()`` rebooted into ``rollback_cfg``
+* ``delete`` of the replace candidate (``discard_config``)
+* commit confirm: ``reset -in`` and ``reset -cancel`` through the CLI
+  operation (``reboot/:schedule`` is not used: it only accepts 10 to 360
+  minutes)
 * ``dir`` and the switch log for ``has_pending_commit``
 
-As the SSH connection uses port 22 (like NX-OS), these operations do not
-work with ``https`` if SSH is only reachable on another port (port
-forwarding / NAT); use ``transport="ssh"`` then.
+As the SSH connection uses port 22 (like NX-OS), uploads do not work with
+``https`` if SSH is only reachable on another port (port forwarding / NAT);
+use ``transport="ssh"`` then.
 
 
 Differences of the API's CLI operation
@@ -162,6 +152,8 @@ ______________________________________
   returns ``% Invalid input detected``.
 * ``source <file> debug`` stops at the first rejected line; over SSH the
   following lines are still applied.
+* Questions (y/n) are answered by the switch itself, ``copy`` onto an
+  existing file only echoes ``File [...] already existing,``.
 * The switch counts any output containing "Error" as failed. In a merge, a
   line that prints such a text stops the merge (the following lines are
   skipped) even if it was accepted.
@@ -237,8 +229,7 @@ Commit confirm
 ~~~~~~~~~~~~~~
 
 ``commit_config(revert_in=<seconds>)`` (merge only, requires
-``allow_reboot=True``) works like ExtremeCloud IQ Site Engine (with ``https``
-through the API when ``revert_in`` is 10 to 360 minutes):
+``allow_reboot=True``) works like ExtremeCloud IQ Site Engine:
 
 1. the current configuration is saved (``save config``) - this also saves
    earlier unsaved changes

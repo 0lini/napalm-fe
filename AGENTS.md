@@ -42,7 +42,7 @@ Run all of them before every commit, and only commit when they pass
   the API ones through `_api` / `_api_get`). The API is the default
   transport (`https`), like EOS and NX-OS; as in the NX-OS driver, SSH is only
   opened on first use, on port 22, for what the API cannot do (see
-  "OpenAPI transport"). Option names follow NAPALM: `transport`, `port` (of
+  "OpenAPI transport"; only SCP uploads). Option names follow NAPALM: `transport`, `port` (of
   the transport), `ssl_verify` (default `False`, like NX-OS). A reference
   checkout of NAPALM may be in `napalm/` (ignored by git). Known deviations: a failed
   merge is not rolled back automatically (rollback reboots the switch). IOS and
@@ -196,8 +196,8 @@ Findings there:
    plain text (9.4), see "OpenAPI transport".
 5. **Replace / rollback** (reboot): prompts confirmed on 9.4 (`copy` to an
    existing file asks `File [...] already existing, overwrite (y/n) ?`; the
-   driver uses `reset -y`). Still to check: that the switch boots the copied
-   file. Only on a lab switch with console access.
+   driver uses `reset -y`). Confirmed on the 9.4 VM (https): `rollback()`
+   rebooted into the copied `rollback_cfg`. Only on a lab switch with console access.
 6. **Commit confirm** (`revert_in`): confirmed on 9.4: `reset -in` syntax
    (`d:hh:mm | hh:mm | mm`), its prompt (`Are you sure you want to perform a
    scheduled reset? (y/n) ?`) and `reset -cancel` without a scheduled reset
@@ -285,15 +285,25 @@ server 0.1.13.12, schema "Extreme NOS API" 0.2.0, OpenAPI 3.0.3):
 - `POST /v0/operation/system/config/:save` with `{}` (boot config) or
   `{"name": <path>}`: 204, overwrites an existing file without asking; 422
   with a message for a bad path
+- the CLI operation confirms (y/n) questions itself: `copy` onto an existing
+  file overwrites it and only echoes `File [...] already existing,` (an
+  extra `y` command is `% Invalid input`), `delete` and `reset -in <time>`
+  print nothing, `reset -cancel` prints `Scheduled reset successfully
+  canceled!` / `Warning! No ongoing scheduled reset!`, `reset -y` reboots
+  (the request may not return). Over SSH `copy` / `delete` ask and have no
+  documented option to skip it (`copy ... -y` is accepted through the API)
 - `POST /v0/operation/system/reboot/:schedule` `{"delay": <minutes>}` (not
   seconds: 300 logs "Unit will reset in 0 days 5 hours 0 minutes!"); only
   10 - 360 accepted (422 "Delay must be between 10 and 360."), although the
-  schema allows up to 1728000. Logs the same event codes as `reset -in`,
+  schema allows up to 1728000; not used (`reset -in` through the CLI
+  operation has the full range). Logs the same event codes as `reset -in`,
   a few seconds later. `:cancel` (no body) answers 204 also when nothing is
   scheduled and cancels a `reset -in` too
-- `copy` and `delete` have no option to skip their (y/n) question (`copy ?`,
-  `delete ?`); only `reset` has `-y`. So replace / rollback / deleting the
-  replace candidate still need SSH, as do SCP uploads
+- `PATCH /v0/configuration/system/save-config` `{"primary": ..., "backup":
+  ...}` sets the boot configuration files (not used); `state/system` has
+  `isConfigDirty`. No generic file transfer: `image/:install` only installs
+  images from a URL, `debug-info/:upload` only sends files away;
+  `/v0|v1|v2/configuration` are GET only
 - `operation/system/config/recovery` (`:timeout`, `:cancel`, `undo-list`)
   undoes changes made through the `configuration/*` endpoints, not CLI lines
 - the full schema and captures are in the lab directory (`~/vms/gns3/openapi`)
@@ -320,13 +330,13 @@ Design and state (verified on the 9.4 VM, 2026-11-20):
   server, SNMP communities); no SSH connection is opened
 - configuration over the API (all live-tested on 9.4): merge lines
   (`_send_config_api`, `continue_on_failure=false`), `save config` /
-  `rollback_cfg` (`:save`), `source` (`config_method="file"`), commit confirm
-  (`reboot/:schedule` for 10 - 360 minutes, otherwise `reset -in` over SSH;
-  `:cancel`), `dir` and the log
-- SSH (port 22, like NX-OS `ensure_netmiko_conn`): SCP, `copy`, `delete`,
-  `reset -y`, `reset -in` outside 10 - 360 minutes. In the GNS3 lab SSH is
-  forwarded to another port, so these cannot be tested with `https` there
-  (set `driver.netmiko_optional_args["port"]` by hand in a lab script)
+  `rollback_cfg` (`:save`), `source` (`config_method="file"`), `copy`,
+  `delete`, `reset -in` / `-cancel` / `-y` (`_send_command_timing`),
+  `dir` and the log. `rollback()` over https rebooted into `rollback_cfg`
+- SSH (port 22, like NX-OS `ensure_netmiko_conn`): only SCP uploads. In the
+  GNS3 lab SSH is forwarded to another port, so uploads cannot be tested
+  with `https` there (set `driver.netmiko_optional_args["port"]` by hand in
+  a lab script)
 - tests: mocked JSON responses per getter in `mocked_data/<test>/<case>_openapi/`
   (real responses only, anonymised), `FakeOpenApiSession` in `conftest.py`,
   the getter suite runs for both transports
@@ -349,7 +359,7 @@ LLDP and ARP were empty there, their field names are from the schema only):
 | `get_snmp_information` | `configuration/snmp` (`contact`, `location`, `v1v2.access[]` with `community` and `accessView`) | - |
 | `get_config` | - (`/v0/configuration` is JSON, not the CLI text NAPALM returns) | running / startup config |
 | `cli` | POST `operation/system/cli` | - |
-| config management | POST `operation/system/cli` (merge lines, `source`), `operation/system/config/:save`, `operation/system/reboot/:schedule` / `:cancel`; `configuration/*` PATCH / PUT exist, but no candidate / diff / commit and no file transfer | SCP, `copy`, `delete`, `reset -y` (replace, rollback) |
+| config management | POST `operation/system/cli` (merge lines, `source`, `copy`, `delete`, `reset`), `operation/system/config/:save`; `configuration/*` PATCH / PUT exist, but no candidate / diff / commit and no file transfer | file upload (SCP) |
 | new getters (not implemented today) | `state/forwarding/ipv6-nd` (`get_ipv6_neighbors_table`), `state/transceiver/{port}` (`get_optics`), `configuration/accounts` (`get_users`), `state/route` (`get_route_to`) | - |
 
 Safety: against the switch only `GET` requests, the token request

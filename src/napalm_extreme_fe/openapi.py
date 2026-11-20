@@ -26,8 +26,6 @@ BASE_PATH = "/rest/openapi"
 TOKEN_PATH = "/v0/operation/auth-token/:generate"
 CLI_PATH = "/v0/operation/system/cli"
 SAVE_CONFIG_PATH = "/v0/operation/system/config/:save"
-REBOOT_SCHEDULE_PATH = "/v0/operation/system/reboot/:schedule"
-REBOOT_CANCEL_PATH = "/v0/operation/system/reboot/:cancel"
 DEFAULT_PORT = 9443
 
 # statusCode of a command the CLI operation skipped after a failed one
@@ -166,23 +164,6 @@ class OpenApiSession:
         """
         body = {"name": name} if name else {}
         self._call("POST", SAVE_CONFIG_PATH, (200, 204), json=body)
-
-    def schedule_reboot(self, minutes: int) -> None:
-        """Schedule a reboot (``POST /v0/operation/system/reboot/:schedule``).
-
-        ``delay`` is in minutes, not seconds as the schema's maximum (1728000)
-        suggests: ``300`` logs "Unit will reset in 0 days 5 hours 0 minutes!".
-        Fabric Engine 9.4 accepts 10 to 360 (HTTP 422 otherwise).
-        """
-        self._call("POST", REBOOT_SCHEDULE_PATH, (200, 204), json={"delay": minutes})
-
-    def cancel_reboot(self) -> None:
-        """Cancel a scheduled reboot (``POST /v0/operation/system/reboot/:cancel``).
-
-        Also cancels a reset scheduled with ``reset -in``; answers 204 when
-        nothing is scheduled as well (Fabric Engine 9.4).
-        """
-        self._call("POST", REBOOT_CANCEL_PATH, (200, 204))
 
     @staticmethod
     def _error(response: requests.Response) -> str:

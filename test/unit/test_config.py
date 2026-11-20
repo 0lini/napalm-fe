@@ -986,49 +986,65 @@ def test_https_file_method(monkeypatch):
 def test_https_revert_through_the_api(monkeypatch):
     driver = _https_driver(monkeypatch, allow_reboot=True)
     driver.load_merge_candidate(config="foo")
-    driver.commit_config(revert_in=900)  # 15 minutes: within the API's 10 - 360
-    assert "reboot/:schedule 15" in driver.api.requests
+    driver.commit_config(revert_in=300)
+    # the API's CLI operation confirms "reset -in" itself
+    assert "cli: reset -in 5" in driver.api.requests
+    assert "cli: y" not in driver.api.requests
     assert driver.api.saved == ["/intflash/napalm_rollback.cfg", None]
     assert driver.has_pending_commit()  # the log is read through the API
     driver.confirm_commit()
-    assert driver.api.requests[-1] == "reboot/:cancel"
+    assert driver.api.requests[-1] == "cli: reset -cancel"
     assert driver.api.saved[-1] is None  # saved after the confirm
     assert not driver.has_pending_commit()
     assert driver.device.commands == []  # no SSH
 
 
-def test_https_short_revert_and_replace_use_ssh(monkeypatch):
+def test_https_replace_only_uploads_over_ssh(monkeypatch):
+    driver = _https_driver(monkeypatch, allow_reboot=True)
+    driver.load_replace_candidate(config="config terminal\nend")
+    assert FakeTransfer.instances[0].kwargs["ssh_conn"] is driver.device  # SCP
+    driver.commit_config()
+    # copy over the existing boot configuration and reset, both through the API
+    assert "cli: copy /intflash/napalm_candidate.cfg /intflash/config.cfg" in driver.api.requests
+    assert (
+        driver.device.flash["/intflash/config.cfg"]
+        == driver.device.flash["/intflash/napalm_candidate.cfg"]
+    )
+    assert "cli: reset -y" in driver.api.requests and driver.device.rebooted
+    assert driver.device.commands == []
+
+
+def test_https_rollback_and_discard(monkeypatch):
     driver = _https_driver(monkeypatch, allow_reboot=True)
     driver.load_merge_candidate(config="foo")
-    driver.commit_config(revert_in=300)  # 5 minutes: the API refuses less than 10
-    assert driver.device.commands == ["reset -in 5", "y"]
-    driver.confirm_commit()  # the API's cancel also ends a "reset -in"
-    assert driver.api.requests[-1] == "reboot/:cancel"
-    assert not driver.has_pending_commit()
-
-    # copy asks before overwriting and has no option to skip it: SSH
-    driver.load_replace_candidate(config="config terminal\nend")
     driver.commit_config()
+    driver.rollback()
+    assert "cli: copy /intflash/napalm_rollback.cfg /intflash/config.cfg" in driver.api.requests
     assert driver.device.rebooted
-    assert any(c.startswith("copy ") for c in driver.device.commands)
+
+    driver = _https_driver(monkeypatch, allow_reboot=True)
+    driver.load_replace_candidate(config="config terminal\nend")
+    driver.discard_config()
+    assert "cli: delete /intflash/napalm_candidate.cfg" in driver.api.requests
+    assert "/intflash/napalm_candidate.cfg" not in driver.device.flash
+    assert driver.device.commands == []
 
 
 def test_https_revert_errors(monkeypatch):
-    from napalm.base.exceptions import CommandErrorException, CommitConfirmException
+    from napalm.base.exceptions import CommitConfirmException
 
     driver = _https_driver(monkeypatch, allow_reboot=True)
+    cli = driver.api.cli
 
-    def fail(*args):
-        raise CommandErrorException("HTTP 422")
+    def fail_reset(commands, **kwargs):
+        if commands[0].startswith("reset"):
+            return [API_INVALID_INPUT]
+        return cli(commands, **kwargs)
 
-    driver.api.schedule_reboot = fail
+    driver.api.cli = fail_reset
     driver.load_merge_candidate(config="foo")
     with pytest.raises(CommitConfirmException, match="Could not schedule"):
-        driver.commit_config(revert_in=900)
-    driver.pending_revert = True
-    driver.api.cancel_reboot = fail
-    with pytest.raises(CommitConfirmException, match="Could not cancel"):
-        driver.confirm_commit()
+        driver.commit_config(revert_in=300)
 
 
 def test_https_merge_stops_at_vlan_error(monkeypatch):

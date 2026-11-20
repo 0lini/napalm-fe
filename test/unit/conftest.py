@@ -109,33 +109,30 @@ class FakeOpenApiSession(BaseTestDouble):
         return [self._output(command) for command in commands]
 
     def _output(self, command):
-        if command.startswith(("dir ", "source ", "show logging file event-code ")):
-            output = self.switch.send_command(command)
-            self.switch.commands.pop()  # ran through the API, not over SSH
-            return output
+        sent = len(self.switch.commands)
+        try:
+            if command.startswith(("copy ", "delete ", "reset")):
+                return self._confirmed(command)
+            if command.startswith(("dir ", "source ", "show logging file event-code ")):
+                return self.switch.send_command(command)
+        finally:
+            del self.switch.commands[sent:]  # ran through the API, not over SSH
         return self.read_txt_file(self.find_file(self.sanitize_text(command) + ".txt"))
+
+    def _confirmed(self, command):
+        """The CLI operation confirms (y/n) questions itself (9.4): ``copy``
+        onto an existing file only echoes ``File [...] already existing,``,
+        ``delete`` and ``reset -in`` print nothing."""
+        output = self.switch.send_command_timing(command)
+        if self.switch._pending:
+            self.switch.send_command_timing("y")
+            return output.split(" overwrite")[0] if "already existing" in output else ""
+        return output
 
     def save_config(self, name=None):
         """POST operation/system/config/:save (no prompt, overwrites)."""
         self.saved.append(name)
         self.switch.flash[name or "/intflash/config.cfg"] = "running config"
-
-    def schedule_reboot(self, minutes):
-        """POST operation/system/reboot/:schedule: logs like "reset -in" (9.4)."""
-        self.requests.append(f"reboot/:schedule {minutes}")
-        self.switch.scheduled_reset = str(minutes)
-        self.switch._log(
-            "0x0003068e",
-            "GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in "
-            f"0 days {minutes // 60} hours {minutes % 60} minutes!",
-        )
-
-    def cancel_reboot(self):
-        """POST operation/system/reboot/:cancel: 204, also when nothing is scheduled."""
-        self.requests.append("reboot/:cancel")
-        if self.switch.scheduled_reset is not None:
-            self.switch.scheduled_reset = None
-            self.switch._log("0x0003068f", "GlobalRouter SW INFO Scheduled reset canceled!")
 
 
 class _FakeTransport:
