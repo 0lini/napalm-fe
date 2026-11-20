@@ -11,7 +11,7 @@ from .conftest import PatchedExtremeFeDriver
 
 @pytest.fixture
 def driver():
-    driver = PatchedExtremeFeDriver("host", "user", "pass")
+    driver = PatchedExtremeFeDriver("host", "user", "pass", optional_args={"transport": "ssh"})
     # compare_config() reads the running config of the real Fabric Engine 9.4 capture
     driver.device.current_test = "test_get_config"
     driver.device.current_test_case = "fabric_engine_9.4"
@@ -158,7 +158,9 @@ def _make_driver(monkeypatch, **optional_args):
 
     FakeTransfer.instances = []
     monkeypatch.setattr(extreme_fe, "ExtremeFeFileTransfer", FakeTransfer)
-    driver = PatchedExtremeFeDriver("host", "user", "pass", optional_args=optional_args)
+    driver = PatchedExtremeFeDriver(
+        "host", "user", "pass", optional_args={"transport": "ssh", **optional_args}
+    )
     # compare_config() reads the running config of the real Fabric Engine 9.4 capture
     driver.device.current_test = "test_get_config"
     driver.device.current_test_case = "fabric_engine_9.4"
@@ -274,7 +276,10 @@ def test_second_commit_overwrites_rollback_file(driver):
 def test_merge_aborts_if_rollback_file_fails(driver):
     driver.device.send_command = lambda command, **kw: "Error: flash is full"
     driver.load_merge_candidate(config="ntp server 192.0.2.99")
-    with pytest.raises(MergeConfigException, match="rollback configuration"):
+    with pytest.raises(
+        MergeConfigException,
+        match="Could not save the configuration to /intflash/napalm_rollback.cfg",
+    ):
         driver.commit_config()
     assert driver.device.sent_config == []
 
@@ -852,9 +857,8 @@ def test_discard_survives_failed_delete(reboot_driver):
 
 def test_old_class_names():
     # renamed after 0.1.0 (FE -> Fe); the old names still work
-    from napalm import get_network_driver
-
     import napalm_extreme_fe
+    from napalm import get_network_driver
     from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer, ExtremeFeFileTransfer
 
     assert napalm_extreme_fe.ExtremeFEDriver is napalm_extreme_fe.ExtremeFeDriver
@@ -863,22 +867,24 @@ def test_old_class_names():
 
 
 def test_transport_option():
+    from napalm.base.exceptions import ConnectionException
+
     from .conftest import PatchedExtremeFeDriver
 
-    assert PatchedExtremeFeDriver("h", "u", "p").transport == "ssh"
-    assert (
-        PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "ssh"}).transport == "ssh"
-    )
-    api = PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "openapi"})
-    assert (api.transport, api.openapi_port, api.verify) == ("openapi", 9443, True)
+    # like EOS / NX-OS: the API is the default, "port" is the port of the transport
+    api = PatchedExtremeFeDriver("h", "u", "p", optional_args={"port": 22})
+    assert (api.transport, api.port, api.ssl_verify) == ("https", 22, False)
+    api = PatchedExtremeFeDriver("h", "u", "p")
+    assert (api.transport, api.port) == ("https", 9443)
     api = PatchedExtremeFeDriver(
-        "h",
-        "u",
-        "p",
-        optional_args={"transport": "openapi", "openapi_port": "8443", "verify": False},
+        "h", "u", "p", optional_args={"port": "8443", "ssl_verify": "/etc/ca.pem"}
     )
-    assert (api.openapi_port, api.verify) == (8443, False)
-    with pytest.raises(ValueError, match="ssh, openapi"):
+    assert (api.port, api.ssl_verify) == (8443, "/etc/ca.pem")
+    # the SSH connection of the https transport uses port 22 (like NX-OS)
+    assert api.netmiko_optional_args["port"] == 22
+    ssh = PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "ssh", "port": 2222})
+    assert (ssh.transport, ssh.port, ssh.netmiko_optional_args["port"]) == ("ssh", 2222, 2222)
+    with pytest.raises(ConnectionException, match="Unknown transport: netconf"):
         PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "netconf"})
 
 
@@ -893,3 +899,143 @@ def test_failed_merge_message(driver):
     assert "/intflash/napalm_rollback.cfg" in message
     assert "allow_reboot=True" in message
     assert "Error: The community entry already exists." in message
+
+
+# transport="https": configuration lines and saving go through the API, SCP
+# and commands with a (y/n) prompt over SSH
+
+
+def _https_driver(monkeypatch, **optional_args):
+    driver = _make_driver(monkeypatch, transport="https", **optional_args)
+    driver.api.current_test = "test_get_config"
+    driver.api.current_test_case = "fabric_engine_9.4"
+    return driver
+
+
+def test_https_merge_commit(monkeypatch):
+    driver = _https_driver(monkeypatch)
+    driver.load_merge_candidate(config=CONFIG)
+    assert driver.compare_config() == 'interface gigabitEthernet 1/2\n+name "new port"\nexit'
+    driver.commit_config()
+    assert driver.api.config == [
+        "configure terminal",
+        "interface gigabitEthernet 1/2",
+        'name "new port"',
+        "exit",
+        "end",
+    ]
+    # rollback file first, then "save config" - both through the API
+    assert driver.api.saved == ["/intflash/napalm_rollback.cfg", None]
+    assert driver.device.commands == [] and driver.device.sent_config == []  # no SSH
+
+
+# Real reply of the API's CLI operation (Fabric Engine 9.4) for a rejected command
+API_INVALID_INPUT = "        ^\n% Invalid input detected at '^' marker.\n"
+
+
+@pytest.mark.parametrize(
+    "outputs",
+    [
+        ["", API_INVALID_INPUT, "", ""],  # error output (continue_on_failure)
+        ["", API_INVALID_INPUT],  # the switch skipped the rest
+        ["", "something with Error"],  # skipped after a line the switch counts as failed
+    ],
+)
+def test_https_merge_error(monkeypatch, outputs):
+    driver = _https_driver(monkeypatch, save_config=True)
+    driver.api.cli = lambda commands, continue_on_failure=True, timeout=None: outputs
+    driver.load_merge_candidate(config="foo\nbar")
+    with pytest.raises(MergeConfigException, match="automatic rollback not available") as exc:
+        driver.commit_config()
+    assert "foo" in str(exc.value)
+    assert driver.api.saved == ["/intflash/napalm_rollback.cfg"]  # not saved
+
+
+def test_https_save_failure(monkeypatch):
+    from napalm.base.exceptions import CommandErrorException
+
+    driver = _https_driver(monkeypatch)
+
+    def save_config(name=None):
+        if name is None:
+            raise CommandErrorException("OpenAPI POST ... failed: HTTP 500")
+
+    driver.api.save_config = save_config
+    driver.load_merge_candidate(config="foo")
+    with pytest.raises(CommandErrorException, match="Saving the configuration failed"):
+        driver.commit_config()
+
+    driver.api.save_config = lambda name=None: (_ for _ in ()).throw(
+        CommandErrorException("HTTP 500")
+    )
+    driver.load_merge_candidate(config="foo")
+    with pytest.raises(MergeConfigException, match="napalm_rollback.cfg"):
+        driver.commit_config()
+
+
+def test_https_file_method(monkeypatch):
+    driver = _https_driver(monkeypatch, config_method="file")
+    driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    # SCP over SSH (the only way to copy a file to the switch)
+    assert FakeTransfer.instances[0].kwargs["ssh_conn"] is driver.device
+    driver.commit_config()
+    assert "cli: source /intflash/napalm_merge.cfg debug" in driver.api.requests
+    assert driver.device.commands == []
+
+
+def test_https_revert_through_the_api(monkeypatch):
+    driver = _https_driver(monkeypatch, allow_reboot=True)
+    driver.load_merge_candidate(config="foo")
+    driver.commit_config(revert_in=900)  # 15 minutes: within the API's 10 - 360
+    assert "reboot/:schedule 15" in driver.api.requests
+    assert driver.api.saved == ["/intflash/napalm_rollback.cfg", None]
+    assert driver.has_pending_commit()  # the log is read through the API
+    driver.confirm_commit()
+    assert driver.api.requests[-1] == "reboot/:cancel"
+    assert driver.api.saved[-1] is None  # saved after the confirm
+    assert not driver.has_pending_commit()
+    assert driver.device.commands == []  # no SSH
+
+
+def test_https_short_revert_and_replace_use_ssh(monkeypatch):
+    driver = _https_driver(monkeypatch, allow_reboot=True)
+    driver.load_merge_candidate(config="foo")
+    driver.commit_config(revert_in=300)  # 5 minutes: the API refuses less than 10
+    assert driver.device.commands == ["reset -in 5", "y"]
+    driver.confirm_commit()  # the API's cancel also ends a "reset -in"
+    assert driver.api.requests[-1] == "reboot/:cancel"
+    assert not driver.has_pending_commit()
+
+    # copy asks before overwriting and has no option to skip it: SSH
+    driver.load_replace_candidate(config="config terminal\nend")
+    driver.commit_config()
+    assert driver.device.rebooted
+    assert any(c.startswith("copy ") for c in driver.device.commands)
+
+
+def test_https_revert_errors(monkeypatch):
+    from napalm.base.exceptions import CommandErrorException, CommitConfirmException
+
+    driver = _https_driver(monkeypatch, allow_reboot=True)
+
+    def fail(*args):
+        raise CommandErrorException("HTTP 422")
+
+    driver.api.schedule_reboot = fail
+    driver.load_merge_candidate(config="foo")
+    with pytest.raises(CommitConfirmException, match="Could not schedule"):
+        driver.commit_config(revert_in=900)
+    driver.pending_revert = True
+    driver.api.cancel_reboot = fail
+    with pytest.raises(CommitConfirmException, match="Could not cancel"):
+        driver.confirm_commit()
+
+
+def test_https_merge_stops_at_vlan_error(monkeypatch):
+    """Real error output of the API (9.4) starts with a BEL; "end" is skipped."""
+    driver = _https_driver(monkeypatch)
+    error = "\n\x07Error: The specified VLAN ID is invalid or already in use \n\n"
+    driver.api.cli = lambda commands, **kw: ["Enter configuration commands...\n", error]
+    driver.load_merge_candidate(config="vlan create 10 type port-mstprstp 0")
+    with pytest.raises(MergeConfigException, match="already in use"):
+        driver.commit_config()

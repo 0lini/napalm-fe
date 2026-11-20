@@ -6,11 +6,13 @@ from napalm.base.test.getters import BaseTestGetters
 
 @pytest.mark.usefixtures("set_device_parameters")
 class TestGetter(BaseTestGetters):
-    """Test get_* methods (SSH transport)."""
+    """Test get_* methods with transport="ssh"."""
+
+    transport = "ssh"
 
 
 @pytest.mark.usefixtures("set_device_parameters")
-class TestGetterOpenApi(BaseTestGetters):
-    """Test get_* methods with transport="openapi" (cases ``*_openapi``)."""
+class TestGetterHttps(BaseTestGetters):
+    """Test get_* methods with transport="https" (cases ``*_openapi``)."""
 
-    transport = "openapi"
+    transport = "https"

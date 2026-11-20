@@ -1,7 +1,10 @@
 """NAPALM driver for Extreme Networks Fabric Engine (formerly VOSS / VSP).
 
-The driver talks to the device over SSH using Netmiko's ``extreme_vsp``
-device type and parses the CLI output.
+Like NAPALM's NX-OS driver, the default transport (``https``) is the
+switch's API (OpenAPI); an SSH connection (Netmiko ``extreme_vsp``) is only
+opened for what the API cannot do: file transfers (SCP) and commands that ask
+for confirmation or reboot the switch. ``transport="ssh"`` uses SSH for
+everything and parses the CLI output.
 """
 
 import logging
@@ -15,6 +18,7 @@ from napalm.base.exceptions import (
     CommandErrorException,
     CommitConfirmException,
     ConnectionClosedException,
+    ConnectionException,
     MergeConfigException,
     ReplaceConfigException,
 )
@@ -24,12 +28,16 @@ from netmiko.exceptions import ConfigInvalidException
 
 from napalm_extreme_fe import openapi_parsers, parsers
 from napalm_extreme_fe.file_transfer import ExtremeFeFileTransfer, parse_dir
-from napalm_extreme_fe.openapi import DEFAULT_PORT as DEFAULT_OPENAPI_PORT
+from napalm_extreme_fe.openapi import DEFAULT_PORT as DEFAULT_HTTPS_PORT
 from napalm_extreme_fe.openapi import OpenApiSession
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_TRANSPORTS = ("ssh", "openapi")
+SUPPORTED_TRANSPORTS = ("https", "ssh")
+
+# Like the NX-OS driver, the SSH connection the https transport opens for file
+# transfers and prompts always uses port 22 ("port" is the API port).
+SSH_PORT = 22
 
 # Extreme renamed VOSS (VSP Operating System Software) to Fabric Engine;
 # Netmiko still calls it "extreme_vsp".
@@ -60,13 +68,17 @@ EVENT_RESET_SCHEDULED = "0x0003068e"  # Scheduled reset enabled! Unit will reset
 EVENT_RESET_CANCELED = "0x0003068f"  # Scheduled reset canceled!
 EVENT_SYSTEM_BOOT = "0x00034594"  # System boot
 
+# Range of "delay" (minutes) of the OpenAPI reboot/:schedule (Fabric Engine 9.4)
+API_REBOOT_DELAY = (10, 360)
+
 # Output that shows that the CLI rejected a command. Fabric Engine 9.4 also
 # reports errors as e.g. "Error: The community entry already exists." (no
-# "%"). Also passed to Netmiko's send_config_set(error_pattern=...), which
-# applies it with re.M as well.
+# "%"), sometimes after a BEL ("\x07Error: The specified VLAN ID is invalid or
+# already in use", OpenAPI CLI operation). Also passed to Netmiko's
+# send_config_set(error_pattern=...), which applies it with re.M as well.
 CLI_ERROR_RE = re.compile(
     r"% (?:Invalid input|Incomplete command|Ambiguous command|Unrecognized command|Cannot |Error)"
-    r"|^\s*Error\s*:",
+    r"|^[\s\x07]*Error\s*:",
     re.M,
 )
 
@@ -114,13 +126,15 @@ class ExtremeFeDriver(NetworkDriver):
         Supported ``optional_args`` (in addition to the Netmiko arguments such
         as ``port``, ``secret``, ``key_file``, ``ssh_config_file``...):
 
-        * ``transport`` (default ``"ssh"``): how the driver talks to the
-          switch, like NAPALM's EOS driver. ``"ssh"``: CLI via Netmiko.
-          ``"openapi"``: the switch's OpenAPI (HTTPS) for the getters it
-          covers completely; everything else uses SSH, opened on first use.
-        * ``openapi_port`` (default ``9443``) and ``verify`` (default ``True``,
-          or a CA bundle path; ``False`` skips the certificate check, e.g. for
-          the factory self-signed certificate): OpenAPI connection.
+        * ``transport`` (default ``"https"``): how the driver talks to the
+          switch, like NAPALM's EOS and NX-OS drivers. ``"https"``: the
+          switch's OpenAPI; SSH (port 22, like NX-OS) is opened on first use
+          for file transfers and commands with a confirmation prompt.
+          ``"ssh"``: CLI via Netmiko only.
+        * ``port``: port of the transport (default ``9443`` for ``https``,
+          ``22`` for ``ssh``).
+        * ``ssl_verify`` (default ``False``, like NX-OS): check the API's TLS
+          certificate; ``True`` or the path of a CA bundle.
         * ``save_config`` (bool, default ``True``): run ``save config`` after
           a successful ``commit_config``.
         * ``startup_config_file`` (str, default ``/intflash/config.cfg``):
@@ -147,12 +161,9 @@ class ExtremeFeDriver(NetworkDriver):
         self.timeout = timeout
         optional_args = optional_args or {}
 
-        self.transport = optional_args.get("transport", "ssh")
+        self.transport = optional_args.get("transport", "https")
         if self.transport not in SUPPORTED_TRANSPORTS:
-            raise ValueError(
-                f"transport {self.transport!r} is not supported, use one of "
-                f"{', '.join(SUPPORTED_TRANSPORTS)}"
-            )
+            raise ConnectionException(f"Unknown transport: {self.transport}")
         self.save_on_commit = bool(optional_args.get("save_config", True))
         self.startup_config_file = optional_args.get("startup_config_file", "/intflash/config.cfg")
         self.force_no_enable = bool(optional_args.get("force_no_enable", False))
@@ -165,8 +176,13 @@ class ExtremeFeDriver(NetworkDriver):
         self.allow_reboot = bool(optional_args.get("allow_reboot", False))
         self.rollback_cfg = optional_args.get("rollback_cfg", "napalm_rollback.cfg")
         self.netmiko_optional_args = netmiko_args(optional_args)
-        self.openapi_port = int(optional_args.get("openapi_port", DEFAULT_OPENAPI_PORT))
-        self.verify: Union[bool, str] = optional_args.get("verify", True)
+        self.ssl_verify: Union[bool, str] = optional_args.get("ssl_verify", False)
+        if self.transport == "https":
+            self.port = int(optional_args.get("port", DEFAULT_HTTPS_PORT))
+            if "port" in self.netmiko_optional_args:
+                self.netmiko_optional_args["port"] = SSH_PORT
+        else:
+            self.port = int(optional_args.get("port", SSH_PORT))
 
         self.device: Any = None
         self.api: Optional[OpenApiSession] = None
@@ -182,16 +198,16 @@ class ExtremeFeDriver(NetworkDriver):
     def open(self) -> None:
         """Open a connection to the device.
 
-        With ``transport="openapi"`` only the API session is opened (it gets
-        a token); SSH follows when something needs the CLI (see ``_ssh``).
+        With ``transport="https"`` only the API session is opened (it gets a
+        token); SSH follows when something needs it (see ``_ssh``).
         """
-        if self.transport == "openapi":
+        if self.transport == "https":
             self.api = OpenApiSession(
                 self.hostname,
                 self.username,
                 self.password,
-                port=self.openapi_port,
-                verify=self.verify,
+                port=self.port,
+                verify=self.ssl_verify,
                 timeout=self.timeout,
             )
             self.api.open()
@@ -215,10 +231,10 @@ class ExtremeFeDriver(NetworkDriver):
     def is_alive(self) -> models.AliveDict:
         """Return whether the connection is still usable.
 
-        OpenAPI: whether the session holds a token (like the EOS driver, no
-        request); SSH: whether the SSH transport is active.
+        https: whether the session holds a token (no request, like the EOS and
+        NX-OS drivers); ssh: whether the SSH transport is active.
         """
-        if self.transport == "openapi":
+        if self.transport == "https":
             return {"is_alive": self.api is not None and self.api.token is not None}
         if self.device is None:
             return {"is_alive": False}
@@ -230,11 +246,29 @@ class ExtremeFeDriver(NetworkDriver):
             return {"is_alive": False}
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Transport primitives (like NAPALM's NX-OS drivers): everything that
+    # talks to the API or to Netmiko is here.
+    #
+    # https transport: commands, configuration lines and saving go through
+    # the API; file transfers and commands that ask (y/n) or reboot the
+    # switch (_send_command_timing, _confirm) need SSH, see _ssh().
     # ------------------------------------------------------------------
 
+    def _api(self) -> OpenApiSession:
+        if self.api is None:
+            raise ConnectionClosedException("Not connected to the device, call open() first")
+        return self.api
+
+    def _api_get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """GET an OpenAPI path (below ``/rest/openapi``)."""
+        return self._api().get(path, params)
+
     def _ssh(self) -> Any:
-        """The Netmiko session; with the OpenAPI transport opened on first use."""
+        """The Netmiko session; with the https transport opened on first use.
+
+        Like the NX-OS driver's ``ensure_netmiko_conn``: same credentials,
+        port 22.
+        """
         if self.device is None and self.api is not None:
             self._ssh_open()
         if self.device is None:
@@ -244,38 +278,32 @@ class ExtremeFeDriver(NetworkDriver):
     def _send_command(self, command: str, **kwargs: Any) -> str:
         """Send a command and return its post-processed output.
 
-        OpenAPI transport: through ``POST /v0/operation/system/cli`` (same
-        output as over SSH, without the ``Command Execution Time`` banner).
-        Calls with Netmiko arguments (``expect_string``, ``cmd_verify``: the
-        prompts of ``save config file`` / ``source``) use SSH.
+        https: through ``POST /v0/operation/system/cli`` (same output as over
+        SSH, without the ``Command Execution Time`` banner). ssh: Netmiko
+        ``send_command``; ``kwargs`` are passed on.
         """
-        if self.transport == "openapi" and not kwargs:
-            if self.api is None:
-                raise ConnectionClosedException("Not connected to the device, call open() first")
-            logger.debug("%s: sending %r (OpenAPI)", self.hostname, command)
-            output = self.api.cli([command])[0]
-            return self._send_command_postprocess(
-                output, remove_log_messages=not LOG_DISPLAY_COMMAND_RE.match(command)
-            )
-        device = self._ssh()
-        # Large tables (running-config, FDB on a chassis) can take longer than
-        # Netmiko's 10 second default; use the driver timeout instead.
-        kwargs.setdefault("read_timeout", self.timeout)
-        logger.debug("%s: sending %r", self.hostname, command)
-        try:
-            output = str(device.send_command(command, **kwargs))
-        except (OSError, EOFError) as exc:
-            raise ConnectionClosedException(str(exc)) from exc
+        if self.transport == "https":
+            logger.debug("%s: sending %r (API)", self.hostname, command)
+            output = self._api().cli([command])[0]
+        else:
+            device = self._ssh()
+            # Large tables (running-config, FDB on a chassis) can take longer
+            # than Netmiko's 10 second default; use the driver timeout instead.
+            kwargs.setdefault("read_timeout", self.timeout)
+            logger.debug("%s: sending %r", self.hostname, command)
+            try:
+                output = str(device.send_command(command, **kwargs))
+            except (OSError, EOFError) as exc:
+                raise ConnectionClosedException(str(exc)) from exc
         return self._send_command_postprocess(
             output, remove_log_messages=not LOG_DISPLAY_COMMAND_RE.match(command)
         )
 
-    # Transport primitives (like NAPALM's NX-OS drivers): everything that talks
-    # to Netmiko directly is here, so that another transport only has to
-    # implement these.
-
     def _send_command_timing(self, command: str) -> str:
-        """Send a command that prompts or has no fixed end (copy, reset, y)."""
+        """Send a command that prompts or has no fixed end (copy, reset, y).
+
+        Always SSH: the API cannot answer a (y/n) prompt.
+        """
         return str(self._ssh().send_command_timing(command, read_timeout=self.timeout))
 
     def _send_config(self, lines: List[str]) -> str:
@@ -283,6 +311,8 @@ class ExtremeFeDriver(NetworkDriver):
 
         Raises ``ConfigInvalidException`` (Netmiko) for a rejected line.
         """
+        if self.transport == "https":
+            return self._send_config_api(lines)
         try:
             return str(
                 self._ssh().send_config_set(
@@ -296,25 +326,66 @@ class ExtremeFeDriver(NetworkDriver):
                 pass
             raise
 
+    def _send_config_api(self, lines: List[str]) -> str:
+        """``_send_config`` through ``POST /v0/operation/system/cli``.
+
+        Each request starts in privileged EXEC mode, hence ``configure
+        terminal`` / ``end``. Without ``continue_on_failure`` the switch skips
+        every command after the first one it counts as failed (any output
+        containing "Error"), so it stops at a rejected line like Netmiko does
+        with ``error_pattern`` (Fabric Engine 9.4).
+        """
+        commands = ["configure terminal", *lines, "end"]
+        outputs = self._api().cli(commands, continue_on_failure=False)
+        transcript = "\n".join(
+            f"{c}\n{o}".rstrip() for c, o in zip(commands, outputs, strict=False)
+        )
+        for command, output in zip(commands, outputs, strict=False):
+            if self._has_cli_error(output):
+                raise ConfigInvalidException(
+                    f"Invalid input detected at command: {command}\n{transcript}"
+                )
+        if len(outputs) < len(commands):
+            last = commands[len(outputs) - 1] if outputs else commands[0]
+            raise ConfigInvalidException(
+                f"The switch skipped the commands after: {last}\n{transcript}"
+            )
+        return transcript
+
     def _copy_run_start(self, exc_class: type = CommandErrorException) -> None:
         """Save the running configuration (``save config``)."""
+        if self.transport == "https":
+            try:
+                self._api().save_config()
+            except CommandErrorException as exc:
+                raise exc_class(f"Saving the configuration failed: {exc}") from exc
+            return
         output = str(self._ssh().save_config())
         if not self._save_successful(output):
             raise exc_class(f"Saving the configuration failed:\n{output}")
 
-    def _save_config_file(self, path: str) -> str:
+    def _save_config_file(self, path: str, exc_class: type = CommandErrorException) -> None:
         """Save the running configuration to ``path`` (``save config file``).
 
-        If the file exists the switch asks
+        https: ``POST /v0/operation/system/config/:save`` with ``name``; it
+        overwrites an existing file without asking (Fabric Engine 9.4). ssh:
+        if the file exists the switch asks
         ``File [/intflash/napalm_rollback.cfg] already existing, overwrite (y/n) ?``
         (Fabric Engine 9.3); any answer but ``y`` aborts the save. Saving takes
         a few seconds, so this waits for the prompt, not for the output to settle.
         """
+        if self.transport == "https":
+            try:
+                self._api().save_config(path)
+            except CommandErrorException as exc:
+                raise exc_class(f"Could not save the configuration to {path}: {exc}") from exc
+            return
         prompt = re.escape(self._ssh().find_prompt())
         output = self._send_command(f"save config file {path}", expect_string=rf"\(y/n\)|{prompt}")
         if re.search(r"\(y/n\)", output):
             output += "\n" + self._send_command("y", expect_string=prompt, cmd_verify=False)
-        return output
+        if not self._save_successful(output):
+            raise exc_class(f"Could not save the configuration to {path}:\n{output}")
 
     def _source_file(self, path: str) -> str:
         """Run the configuration file ``path`` on the switch (``source <file> debug``).
@@ -324,14 +395,18 @@ class ExtremeFeDriver(NetworkDriver):
         with ``debug`` (Fabric Engine 9.3). With ``debug`` every line is
         echoed after a prompt (``5520-24T-FabricEngine:1(config)#asdasda``)
         followed by its error (``% Invalid input detected at '^' marker.``);
-        the following lines are still run. As the echo contains the prompt,
-        this waits for the prompt at the end of the output.
+        the following lines are still run over SSH. Through the API's CLI
+        operation the output is the same, but ``source`` stops at the first
+        rejected line (Fabric Engine 9.4). Over SSH, as the echo contains the
+        prompt, this waits for the prompt at the end of the output.
         """
+        read_timeout = max(self.timeout, 120)
+        if self.transport == "https":
+            output = self._api().cli([f"source {path} debug"], timeout=read_timeout)[0]
+            return self._send_command_postprocess(output)
         prompt = re.escape(self._ssh().find_prompt())
         return self._send_command(
-            f"source {path} debug",
-            expect_string=rf"{prompt}\s*$",
-            read_timeout=max(self.timeout, 120),
+            f"source {path} debug", expect_string=rf"{prompt}\s*$", read_timeout=read_timeout
         )
 
     @staticmethod
@@ -384,15 +459,9 @@ class ExtremeFeDriver(NetworkDriver):
     # Getters
     # ------------------------------------------------------------------
 
-    def _api_get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """GET an OpenAPI path (below ``/rest/openapi``); transport primitive."""
-        if self.api is None:
-            raise ConnectionClosedException("Not connected to the device, call open() first")
-        return self.api.get(path, params)
-
     def get_facts(self) -> models.FactsDict:
         """Return a set of facts about the device."""
-        if self.transport == "openapi":
+        if self.transport == "https":
             return openapi_parsers.facts(  # type: ignore[return-value]
                 self._api_get("/v0/state/system"),
                 self._api_get("/v0/configuration/dns"),
@@ -440,7 +509,7 @@ class ExtremeFeDriver(NetworkDriver):
         interfaces = parsers.parse_interfaces(output)
         names = parsers.parse_interfaces_name(output)
         now = parsers.command_execution_time(output)
-        if now is None:  # no banner (OpenAPI transport): the switch's clock
+        if now is None:  # no banner (https transport): the switch's clock
             now = parsers.parse_clock(self._send_command("show clock"))
         state_changes = parsers.parse_port_state(output)
 
@@ -485,7 +554,7 @@ class ExtremeFeDriver(NetworkDriver):
 
     def get_lldp_neighbors(self) -> Dict[str, List[models.LLDPNeighborDict]]:
         """Return LLDP neighbors."""
-        if self.transport == "openapi":
+        if self.transport == "https":
             return openapi_parsers.lldp_neighbors(self._api_get("/v0/state/lldp"))  # type: ignore[return-value]
         result: Dict[str, List[models.LLDPNeighborDict]] = {}
         for raw in parsers.parse_lldp_neighbors(self._send_command("show lldp neighbor")):
@@ -500,7 +569,7 @@ class ExtremeFeDriver(NetworkDriver):
 
     def get_lldp_neighbors_detail(self, interface: str = "") -> models.LLDPNeighborsDetailDict:
         """Return detailed LLDP neighbor information."""
-        if self.transport == "openapi":
+        if self.transport == "https":
             detail = openapi_parsers.lldp_neighbors_detail(self._api_get("/v0/state/lldp"))
             if interface:
                 detail = {port: n for port, n in detail.items() if port == interface}
@@ -517,7 +586,7 @@ class ExtremeFeDriver(NetworkDriver):
 
     def get_arp_table(self, vrf: str = "") -> List[models.ARPTableDict]:
         """Return the ARP table, optionally for a given VRF."""
-        if self.transport == "openapi":
+        if self.transport == "https":
             # all VRFs in one response; vr_name=... would be case-sensitive
             arp = self._api_get("/v0/state/forwarding/ip-arp")
             names = openapi_parsers.vrf_names(arp)
@@ -536,7 +605,7 @@ class ExtremeFeDriver(NetworkDriver):
 
     def get_mac_address_table(self) -> List[models.MACAdressTable]:
         """Return the MAC address table."""
-        if self.transport == "openapi":
+        if self.transport == "https":
             return openapi_parsers.mac_address_table(  # type: ignore[return-value]
                 self._api_get("/v0/state/forwarding/mac-fdb")
             )
@@ -544,7 +613,7 @@ class ExtremeFeDriver(NetworkDriver):
 
     def get_vlans(self) -> Dict[str, models.VlanDict]:
         """Return the configured VLANs and their member ports."""
-        if self.transport == "openapi":
+        if self.transport == "https":
             return openapi_parsers.vlans(  # type: ignore[return-value]
                 self._api_get("/v0/configuration/vlan"), self._api_get("/v1/state/vlan")
             )
@@ -557,7 +626,7 @@ class ExtremeFeDriver(NetworkDriver):
 
     def get_ntp_servers(self) -> Dict[str, models.NTPServerDict]:
         """Return the configured NTP servers."""
-        if self.transport == "openapi":
+        if self.transport == "https":
             return openapi_parsers.ntp_servers(self._api_get("/v0/configuration/ntp"))  # type: ignore[return-value]
         running = self._send_command("show running-config")
         return {server: {} for server in parsers.parse_ntp_servers(running)}
@@ -567,9 +636,9 @@ class ExtremeFeDriver(NetworkDriver):
 
         ``community`` is always empty: Fabric Engine never displays SNMPv1/v2c
         community strings (stored encrypted outside the configuration, masked
-        in ``show snmp-server community``). The OpenAPI transport returns them.
+        in ``show snmp-server community``). The https transport returns them.
         """
-        if self.transport == "openapi":
+        if self.transport == "https":
             return openapi_parsers.snmp_information(  # type: ignore[return-value]
                 self._api_get("/v0/configuration/snmp"), self._api_get("/v0/state/system")
             )
@@ -751,11 +820,13 @@ class ExtremeFeDriver(NetworkDriver):
         if self.pending_revert or (revert_in is not None and self.has_pending_commit()):
             raise CommitConfirmException("A commit is waiting for confirm_commit() or rollback()")
         revert_time = None
+        revert_minutes = 0
         if revert_in is not None:
             if self.config_replace:
                 raise NotImplementedError("revert_in is not supported for a replace commit")
             self._check_reboot_allowed("revert_in", CommitConfirmException)
             revert_time = self._revert_time(revert_in)
+            revert_minutes = int(revert_in) // 60
         if not self.candidate_config:
             exc_class = ReplaceConfigException if self.config_replace else MergeConfigException
             raise exc_class("No candidate configuration loaded")
@@ -779,7 +850,7 @@ class ExtremeFeDriver(NetworkDriver):
         if revert_time:
             # the switch reboots into this saved configuration unless confirmed
             self._copy_run_start(CommitConfirmException)
-            self._schedule_reset(revert_time)
+            self._schedule_reset(revert_time, revert_minutes)
         if self.config_method == "file":
             self._commit_from_file()
         else:
@@ -809,17 +880,28 @@ class ExtremeFeDriver(NetworkDriver):
             return f"{hours:02d}:{mins:02d}"
         return str(mins)
 
-    def _schedule_reset(self, revert_time: str) -> None:
-        """Schedule the revert reboot.
+    def _schedule_reset(self, revert_time: str, minutes: int) -> None:
+        """Schedule the revert reboot in ``minutes`` (``revert_time``: CLI format).
 
-        The switch asks ``Are you sure you want to perform a scheduled reset?
-        (y/n) ?``; any other answer than ``y`` aborts with ``Scheduled reset
-        operation aborted!``. On success the switch prints nothing itself
-        (only the log message "Scheduled reset enabled! ...").
+        https: ``POST /v0/operation/system/reboot/:schedule`` with ``delay`` in
+        minutes; Fabric Engine 9.4 only accepts 10 to 360 (``Delay must be
+        between 10 and 360.``), so other times use ``reset -in`` over SSH.
+        Both log the same "Scheduled reset enabled! ..." message.
+
+        ssh: the switch asks ``Are you sure you want to perform a scheduled
+        reset? (y/n) ?``; any other answer than ``y`` aborts with ``Scheduled
+        reset operation aborted!``. On success the switch prints nothing itself
+        (only the log message).
         """
-        output = self._confirm(f"reset -in {revert_time}")
-        if self._has_cli_error(output) or re.search(r"aborted", output, re.I):
-            raise CommitConfirmException(f"Could not schedule the revert reset:\n{output}")
+        if self.transport == "https" and API_REBOOT_DELAY[0] <= minutes <= API_REBOOT_DELAY[1]:
+            try:
+                self._api().schedule_reboot(minutes)
+            except CommandErrorException as exc:
+                raise CommitConfirmException(f"Could not schedule the revert reset: {exc}") from exc
+        else:
+            output = self._confirm(f"reset -in {revert_time}")
+            if self._has_cli_error(output) or re.search(r"aborted", output, re.I):
+                raise CommitConfirmException(f"Could not schedule the revert reset:\n{output}")
         self.pending_revert = True
         logger.info("%s: revert reset scheduled in %s", self.hostname, revert_time)
 
@@ -848,6 +930,15 @@ class ExtremeFeDriver(NetworkDriver):
         """Cancel the scheduled revert reset and save the configuration."""
         if not (self.pending_revert or self.has_pending_commit()):
             raise CommitConfirmException("No pending configuration")
+        if self.transport == "https":
+            # 204 also when nothing is scheduled; cancels a "reset -in" as well
+            try:
+                self._api().cancel_reboot()
+            except CommandErrorException as exc:
+                raise CommitConfirmException(f"Could not cancel the revert reset: {exc}") from exc
+            self.pending_revert = False
+            self._copy_run_start(CommitConfirmException)
+            return
         output = self._send_command_timing("reset -cancel")
         output = LOG_MESSAGE_RE.sub("", output)
         self.pending_revert = False
@@ -865,9 +956,7 @@ class ExtremeFeDriver(NetworkDriver):
 
     def _gen_rollback_cfg(self, exc_class: type = MergeConfigException) -> None:
         """Save the running config to ``rollback_cfg`` (like the IOS driver)."""
-        output = self._save_config_file(self._gen_full_path(self.rollback_cfg))
-        if not self._save_successful(output):
-            raise exc_class(f"Could not save the rollback configuration:\n{output}")
+        self._save_config_file(self._gen_full_path(self.rollback_cfg), exc_class)
 
     @classmethod
     def _save_successful(cls, output: str) -> bool:

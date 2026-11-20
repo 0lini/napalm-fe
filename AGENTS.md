@@ -10,12 +10,13 @@ Read `README.md` first for the user-facing behaviour.
 | `src/napalm_extreme_fe/extreme_fe.py` | The driver (`ExtremeFeDriver`): connection, getters, config management |
 | `src/napalm_extreme_fe/parsers.py` | Pure text parsers, one per CLI output; no device access |
 | `src/napalm_extreme_fe/file_transfer.py` | Netmiko `BaseFileTransfer` for Fabric Engine (SCP) |
-| `src/napalm_extreme_fe/openapi.py` | HTTP session for `transport="openapi"` (token, errors without `debugLog`) |
+| `src/napalm_extreme_fe/openapi.py` | HTTP session for `transport="https"` (token, CLI / save / reboot operations, errors without `debugLog`) |
 | `src/napalm_extreme_fe/openapi_parsers.py` | Pure converters from OpenAPI JSON to NAPALM structures; no device access |
 | `test/unit/mocked_data/<test>/<case>/` | Getter test data: raw output per command + `expected_result.json` (same layout as NAPALM's IOS tests) |
 | `test/unit/test_getters.py` | NAPALM's getter test suite, run for every case in `mocked_data` |
 | `test/unit/test_*.py` | Unit tests for parsers, config management, file transfer |
-| `test/unit/openapi/` | Trimmed OpenAPI schema and supported operations of the switch (Fabric Engine 9.4), see "Planned: OpenAPI transport" |
+| `test/unit/openapi/` | Trimmed OpenAPI schema and supported operations of the switch (Fabric Engine 9.4), see "OpenAPI transport" |
+| `docs/extreme_fe.rst` | User docs / caveats in the format of NAPALM's `docs/support/<driver>.rst` (keep in sync with the code) |
 | `test/unit/TestExtremeFeDriver.py` | Config tests against a live lab switch (not collected by default), fixtures in `test/unit/extreme_fe/` |
 
 ## Commands
@@ -38,9 +39,12 @@ Run all of them before every commit, and only commit when they pass
   transport specific code is in a few primitives (`open`, `close`, `is_alive`,
   `_send_command`, `_send_command_timing`, `_send_config`, `_copy_run_start`,
   `_save_config_file`, `_source_file`; the CLI ones reach SSH through `_ssh`,
-  the OpenAPI goes through `_api_get`)
-  so that a second transport (OpenAPI, see below) only implements those; the
-  `transport` option itself follows the EOS driver. Known deviations: a failed
+  the API ones through `_api` / `_api_get`). The API is the default
+  transport (`https`), like EOS and NX-OS; as in the NX-OS driver, SSH is only
+  opened on first use, on port 22, for what the API cannot do (see
+  "OpenAPI transport"). Option names follow NAPALM: `transport`, `port` (of
+  the transport), `ssl_verify` (default `False`, like NX-OS). A reference
+  checkout of NAPALM may be in `napalm/` (ignored by git). Known deviations: a failed
   merge is not rolled back automatically (rollback reboots the switch). IOS and
   NX-OS roll back because their devices can do it without a reboot; community
   drivers for platforms that cannot (napalm-dellos10, napalm-netiron,
@@ -92,9 +96,14 @@ Run all of them before every commit, and only commit when they pass
 
    ```bash
    NAPALM_TEST_MOCK=0 NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> \
-   NAPALM_PASSWORD=<pw> NAPALM_OPTIONAL_ARGS='{"port": 22}' \
-   pytest test/unit/test_getters.py
+   NAPALM_PASSWORD=<pw> NAPALM_OPTIONAL_ARGS='{"port": <port>}' \
+   pytest test/unit/test_getters.py -k TestGetterHttps   # port: OpenAPI (9443)
+   ... pytest test/unit/test_getters.py -k "not Https"     # port: SSH (22)
    ```
+
+   `port` is the port of the transport, so run the two classes separately
+   when the ports are forwarded. Only getters with a `*_openapi` case run
+   for `https`; compare the other getters of both transports by hand.
 
    Getters that fail, or return empty results where the switch has data, are
    bugs. (Some tests require non-empty results, e.g. ARP; an empty table on the
@@ -104,10 +113,13 @@ Run all of them before every commit, and only commit when they pass
 
    ```bash
    NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<pw> \
-   NAPALM_OPTIONAL_ARGS='{"port": 22}' pytest test/unit/TestExtremeFeDriver.py -v
+   NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestExtremeFeDriver.py -v
    ```
 
-   Runs merge, typo and discard tests for `config_method="cli"` and `"file"`.
+   Runs merge, typo and discard tests for `config_method="cli"` and `"file"`,
+   for both transports (with forwarded ports: `-k "not SSH"` with the API
+   port, `-k SSH` with the SSH port; `TestConfigFile` over `https` needs SSH
+   on port 22).
    It only changes `snmp-server location`, restores it, and never saves the
    configuration. It does not test replace / `rollback()` (they reboot the
    switch).
@@ -115,7 +127,11 @@ Run all of them before every commit, and only commit when they pass
 ### Safety rules for the switch
 
 - Only send read-only commands (`show`, `dir`, `ls`, `more`, `file-checksum`), except
-  through `TestExtremeFeDriver.py` (step 5).
+  through `TestExtremeFeDriver.py` (step 5) or when the user explicitly allows
+  writing on a lab switch.
+- Never ask for CLI help (`reset ?` etc.) over SSH: the line stays in the
+  input buffer and a later newline runs it (9.4: `reset ?` became `reset`
+  with its (y/n) question; the next command was taken as the answer).
 - Never save the configuration (`save_config=False`) and never run
   `save config`, `boot`, `reset`, `delete`, `copy` or `source` by hand.
 - `config_method="file"` leaves `napalm_merge.cfg` and `napalm_rollback.cfg`
@@ -177,7 +193,7 @@ Findings there:
    per the VOSS 9.2 user guide stored encrypted in `snmp_comm_moc.txt`), so
    `community` is always empty and `get_snmp_information` does not read the
    running config. The OpenAPI (`configuration/snmp`) does return them in
-   plain text (9.4), see "Planned: OpenAPI transport".
+   plain text (9.4), see "OpenAPI transport".
 5. **Replace / rollback** (reboot): prompts confirmed on 9.4 (`copy` to an
    existing file asks `File [...] already existing, overwrite (y/n) ?`; the
    driver uses `reset -y`). Still to check: that the switch boots the copied
@@ -211,13 +227,12 @@ Not implemented yet (NotImplementedError, skipped in tests): BGP, users,
 optics, route table, NTP stats/peers, network instances, ping/traceroute,
 IPv6 neighbours. Implement them with real captures only.
 
-## Planned: OpenAPI transport (EOS-style)
+## OpenAPI transport (`transport="https"`, the default)
 
-Goal: an optional second transport using the switch's OpenAPI (REST/JSON),
-modelled on NAPALM's Arista **EOS** driver: one driver, selected with
-`optional_args={"transport": ...}` (`"ssh"` = today's CLI driver, stays the
-default until the API is validated; `"openapi"` = new). Not the NX-OS model
-(separate `nxos` / `nxos_ssh` drivers), which would need a second package.
+One driver with a `transport` option like EOS / NX-OS; `https` (default) is
+the switch's OpenAPI, `ssh` the CLI over Netmiko. Changed 2026-11-20 at the
+user's request: the API is primary (was `transport="openapi"`, not default,
+options `openapi_port` / `verify`, never released).
 
 Verified on the Fabric Engine 9.4.0.0 VM (GNS3 image FEGNS3.9.4.0.0, OpenAPI
 server 0.1.13.12, schema "Extreme NOS API" 0.2.0, OpenAPI 3.0.3):
@@ -260,69 +275,61 @@ server 0.1.13.12, schema "Extreme NOS API" 0.2.0, OpenAPI 3.0.3):
 - `POST /v0/operation/system/cli` runs a list of CLI commands
   (`["show ...", ...]` -> `{"data": [{"cliInput", "cliOutput",
   "statusCode": 200|400|409}], "metadata": {"succeeded", "failed",
-  "skipped"}}`, HTTP 200 or 207); not tried yet (POST, see Safety)
+  "skipped"}}`, HTTP 200 or 207). Each request starts in privileged EXEC
+  mode (`configure terminal` / `end` per request). Without
+  `continue_on_failure` the commands after a failed one come back with
+  `statusCode` 409 (skipped). Pipes (`| include`) are rejected (`% Invalid
+  input`). `source <file> debug` stops at the first rejected line (over SSH
+  it goes on). Errors may start with a BEL (`\x07Error: The specified VLAN
+  ID is invalid or already in use`)
+- `POST /v0/operation/system/config/:save` with `{}` (boot config) or
+  `{"name": <path>}`: 204, overwrites an existing file without asking; 422
+  with a message for a bad path
+- `POST /v0/operation/system/reboot/:schedule` `{"delay": <minutes>}` (not
+  seconds: 300 logs "Unit will reset in 0 days 5 hours 0 minutes!"); only
+  10 - 360 accepted (422 "Delay must be between 10 and 360."), although the
+  schema allows up to 1728000. Logs the same event codes as `reset -in`,
+  a few seconds later. `:cancel` (no body) answers 204 also when nothing is
+  scheduled and cancels a `reset -in` too
+- `copy` and `delete` have no option to skip their (y/n) question (`copy ?`,
+  `delete ?`); only `reset` has `-y`. So replace / rollback / deleting the
+  replace candidate still need SSH, as do SCP uploads
+- `operation/system/config/recovery` (`:timeout`, `:cancel`, `undo-list`)
+  undoes changes made through the `configuration/*` endpoints, not CLI lines
+- the full schema and captures are in the lab directory (`~/vms/gns3/openapi`)
 
-Tasks, in order:
+Design and state (verified on the 9.4 VM, 2026-11-20):
 
-1. **Schema**: fetch the schema from the VM, list its paths (method + path)
-   and commit a trimmed copy under `test/unit/openapi/` (no tokens). Record
-   the exact token request/response format, the token lifetime and the port.
-2. **Coverage map**: for every implemented getter and config method, note the
-   endpoint(s) that provide the data, or "CLI only". Add the table here.
-3. **Design** (agreed 2026-11-19):
-   - `transport="openapi"`, options `openapi_port` (default 9443) and
-     `verify` (default `True`, or a CA bundle path; like EOS - users with
-     the factory self-signed certificate set it explicitly)
-   - `openapi.py`: an HTTP session (`requests`) that gets the token on
-     `open()` and renews it once on a 401; one request at a time (the switch
-     allows 3 per client). `close()` does not end the token: the schema has
-     `auth-token/:disable` and `:enable` without a description - they may
-     switch token authentication off and on for the whole switch, so they
-     are never called; tokens expire after 24 h;
-     tokens and the `debugLog` of error bodies never reach logs or
-     exceptions
-   - getters whose data the API has completely use it: `get_facts`,
-     `get_lldp_neighbors[_detail]`, `get_arp_table`,
-     `get_mac_address_table`, `get_vlans`, `get_ntp_servers`,
-     `get_snmp_information`. Everything else - also getters the API covers
-     only partly (`get_environment`, `get_interfaces`) - uses SSH, opened
-     on first use with the same credentials (`port` = SSH port), so a
-     getter's result always comes from one source. `get_interfaces_ip`
-     uses SSH as well: `configuration/vlan` lists other addresses than
-     the CLI (link-local of the onboarding VLAN, the management VLAN 4092
-     instead of `mgmt-oob`) and CLIP interfaces could not be verified
-   - implemented (steps 4 / 5): `openapi.py`, `openapi_parsers.py`, cases
-     `fabric_engine_9.4_openapi` (real responses, communities and lab
-     addresses anonymised; the `get_interfaces_ip` case holds CLI output:
-     the SSH fallback). On the 9.4 VM, LLDP, ARP (both VRFs) and the MAC
-     table are identical to SSH; facts differ only in the uptime.
-     Differences of the API: `get_vlans` also lists the internal VLANs
-     4092 `Mgmt` and 4094 `Null` (unassigned ports), `get_ntp_servers` also
-     the server the cloud agent sets, `get_snmp_information` the
-     communities. NAPALM's live getter suite passes for both transports
-   - changed 2026-11-20 (the openapi transport should do everything the CLI
-     does): all other getters and `cli()` run their commands through POST
-     `operation/system/cli?continue_on_failure=true` (`_send_command`).
-     Without `continue_on_failure` the switch skips every command after a
-     "failed" one; its `statusCode` is useless (any output containing
-     "Error" counts as failed, e.g. `show sys-info` with `System Error
-     Info`), so the output is checked like SSH output. The output equals
-     the SSH output without the `Command Execution Time` banner (9.4, all
-     getters compared); `get_interfaces` then reads the time from `show
-     clock`. Error lines come with `\r\n`. Configuration management still
-     uses SSH (to do over the API: `operation/system/config/:save` with
-     `name`, `operation/system/reboot/:schedule` / `:cancel` for commit
-     confirm, config lines through the CLI operation; no file transfer, so
-     `config_method="file"` and replace need SSH)
-   - default transport stays `ssh`
-4. **Implementation**: API responses are parsed in separate functions (like
-   `parsers.py`), returning the same NAPALM structures as the CLI path.
-5. **Tests**: mocked JSON responses per getter in
-   `test/unit/mocked_data/<test>/<case>/` (as NAPALM's EOS tests do), a fake
-   HTTP session in `conftest.py`, and the existing getter suite run for both
-   transports. Real responses only (anonymised), no invented JSON.
-6. **Docs**: README (transport option, enabling OpenAPI on the switch,
-   required access level) and CHANGELOG.
+- `openapi.py`: an HTTP session (`requests`) that gets the token on `open()`
+  and renews it once on a 401; one request at a time (the switch allows 3
+  per client). `close()` does not end the token: `auth-token/:disable` and
+  `:enable` have no description and may switch token authentication off for
+  the whole switch, so they are never called. Tokens and the `debugLog` of
+  error bodies never reach logs or exceptions. `ssl_verify=False` disables
+  urllib3's InsecureRequestWarning (like NAPALM's NX-API client)
+- getters whose data the API has completely read its JSON (`get_facts`,
+  `get_lldp_neighbors[_detail]`, `get_arp_table`, `get_mac_address_table`,
+  `get_vlans`, `get_ntp_servers`, `get_snmp_information`); all other getters
+  and `cli()` run their CLI commands through the CLI operation
+  (`_send_command`, same output as SSH without the `Command Execution Time`
+  banner; `get_interfaces` then reads `show clock`). A getter's result always
+  comes from one source. `get_interfaces_ip` uses the CLI: `configuration/vlan`
+  lists other addresses (link-local of the onboarding VLAN, VLAN 4092 instead
+  of `mgmt-oob`). Live on 9.4 all getters equal SSH except live values and
+  the documented differences (VLANs 4092 / 4094, the cloud agent's NTP
+  server, SNMP communities); no SSH connection is opened
+- configuration over the API (all live-tested on 9.4): merge lines
+  (`_send_config_api`, `continue_on_failure=false`), `save config` /
+  `rollback_cfg` (`:save`), `source` (`config_method="file"`), commit confirm
+  (`reboot/:schedule` for 10 - 360 minutes, otherwise `reset -in` over SSH;
+  `:cancel`), `dir` and the log
+- SSH (port 22, like NX-OS `ensure_netmiko_conn`): SCP, `copy`, `delete`,
+  `reset -y`, `reset -in` outside 10 - 360 minutes. In the GNS3 lab SSH is
+  forwarded to another port, so these cannot be tested with `https` there
+  (set `driver.netmiko_optional_args["port"]` by hand in a lab script)
+- tests: mocked JSON responses per getter in `mocked_data/<test>/<case>_openapi/`
+  (real responses only, anonymised), `FakeOpenApiSession` in `conftest.py`,
+  the getter suite runs for both transports
 
 Coverage map (step 2; from the schema and real responses of the 9.4 VM -
 LLDP and ARP were empty there, their field names are from the schema only):
@@ -342,10 +349,12 @@ LLDP and ARP were empty there, their field names are from the schema only):
 | `get_snmp_information` | `configuration/snmp` (`contact`, `location`, `v1v2.access[]` with `community` and `accessView`) | - |
 | `get_config` | - (`/v0/configuration` is JSON, not the CLI text NAPALM returns) | running / startup config |
 | `cli` | POST `operation/system/cli` | - |
-| config management | POST `operation/system/config/:save`; `configuration/*` PATCH / PUT exist, but no candidate / diff / commit and no file transfer | merge, replace, rollback, commit confirm |
+| config management | POST `operation/system/cli` (merge lines, `source`), `operation/system/config/:save`, `operation/system/reboot/:schedule` / `:cancel`; `configuration/*` PATCH / PUT exist, but no candidate / diff / commit and no file transfer | SCP, `copy`, `delete`, `reset -y` (replace, rollback) |
 | new getters (not implemented today) | `state/forwarding/ipv6-nd` (`get_ipv6_neighbors_table`), `state/transceiver/{port}` (`get_optics`), `configuration/accounts` (`get_users`), `state/route` (`get_route_to`) | - |
 
 Safety: against the switch only `GET` requests, the token request
 (`auth-token/:generate`; never `:disable` / `:enable`, see the design) and -
-for tests - `show` commands through POST `operation/system/cli`; never store
-tokens or passwords in the repository.
+for tests - `show` commands through POST `operation/system/cli`, unless
+writing on a lab switch is allowed (then also see the safety rules above:
+a saved configuration must be removed again, the lab expects none); never
+store tokens or passwords in the repository.

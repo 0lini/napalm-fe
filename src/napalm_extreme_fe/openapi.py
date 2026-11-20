@@ -1,4 +1,4 @@
-"""HTTP session for the Fabric Engine OpenAPI (``transport="openapi"``).
+"""HTTP session for the Fabric Engine OpenAPI (``transport="https"``).
 
 The switch serves the API at ``https://<switch>:9443/rest/openapi`` once
 ``openapi local-mgmt enable`` is configured (Premier license). Requests carry
@@ -17,6 +17,7 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 import requests
+import urllib3
 from napalm.base.exceptions import CommandErrorException, ConnectionException
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,13 @@ logger = logging.getLogger(__name__)
 BASE_PATH = "/rest/openapi"
 TOKEN_PATH = "/v0/operation/auth-token/:generate"
 CLI_PATH = "/v0/operation/system/cli"
+SAVE_CONFIG_PATH = "/v0/operation/system/config/:save"
+REBOOT_SCHEDULE_PATH = "/v0/operation/system/reboot/:schedule"
+REBOOT_CANCEL_PATH = "/v0/operation/system/reboot/:cancel"
 DEFAULT_PORT = 9443
+
+# statusCode of a command the CLI operation skipped after a failed one
+SKIPPED = 409
 
 # Fields of an error body that are safe to show ("debugLog" is not)
 ERROR_FIELDS = ("errorCode", "errorMessage", "resource", "status", "title", "detail")
@@ -48,7 +55,7 @@ class OpenApiSession:
         username: str,
         password: str,
         port: int = DEFAULT_PORT,
-        verify: Union[bool, str] = True,
+        verify: Union[bool, str] = False,
         timeout: int = 60,
     ) -> None:
         self.base_url = f"https://{_host(hostname)}:{port}{BASE_PATH}"
@@ -60,6 +67,9 @@ class OpenApiSession:
         self.token: Optional[str] = None
 
     def open(self) -> None:
+        if not self.verify:
+            # like NAPALM's NX-API client: no warning on every request
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self.session = requests.Session()
         self.session.verify = self.verify
         self.session.headers["Accept"] = "application/json"
@@ -75,10 +85,9 @@ class OpenApiSession:
         if self.session is None:
             raise ConnectionException("OpenAPI session is not open, call open() first")
         logger.debug("%s %s%s", method, self.base_url, path)
+        kwargs.setdefault("timeout", self.timeout)
         try:
-            return self.session.request(
-                method, self.base_url + path, timeout=self.timeout, **kwargs
-            )
+            return self.session.request(method, self.base_url + path, **kwargs)
         except requests.RequestException as exc:
             raise ConnectionException(f"OpenAPI {method} {path} failed: {exc}") from exc
 
@@ -110,32 +119,70 @@ class OpenApiSession:
         """GET ``path`` (below ``/rest/openapi``) and return the decoded JSON."""
         return self._call("GET", path, (200,), params=params).json()
 
-    def cli(self, commands: List[str]) -> List[str]:
+    def cli(
+        self,
+        commands: List[str],
+        continue_on_failure: bool = True,
+        timeout: Optional[int] = None,
+    ) -> List[str]:
         """Run CLI commands (``POST /v0/operation/system/cli``), return their output.
 
-        ``continue_on_failure`` is set: otherwise the switch skips every
-        command after one it counts as failed. Its ``statusCode`` is not used:
-        the switch counts any output containing "Error" as failed (``show
-        sys-info`` prints ``System Error Info``), so the caller checks the
-        output like CLI output over SSH. The output is the same as over SSH,
-        without the ``Command Execution Time`` banner (Fabric Engine 9.4).
+        With ``continue_on_failure`` (default) every command runs. Without it
+        the switch skips the commands after the first one it counts as failed
+        (``statusCode`` 409, Fabric Engine 9.4); they are left out, so fewer
+        outputs than commands are returned. Otherwise ``statusCode`` is not
+        used: the switch counts any output containing "Error" as failed
+        (``show sys-info`` prints ``System Error Info``), so the caller checks
+        the output like CLI output over SSH. The output is the same as over
+        SSH, without the ``Command Execution Time`` banner. Every request
+        starts in privileged EXEC mode; pipes (``| include``) are rejected.
         """
         reply = self._call(
             "POST",
             CLI_PATH,
             (200, 207),
-            params={"continue_on_failure": "true"},
+            params={"continue_on_failure": "true" if continue_on_failure else "false"},
             json=list(commands),
+            timeout=timeout or self.timeout,
         ).json()
         # error messages come with "\r\n" (9.4: "^\r\n% Invalid input ..."), as over SSH: "\n"
         outputs = [
-            entry.get("cliOutput", "").replace("\r\n", "\n") for entry in reply.get("data", [])
+            entry.get("cliOutput", "").replace("\r\n", "\n")
+            for entry in reply.get("data", [])
+            if continue_on_failure or entry.get("statusCode") != SKIPPED
         ]
-        if len(outputs) != len(commands):
+        if len(outputs) > len(commands) or (continue_on_failure and len(outputs) != len(commands)):
             raise CommandErrorException(
                 f"OpenAPI CLI returned {len(outputs)} outputs for {len(commands)} commands"
             )
         return outputs
+
+    def save_config(self, name: Optional[str] = None) -> None:
+        """Save the running configuration (``POST /v0/operation/system/config/:save``).
+
+        Without ``name`` to the boot configuration file (``save config``),
+        otherwise to the file ``name`` (``save config file <name>``). The
+        schema answers ``204`` on success.
+        """
+        body = {"name": name} if name else {}
+        self._call("POST", SAVE_CONFIG_PATH, (200, 204), json=body)
+
+    def schedule_reboot(self, minutes: int) -> None:
+        """Schedule a reboot (``POST /v0/operation/system/reboot/:schedule``).
+
+        ``delay`` is in minutes, not seconds as the schema's maximum (1728000)
+        suggests: ``300`` logs "Unit will reset in 0 days 5 hours 0 minutes!".
+        Fabric Engine 9.4 accepts 10 to 360 (HTTP 422 otherwise).
+        """
+        self._call("POST", REBOOT_SCHEDULE_PATH, (200, 204), json={"delay": minutes})
+
+    def cancel_reboot(self) -> None:
+        """Cancel a scheduled reboot (``POST /v0/operation/system/reboot/:cancel``).
+
+        Also cancels a reset scheduled with ``reset -in``; answers 204 when
+        nothing is scheduled as well (Fabric Engine 9.4).
+        """
+        self._call("POST", REBOOT_CANCEL_PATH, (200, 204))
 
     @staticmethod
     def _error(response: requests.Response) -> str:

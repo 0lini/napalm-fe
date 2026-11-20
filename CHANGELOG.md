@@ -8,14 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- `transport` option (like NAPALM's EOS driver): `ssh` (default) or
-  `openapi`. With `openapi`, `get_facts`, `get_lldp_neighbors[_detail]`,
-  `get_arp_table`, `get_mac_address_table`, `get_vlans`, `get_ntp_servers`
-  and `get_snmp_information` use the switch's OpenAPI (token login, options
-  `openapi_port` and `verify`); the other getters and `cli()` run their CLI
-  commands through the API, so reading never needs SSH. Configuration
-  management uses SSH, opened on first use. Over the API,
-  `get_snmp_information` returns the community strings.
+- `transport` option, like NAPALM's EOS and NX-OS drivers: `https` (the
+  switch's OpenAPI, **the default**) or `ssh` (CLI over Netmiko). With
+  `https`, `get_facts`, `get_lldp_neighbors[_detail]`, `get_arp_table`,
+  `get_mac_address_table`, `get_vlans`, `get_ntp_servers` and
+  `get_snmp_information` read the API's JSON; the other getters, `cli()`,
+  merge lines, `source`, `save config` and commit confirm
+  (`reboot/:schedule` / `:cancel`, 10 - 360 minutes) run through the API.
+  Like NX-OS, SSH (port 22) is only opened when needed: SCP uploads,
+  `copy` / `delete` (they ask (y/n)) and the reboot of replace / rollback. `port` is the port of the transport (9443 /
+  22), `ssl_verify` (default `False`, like NX-OS) checks the certificate.
+  Over `https`, `get_snmp_information` returns the community strings.
+- `docs/extreme_fe.rst`: caveats in the format of NAPALM's driver docs,
+  including what uses the API and what still needs SSH.
 - `discard_config()` deletes an uploaded replace candidate on the switch
   (like NAPALM's NX-OS drivers).
 
@@ -32,6 +37,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The default transport is `https` (OpenAPI).** Pass
+  `optional_args={"transport": "ssh"}` for the 0.1.0 behaviour; `port` then
+  is the SSH port as before.
+- An unknown `transport` raises `ConnectionException` (like EOS).
 - Classes renamed to `ExtremeFeDriver` and `ExtremeFeFileTransfer`; the old
   names `ExtremeFEDriver` and `ExtremeFEFileTransfer` still work (aliases).
 - `get_snmp_information` no longer reads the running configuration (Fabric

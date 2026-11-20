@@ -1,4 +1,4 @@
-"""Tests for the OpenAPI session and the openapi transport plumbing."""
+"""Tests for the OpenAPI session and the https transport plumbing."""
 
 import re
 
@@ -229,9 +229,7 @@ def test_driver_opens_only_the_api(monkeypatch):
             opened.append("closed")
 
     monkeypatch.setattr("napalm_extreme_fe.extreme_fe.OpenApiSession", Session)
-    driver = ExtremeFeDriver(
-        "192.0.2.10", "rwa", "secret", optional_args={"transport": "openapi", "verify": False}
-    )
+    driver = ExtremeFeDriver("192.0.2.10", "rwa", "secret", optional_args={"ssl_verify": False})
     driver.open()
     assert opened == [("192.0.2.10", 9443, False, 60)]
     assert driver.device is None  # no SSH until something needs the CLI
@@ -252,7 +250,7 @@ def test_driver_opens_only_the_api(monkeypatch):
 def _api_driver(test, case="fabric_engine_9.4_openapi"):
     from .conftest import PatchedExtremeFeDriver
 
-    driver = PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "openapi"})
+    driver = PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "https"})
     for attr in ("device", "api"):
         getattr(driver, attr).current_test = test
         getattr(driver, attr).current_test_case = case
@@ -278,8 +276,81 @@ def test_arp_vrf_case_and_unknown_vrf():
 
 
 def test_driver_without_connection():
-    driver = ExtremeFeDriver("192.0.2.10", "rwa", "secret", optional_args={"transport": "openapi"})
+    driver = ExtremeFeDriver("192.0.2.10", "rwa", "secret", optional_args={"transport": "https"})
     with pytest.raises(ConnectionClosedException):
         driver._api_get("/v0/state/system")
     with pytest.raises(ConnectionClosedException):
         driver._ssh()
+
+
+def test_save_config(monkeypatch):
+    session, http = _session(
+        monkeypatch,
+        [FakeResponse(200, {"token": "t1"}), FakeResponse(204), FakeResponse(204)],
+    )
+    session.open()
+    session.save_config()
+    session.save_config("/intflash/napalm_rollback.cfg")
+    (_, url1, _, kwargs1), (_, _, _, kwargs2) = http.requests[1:]
+    assert url1.endswith("/rest/openapi/v0/operation/system/config/:save")
+    assert kwargs1["json"] == {}  # boot configuration file ("save config")
+    assert kwargs2["json"] == {"name": "/intflash/napalm_rollback.cfg"}
+
+
+# Real reply (Fabric Engine 9.4) of POST operation/system/cli?continue_on_failure=false:
+# the commands after the failed one are skipped (statusCode 409)
+CONFIG_REPLY = {
+    "data": [
+        {
+            "cliInput": "configure terminal",
+            "cliOutput": "Enter configuration commands, one per line.  End with CNTL/Z.\r\n",
+            "statusCode": 200,
+        },
+        {
+            "cliInput": "vlan create 10 type port-mstprstp 0",
+            "cliOutput": "\n\x07Error: The specified VLAN ID is invalid or already in use \n\n",
+            "statusCode": 400,
+        },
+        {"cliInput": "end", "cliOutput": "", "statusCode": 409},
+    ],
+    "metadata": {"failed": 1, "skipped": 1, "succeeded": 1},
+}
+
+
+def test_cli_stop_on_failure(monkeypatch):
+    # the skipped commands (409) are left out
+    reply = CONFIG_REPLY
+    session, http = _session(
+        monkeypatch, [FakeResponse(200, {"token": "t1"}), FakeResponse(207, reply)]
+    )
+    session.open()
+    commands = ["configure terminal", "vlan create 10 type port-mstprstp 0", "end"]
+    outputs = session.cli(commands, continue_on_failure=False, timeout=120)
+    assert len(outputs) == 2
+    assert http.requests[-1][3]["params"] == {"continue_on_failure": "false"}
+    assert http.requests[-1][3]["timeout"] == 120
+
+
+def test_insecure_warning_disabled_without_verify(monkeypatch):
+    disabled = []
+    monkeypatch.setattr(openapi.urllib3, "disable_warnings", disabled.append)
+    session, _ = _session(monkeypatch, [FakeResponse(200, {"token": "t1"})])
+    session.open()  # verify=False is the default, like NX-OS
+    assert disabled == [openapi.urllib3.exceptions.InsecureRequestWarning]
+    session, _ = _session(monkeypatch, [FakeResponse(200, {"token": "t1"})], verify=True)
+    session.open()
+    assert len(disabled) == 1
+
+
+def test_reboot_schedule_and_cancel(monkeypatch):
+    session, http = _session(
+        monkeypatch,
+        [FakeResponse(200, {"token": "t1"}), FakeResponse(204), FakeResponse(204)],
+    )
+    session.open()
+    session.schedule_reboot(15)
+    session.cancel_reboot()
+    (_, url1, _, kwargs1), (_, url2, _, _) = http.requests[1:]
+    assert url1.endswith("/v0/operation/system/reboot/:schedule")
+    assert kwargs1["json"] == {"delay": 15}  # minutes
+    assert url2.endswith("/v0/operation/system/reboot/:cancel")
