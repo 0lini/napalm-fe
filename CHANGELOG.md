@@ -8,8 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- `transport` option (like NAPALM's EOS driver); only `ssh` for now, an
-  `openapi` transport is planned.
+- `transport` option (like NAPALM's EOS driver): `ssh` (default) or
+  `openapi`. With `openapi`, `get_facts`, `get_lldp_neighbors[_detail]`,
+  `get_arp_table`, `get_mac_address_table`, `get_vlans`, `get_ntp_servers`
+  and `get_snmp_information` use the switch's OpenAPI (token login, options
+  `openapi_port` and `verify`); everything else uses SSH, opened on first
+  use. Over the API, `get_snmp_information` returns the community strings.
 - `discard_config()` deletes an uploaded replace candidate on the switch
   (like NAPALM's NX-OS drivers).
 

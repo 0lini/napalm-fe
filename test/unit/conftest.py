@@ -1,7 +1,9 @@
 """Test fixtures for the NAPALM getter tests (mocked device)."""
 
+import os
 import re
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 
 import pytest
 from napalm.base.test import conftest as parent_conftest
@@ -22,27 +24,77 @@ def set_device_parameters(request):
     request.cls.driver = extreme_fe.ExtremeFeDriver
     request.cls.patched_driver = PatchedExtremeFeDriver
     request.cls.vendor = "extreme_fe"
-    parent_conftest.set_device_parameters(request)
+    if getattr(request.cls, "transport", "ssh") == "ssh":
+        parent_conftest.set_device_parameters(request)
+        return
+    # like parent_conftest.set_device_parameters, with transport="openapi"
+    driver = request.cls.patched_driver if parent_conftest.NAPALM_TEST_MOCK else request.cls.driver
+    request.cls.device = driver(
+        parent_conftest.NAPALM_HOSTNAME,
+        parent_conftest.NAPALM_USERNAME,
+        parent_conftest.NAPALM_PASSWORD,
+        timeout=60,
+        optional_args={**parent_conftest.NAPALM_OPTIONAL_ARGS, "transport": "openapi"},
+    )
+    request.cls.device.open()
+
+
+# Cases for transport="openapi" end in OPENAPI_CASE_SUFFIX and hold the JSON
+# responses (plus CLI output for what the driver reads over SSH)
+OPENAPI_CASE_SUFFIX = "_openapi"
 
 
 def pytest_generate_tests(metafunc):
-    """Generate test cases dynamically."""
-    parent_conftest.pytest_generate_tests(metafunc, __file__)
+    """Generate test cases dynamically: each test class gets its transport's cases."""
+    if not metafunc.function.__dict__.get("build_test_cases", False):
+        return
+    openapi = getattr(metafunc.cls, "transport", "ssh") == "openapi"
+    path = os.path.join(os.path.dirname(__file__), "mocked_data", metafunc.function.__name__)
+    cases = sorted(
+        case
+        for case in (os.listdir(path) if os.path.isdir(path) else [])
+        if os.path.isdir(os.path.join(path, case)) and case.endswith(OPENAPI_CASE_SUFFIX) == openapi
+    )
+    metafunc.parametrize("test_case", cases)
 
 
 class PatchedExtremeFeDriver(extreme_fe.ExtremeFeDriver):
-    """Driver whose SSH session is replaced by a fake device."""
+    """Driver whose SSH session (and OpenAPI session) is replaced by a fake."""
 
     def __init__(self, hostname, username, password, timeout=60, optional_args=None):
         super().__init__(hostname, username, password, timeout, optional_args)
         self.patched_attrs = ["device"]
         self.device = FakeExtremeFeDevice()
+        if self.transport == "openapi":
+            self.patched_attrs.append("api")
+            self.api = FakeOpenApiSession()
 
     def open(self):
         pass
 
     def close(self):
         pass
+
+
+class FakeOpenApiSession(BaseTestDouble):
+    """OpenApiSession replacement: GET returns the JSON file of the request.
+
+    The file name is the path (and query) with every character that is not a
+    letter or digit replaced by ``_``, like the CLI files:
+    ``/v0/state/forwarding/ip-arp?vr_name=TEST`` ->
+    ``_v0_state_forwarding_ip_arp_vr_name_TEST.json``.
+    """
+
+    token = "fake-token"
+
+    def __init__(self):
+        super().__init__()
+        self.requests = []
+
+    def get(self, path, params=None):
+        request = path + ("?" + urlencode(params) if params else "")
+        self.requests.append(request)
+        return self.read_json_file(self.find_file(self.sanitize_text(request) + ".json"))
 
 
 class _FakeTransport:

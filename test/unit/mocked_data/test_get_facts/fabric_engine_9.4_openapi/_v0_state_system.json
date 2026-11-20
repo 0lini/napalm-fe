@@ -1,0 +1,38 @@
+{
+  "bootConfigType": "CONFIG_FILE",
+  "cards": [
+    {
+      "adminStatus": "UP",
+      "baseMacAddress": "0c:3b:8d:e3:00:00",
+      "brandName": "Extreme Networks.",
+      "firmwareVersion": "9.4.0.0",
+      "hardwareRev": "1",
+      "isPowerEnabled": true,
+      "macAddrCapacity": 1024,
+      "modelName": "5520-24T-FabricEngine",
+      "numPorts": 27,
+      "operationStatus": "UP",
+      "partNumber": "DSGDPM624",
+      "serialNumber": "SIM8DE3-0000",
+      "slotNumber": 1,
+      "sysBuildTime": "Thu/Apr/9/09:09:50/EDT/2026",
+      "sysUpTime": 193000,
+      "sysUpTimeUint64": 193000,
+      "vims": []
+    }
+  ],
+  "chassisId": "0c3b8de30000",
+  "chassisIdSubtype": "MAC_ADDRESS",
+  "inletsVersion": "N/A",
+  "iqAgentVersion": "0.9.22",
+  "isConfigDirty": true,
+  "isDigitalTwin": true,
+  "nosType": "FABRIC_ENGINE",
+  "numSlots": 2,
+  "openApiAppVersion": "0.1.13.12",
+  "openApiSchemaVersion": "0.2.0",
+  "rebootCount": 0,
+  "sysDescription": "5520-24T-FabricEngine (9.4.0.0)",
+  "sysName": "5520-24T-FabricEngine",
+  "telegrafVersion": "1.21.4-58592c4a"
+}

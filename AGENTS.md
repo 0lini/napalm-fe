@@ -10,6 +10,8 @@ Read `README.md` first for the user-facing behaviour.
 | `src/napalm_extreme_fe/extreme_fe.py` | The driver (`ExtremeFeDriver`): connection, getters, config management |
 | `src/napalm_extreme_fe/parsers.py` | Pure text parsers, one per CLI output; no device access |
 | `src/napalm_extreme_fe/file_transfer.py` | Netmiko `BaseFileTransfer` for Fabric Engine (SCP) |
+| `src/napalm_extreme_fe/openapi.py` | HTTP session for `transport="openapi"` (token, errors without `debugLog`) |
+| `src/napalm_extreme_fe/openapi_parsers.py` | Pure converters from OpenAPI JSON to NAPALM structures; no device access |
 | `test/unit/mocked_data/<test>/<case>/` | Getter test data: raw output per command + `expected_result.json` (same layout as NAPALM's IOS tests) |
 | `test/unit/test_getters.py` | NAPALM's getter test suite, run for every case in `mocked_data` |
 | `test/unit/test_*.py` | Unit tests for parsers, config management, file transfer |
@@ -35,7 +37,8 @@ Run all of them before every commit, and only commit when they pass
   (`napalm/nxos/nxos.py`, `nxos_ssh`) for the structure. Like NX-OS, all
   transport specific code is in a few primitives (`open`, `close`, `is_alive`,
   `_send_command`, `_send_command_timing`, `_send_config`, `_copy_run_start`,
-  `_save_config_file`, `_source_file`)
+  `_save_config_file`, `_source_file`; the CLI ones reach SSH through `_ssh`,
+  the OpenAPI goes through `_api_get`)
   so that a second transport (OpenAPI, see below) only implements those; the
   `transport` option itself follows the EOS driver. Known deviations: a failed
   merge is not rolled back automatically (rollback reboots the switch). IOS and
@@ -230,8 +233,9 @@ server 0.1.13.12, schema "Extreme NOS API" 0.2.0, OpenAPI 3.0.3):
   `{"username": ..., "password": ...}` -> `200 {"token": "...", "ttl": 86400}`;
   sent as header `X-Auth-Token` (the schema also allows a cookie
   `x-auth-token`). Valid 24 h unless the server restarts
-  (`TTL(in seconds) : 86400` in `show application openapi`);
-  `.../auth-token/:disable` ends it. The schema declares HTTP basic auth as
+  (`TTL(in seconds) : 86400` in `show application openapi`). What
+  `.../auth-token/:disable` and `:enable` do is undocumented (see the
+  design: not used). The schema declares HTTP basic auth as
   well, but the switch rejects it (401) - a token is required
 - concurrency limits (`/v0/state/capabilities/openapi`): 7 requests at a time
   in total, 3 per client
@@ -265,12 +269,42 @@ Tasks, in order:
    the exact token request/response format, the token lifetime and the port.
 2. **Coverage map**: for every implemented getter and config method, note the
    endpoint(s) that provide the data, or "CLI only". Add the table here.
-3. **Design** (before code): `transport` option and validation; an HTTP
-   session class (token handling, renewal on expiry, TLS verification option
-   like EOS's `verify`); getters use the API where the coverage map has an
-   endpoint and fall back to the CLI otherwise (only if an SSH session is
-   configured as well - decide and document). Config management stays
-   CLI-based unless the API offers an equivalent of a candidate/diff/commit.
+3. **Design** (agreed 2026-11-19):
+   - `transport="openapi"`, options `openapi_port` (default 9443) and
+     `verify` (default `True`, or a CA bundle path; like EOS - users with
+     the factory self-signed certificate set it explicitly)
+   - `openapi.py`: an HTTP session (`requests`) that gets the token on
+     `open()` and renews it once on a 401; one request at a time (the switch
+     allows 3 per client). `close()` does not end the token: the schema has
+     `auth-token/:disable` and `:enable` without a description - they may
+     switch token authentication off and on for the whole switch, so they
+     are never called; tokens expire after 24 h;
+     tokens and the `debugLog` of error bodies never reach logs or
+     exceptions
+   - getters whose data the API has completely use it: `get_facts`,
+     `get_lldp_neighbors[_detail]`, `get_arp_table`,
+     `get_mac_address_table`, `get_vlans`, `get_ntp_servers`,
+     `get_snmp_information`. Everything else - also getters the API covers
+     only partly (`get_environment`, `get_interfaces`) - uses SSH, opened
+     on first use with the same credentials (`port` = SSH port), so a
+     getter's result always comes from one source. `get_interfaces_ip`
+     uses SSH as well: `configuration/vlan` lists other addresses than
+     the CLI (link-local of the onboarding VLAN, the management VLAN 4092
+     instead of `mgmt-oob`) and CLIP interfaces could not be verified
+   - implemented (steps 4 / 5): `openapi.py`, `openapi_parsers.py`, cases
+     `fabric_engine_9.4_openapi` (real responses, communities and lab
+     addresses anonymised; the `get_interfaces_ip` case holds CLI output:
+     the SSH fallback). On the 9.4 VM, LLDP, ARP (both VRFs) and the MAC
+     table are identical to SSH; facts differ only in the uptime.
+     Differences of the API: `get_vlans` also lists the internal VLANs
+     4092 `Mgmt` and 4094 `Null` (unassigned ports), `get_ntp_servers` also
+     the server the cloud agent sets, `get_snmp_information` the
+     communities. NAPALM's live getter suite passes for both transports
+   - `cli()` and all configuration management stay on SSH: POST
+     `operation/system/cli` is unreliable (9.4: the first command returned
+     its output with status 400 and the following ones were skipped, 409;
+     no `Command Execution Time` banner), and there is no file transfer
+   - default transport stays `ssh`
 4. **Implementation**: API responses are parsed in separate functions (like
    `parsers.py`), returning the same NAPALM structures as the CLI path.
 5. **Tests**: mocked JSON responses per getter in
@@ -301,5 +335,7 @@ LLDP and ARP were empty there, their field names are from the schema only):
 | config management | POST `operation/system/config/:save`; `configuration/*` PATCH / PUT exist, but no candidate / diff / commit and no file transfer | merge, replace, rollback, commit confirm |
 | new getters (not implemented today) | `state/forwarding/ipv6-nd` (`get_ipv6_neighbors_table`), `state/transceiver/{port}` (`get_optics`), `configuration/accounts` (`get_users`), `state/route` (`get_route_to`) | - |
 
-Safety: only `GET` requests against the switch until step 3 is agreed; never
-store tokens or passwords in the repository.
+Safety: against the switch only `GET` requests, the token request
+(`auth-token/:generate`; never `:disable` / `:enable`, see the design) and -
+for tests - `show` commands through POST `operation/system/cli`; never store
+tokens or passwords in the repository.

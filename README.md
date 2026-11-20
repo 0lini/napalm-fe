@@ -42,7 +42,9 @@ with driver("192.0.2.10", "admin", "secret", optional_args={"port": 22}) as devi
 
 | Argument              | Default                | Description |
 |-----------------------|------------------------|-------------|
-| `transport`           | `ssh`                  | How the driver talks to the switch (like NAPALM's EOS driver). Only `ssh` for now; an `openapi` transport is planned |
+| `transport`           | `ssh`                  | How the driver talks to the switch (like NAPALM's EOS driver): `ssh` (CLI) or `openapi`, see [OpenAPI transport](#openapi-transport) |
+| `openapi_port`        | `9443`                 | OpenAPI port (`transport="openapi"`) |
+| `verify`              | `True`                 | OpenAPI TLS certificate check: `True`, `False` or the path of a CA bundle. The factory certificate is self-signed |
 | `save_config`         | `True`                 | Run `save config` after a successful commit |
 | `startup_config_file` | `/intflash/config.cfg` | File returned as `startup` by `get_config()` |
 | `force_no_enable`     | `False`                | Do not enter privileged (`enable`) mode. `show running-config` needs it, so `get_config`, `get_ntp_servers`, the `fqdn` of `get_facts` and configuration changes do not work without it |
@@ -81,9 +83,64 @@ raise it for very large configurations or MAC tables.
 Values the switch does not report are returned as `-1` (NAPALM convention),
 for example `tx_errors`/`tx_discards` in `get_interfaces_counters`.
 
-`get_snmp_information` returns an empty `community`: Fabric Engine never
+`get_snmp_information` returns an empty `community` over SSH: the CLI never
 displays SNMPv1/v2c community strings. They are stored encrypted outside the
 configuration file and `show snmp-server community` masks them (`********`).
+The OpenAPI transport returns them.
+
+## OpenAPI transport
+
+With `optional_args={"transport": "openapi"}` the driver reads these getters
+from the switch's OpenAPI (REST/JSON over HTTPS) instead of the CLI:
+
+| Method | OpenAPI (`/rest/openapi/...`) |
+|--------|-------------------------------|
+| `get_facts` | `v0/state/system`, `v0/configuration/dns`, `v1/state/ports` |
+| `get_lldp_neighbors`, `get_lldp_neighbors_detail` | `v0/state/lldp` |
+| `get_arp_table` | `v0/state/forwarding/ip-arp` |
+| `get_mac_address_table` | `v0/state/forwarding/mac-fdb` |
+| `get_vlans` | `v0/configuration/vlan`, `v1/state/vlan` |
+| `get_ntp_servers` | `v0/configuration/ntp` |
+| `get_snmp_information` | `v0/configuration/snmp`, `v0/state/system` |
+
+Everything else - getters the API covers only partly or not at all
+(counters, CPU, memory, temperature, MTU, the text configuration), `cli()`
+and all configuration management - uses SSH, which the driver opens on first
+use with the same credentials (`port` is the SSH port). A driver that only
+calls the getters above never logs in over SSH.
+
+Differences to the SSH transport (Fabric Engine 9.4):
+
+* `get_snmp_information` returns the community strings (an entry with a
+  write view is `rw`)
+* `get_vlans` also lists the internal VLANs 4092 (`Mgmt`) and 4094 (`Null`,
+  the unassigned ports), which `show vlan basic` hides
+* `get_ntp_servers` also lists a server set by the cloud agent (ExtremeCloud
+  IQ), which the running configuration does not show
+
+On the switch (Fabric Engine 9.3 or later, needs a Premier license; tested on
+9.4):
+
+```
+configure terminal
+application
+openapi local-mgmt enable
+```
+
+The server listens on TCP 9443 (TLS) a few minutes later. The driver logs in
+with the given user (a token, valid for 24 hours, renewed when it expires)
+and checks the certificate unless `verify=False` or a CA bundle is given:
+
+```python
+driver = get_network_driver("extreme_fe")
+with driver(
+    "192.0.2.10",
+    "admin",
+    "secret",
+    optional_args={"transport": "openapi", "verify": "/path/to/ca.pem"},
+) as device:
+    print(device.get_lldp_neighbors())
+```
 
 ## Configuration management
 

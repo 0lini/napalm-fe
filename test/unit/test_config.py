@@ -869,8 +869,17 @@ def test_transport_option():
     assert (
         PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "ssh"}).transport == "ssh"
     )
-    with pytest.raises(ValueError, match="openapi"):
-        PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "openapi"})
+    api = PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "openapi"})
+    assert (api.transport, api.openapi_port, api.verify) == ("openapi", 9443, True)
+    api = PatchedExtremeFeDriver(
+        "h",
+        "u",
+        "p",
+        optional_args={"transport": "openapi", "openapi_port": "8443", "verify": False},
+    )
+    assert (api.openapi_port, api.verify) == (8443, False)
+    with pytest.raises(ValueError, match="ssh, openapi"):
+        PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "netconf"})
 
 
 def test_failed_merge_message(driver):

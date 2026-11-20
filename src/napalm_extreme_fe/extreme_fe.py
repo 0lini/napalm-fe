@@ -22,12 +22,14 @@ from napalm.base.helpers import sanitize_configs
 from napalm.base.netmiko_helpers import netmiko_args
 from netmiko.exceptions import ConfigInvalidException
 
-from napalm_extreme_fe import parsers
+from napalm_extreme_fe import openapi_parsers, parsers
 from napalm_extreme_fe.file_transfer import ExtremeFeFileTransfer, parse_dir
+from napalm_extreme_fe.openapi import DEFAULT_PORT as DEFAULT_OPENAPI_PORT
+from napalm_extreme_fe.openapi import OpenApiSession
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_TRANSPORTS = ("ssh",)
+SUPPORTED_TRANSPORTS = ("ssh", "openapi")
 
 # Extreme renamed VOSS (VSP Operating System Software) to Fabric Engine;
 # Netmiko still calls it "extreme_vsp".
@@ -113,8 +115,12 @@ class ExtremeFeDriver(NetworkDriver):
         as ``port``, ``secret``, ``key_file``, ``ssh_config_file``...):
 
         * ``transport`` (default ``"ssh"``): how the driver talks to the
-          switch, like NAPALM's EOS driver. Only ``"ssh"`` (CLI via Netmiko) is
-          available; an ``"openapi"`` transport is planned (see AGENTS.md).
+          switch, like NAPALM's EOS driver. ``"ssh"``: CLI via Netmiko.
+          ``"openapi"``: the switch's OpenAPI (HTTPS) for the getters it
+          covers completely; everything else uses SSH, opened on first use.
+        * ``openapi_port`` (default ``9443``) and ``verify`` (default ``True``,
+          or a CA bundle path; ``False`` skips the certificate check, e.g. for
+          the factory self-signed certificate): OpenAPI connection.
         * ``save_config`` (bool, default ``True``): run ``save config`` after
           a successful ``commit_config``.
         * ``startup_config_file`` (str, default ``/intflash/config.cfg``):
@@ -145,7 +151,7 @@ class ExtremeFeDriver(NetworkDriver):
         if self.transport not in SUPPORTED_TRANSPORTS:
             raise ValueError(
                 f"transport {self.transport!r} is not supported, use one of "
-                f"{', '.join(SUPPORTED_TRANSPORTS)} (an 'openapi' transport is planned)"
+                f"{', '.join(SUPPORTED_TRANSPORTS)}"
             )
         self.save_on_commit = bool(optional_args.get("save_config", True))
         self.startup_config_file = optional_args.get("startup_config_file", "/intflash/config.cfg")
@@ -159,8 +165,11 @@ class ExtremeFeDriver(NetworkDriver):
         self.allow_reboot = bool(optional_args.get("allow_reboot", False))
         self.rollback_cfg = optional_args.get("rollback_cfg", "napalm_rollback.cfg")
         self.netmiko_optional_args = netmiko_args(optional_args)
+        self.openapi_port = int(optional_args.get("openapi_port", DEFAULT_OPENAPI_PORT))
+        self.verify: Union[bool, str] = optional_args.get("verify", True)
 
         self.device: Any = None
+        self.api: Optional[OpenApiSession] = None
         self.candidate_config: Optional[str] = None
         self.config_replace = False
         self.pending_revert = False
@@ -171,18 +180,46 @@ class ExtremeFeDriver(NetworkDriver):
     # ------------------------------------------------------------------
 
     def open(self) -> None:
-        """Open a connection to the device."""
+        """Open a connection to the device.
+
+        With ``transport="openapi"`` only the API session is opened (it gets
+        a token); SSH follows when something needs the CLI (see ``_ssh``).
+        """
+        if self.transport == "openapi":
+            self.api = OpenApiSession(
+                self.hostname,
+                self.username,
+                self.password,
+                port=self.openapi_port,
+                verify=self.verify,
+                timeout=self.timeout,
+            )
+            self.api.open()
+            return
+        self._ssh_open()
+
+    def _ssh_open(self) -> None:
         self.device = self._netmiko_open(
             NETMIKO_DEVICE_TYPE, netmiko_optional_args=self.netmiko_optional_args
         )
 
     def close(self) -> None:
-        """Close the connection to the device."""
-        self._netmiko_close()
-        self.device = None
+        """Close the connection(s) to the device."""
+        if self.api is not None:
+            self.api.close()
+            self.api = None
+        if self.device is not None:
+            self._netmiko_close()
+            self.device = None
 
     def is_alive(self) -> models.AliveDict:
-        """Return whether the SSH connection is still usable."""
+        """Return whether the connection is still usable.
+
+        OpenAPI: whether the session holds a token (like the EOS driver, no
+        request); SSH: whether the SSH transport is active.
+        """
+        if self.transport == "openapi":
+            return {"is_alive": self.api is not None and self.api.token is not None}
         if self.device is None:
             return {"is_alive": False}
         try:
@@ -196,16 +233,23 @@ class ExtremeFeDriver(NetworkDriver):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _send_command(self, command: str, **kwargs: Any) -> str:
-        """Send a command and return its post-processed output."""
+    def _ssh(self) -> Any:
+        """The Netmiko session; with the OpenAPI transport opened on first use."""
+        if self.device is None and self.api is not None:
+            self._ssh_open()
         if self.device is None:
             raise ConnectionClosedException("Not connected to the device, call open() first")
+        return self.device
+
+    def _send_command(self, command: str, **kwargs: Any) -> str:
+        """Send a command and return its post-processed output."""
+        device = self._ssh()
         # Large tables (running-config, FDB on a chassis) can take longer than
         # Netmiko's 10 second default; use the driver timeout instead.
         kwargs.setdefault("read_timeout", self.timeout)
         logger.debug("%s: sending %r", self.hostname, command)
         try:
-            output = str(self.device.send_command(command, **kwargs))
+            output = str(device.send_command(command, **kwargs))
         except (OSError, EOFError) as exc:
             raise ConnectionClosedException(str(exc)) from exc
         return self._send_command_postprocess(
@@ -218,7 +262,7 @@ class ExtremeFeDriver(NetworkDriver):
 
     def _send_command_timing(self, command: str) -> str:
         """Send a command that prompts or has no fixed end (copy, reset, y)."""
-        return str(self.device.send_command_timing(command, read_timeout=self.timeout))
+        return str(self._ssh().send_command_timing(command, read_timeout=self.timeout))
 
     def _send_config(self, lines: List[str]) -> str:
         """Send lines in configuration mode; stop at the first rejected line.
@@ -227,7 +271,7 @@ class ExtremeFeDriver(NetworkDriver):
         """
         try:
             return str(
-                self.device.send_config_set(
+                self._ssh().send_config_set(
                     lines, cmd_verify=False, error_pattern=CLI_ERROR_RE.pattern
                 )
             )
@@ -240,7 +284,7 @@ class ExtremeFeDriver(NetworkDriver):
 
     def _copy_run_start(self, exc_class: type = CommandErrorException) -> None:
         """Save the running configuration (``save config``)."""
-        output = str(self.device.save_config())
+        output = str(self._ssh().save_config())
         if not self._save_successful(output):
             raise exc_class(f"Saving the configuration failed:\n{output}")
 
@@ -252,7 +296,7 @@ class ExtremeFeDriver(NetworkDriver):
         (Fabric Engine 9.3); any answer but ``y`` aborts the save. Saving takes
         a few seconds, so this waits for the prompt, not for the output to settle.
         """
-        prompt = re.escape(self.device.find_prompt())
+        prompt = re.escape(self._ssh().find_prompt())
         output = self._send_command(f"save config file {path}", expect_string=rf"\(y/n\)|{prompt}")
         if re.search(r"\(y/n\)", output):
             output += "\n" + self._send_command("y", expect_string=prompt, cmd_verify=False)
@@ -269,7 +313,7 @@ class ExtremeFeDriver(NetworkDriver):
         the following lines are still run. As the echo contains the prompt,
         this waits for the prompt at the end of the output.
         """
-        prompt = re.escape(self.device.find_prompt())
+        prompt = re.escape(self._ssh().find_prompt())
         return self._send_command(
             f"source {path} debug",
             expect_string=rf"{prompt}\s*$",
@@ -326,8 +370,20 @@ class ExtremeFeDriver(NetworkDriver):
     # Getters
     # ------------------------------------------------------------------
 
+    def _api_get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """GET an OpenAPI path (below ``/rest/openapi``); transport primitive."""
+        if self.api is None:
+            raise ConnectionClosedException("Not connected to the device, call open() first")
+        return self.api.get(path, params)
+
     def get_facts(self) -> models.FactsDict:
         """Return a set of facts about the device."""
+        if self.transport == "openapi":
+            return openapi_parsers.facts(  # type: ignore[return-value]
+                self._api_get("/v0/state/system"),
+                self._api_get("/v0/configuration/dns"),
+                self._api_get("/v1/state/ports"),
+            )
         sys_info = parsers.parse_sys_info(self._send_command("show sys-info"))
         interfaces = parsers.parse_interfaces(self._send_command("show interfaces gigabitEthernet"))
 
@@ -413,6 +469,8 @@ class ExtremeFeDriver(NetworkDriver):
 
     def get_lldp_neighbors(self) -> Dict[str, List[models.LLDPNeighborDict]]:
         """Return LLDP neighbors."""
+        if self.transport == "openapi":
+            return openapi_parsers.lldp_neighbors(self._api_get("/v0/state/lldp"))  # type: ignore[return-value]
         result: Dict[str, List[models.LLDPNeighborDict]] = {}
         for raw in parsers.parse_lldp_neighbors(self._send_command("show lldp neighbor")):
             detail = parsers.lldp_neighbor_to_napalm(raw)
@@ -426,6 +484,11 @@ class ExtremeFeDriver(NetworkDriver):
 
     def get_lldp_neighbors_detail(self, interface: str = "") -> models.LLDPNeighborsDetailDict:
         """Return detailed LLDP neighbor information."""
+        if self.transport == "openapi":
+            detail = openapi_parsers.lldp_neighbors_detail(self._api_get("/v0/state/lldp"))
+            if interface:
+                detail = {port: n for port, n in detail.items() if port == interface}
+            return detail  # type: ignore[return-value]
         command = "show lldp neighbor"
         if interface:
             command += f" port {interface}"
@@ -438,6 +501,15 @@ class ExtremeFeDriver(NetworkDriver):
 
     def get_arp_table(self, vrf: str = "") -> List[models.ARPTableDict]:
         """Return the ARP table, optionally for a given VRF."""
+        if self.transport == "openapi":
+            # all VRFs in one response; vr_name=... would be case-sensitive
+            arp = self._api_get("/v0/state/forwarding/ip-arp")
+            names = openapi_parsers.vrf_names(arp)
+            if vrf and vrf.lower() not in (n.lower() for n in names):
+                configured = [v.get("name", "") for v in self._api_get("/v0/configuration/vrf")]
+                if vrf.lower() not in (n.lower() for n in configured):
+                    raise CommandErrorException(f"VRF {vrf!r} does not exist")
+            return openapi_parsers.arp_table(arp, vrf)  # type: ignore[return-value]
         command = "show ip arp"
         if vrf:
             command += f" vrf {vrf}"
@@ -448,10 +520,18 @@ class ExtremeFeDriver(NetworkDriver):
 
     def get_mac_address_table(self) -> List[models.MACAdressTable]:
         """Return the MAC address table."""
+        if self.transport == "openapi":
+            return openapi_parsers.mac_address_table(  # type: ignore[return-value]
+                self._api_get("/v0/state/forwarding/mac-fdb")
+            )
         return parsers.parse_mac_address_table(self._send_command("show vlan mac-address-entry"))
 
     def get_vlans(self) -> Dict[str, models.VlanDict]:
         """Return the configured VLANs and their member ports."""
+        if self.transport == "openapi":
+            return openapi_parsers.vlans(  # type: ignore[return-value]
+                self._api_get("/v0/configuration/vlan"), self._api_get("/v1/state/vlan")
+            )
         names = parsers.parse_vlan_basic(self._send_command("show vlan basic"))
         members = parsers.parse_vlan_members(self._send_command("show vlan members"))
         return {
@@ -461,6 +541,8 @@ class ExtremeFeDriver(NetworkDriver):
 
     def get_ntp_servers(self) -> Dict[str, models.NTPServerDict]:
         """Return the configured NTP servers."""
+        if self.transport == "openapi":
+            return openapi_parsers.ntp_servers(self._api_get("/v0/configuration/ntp"))  # type: ignore[return-value]
         running = self._send_command("show running-config")
         return {server: {} for server in parsers.parse_ntp_servers(running)}
 
@@ -469,8 +551,12 @@ class ExtremeFeDriver(NetworkDriver):
 
         ``community`` is always empty: Fabric Engine never displays SNMPv1/v2c
         community strings (stored encrypted outside the configuration, masked
-        in ``show snmp-server community``).
+        in ``show snmp-server community``). The OpenAPI transport returns them.
         """
+        if self.transport == "openapi":
+            return openapi_parsers.snmp_information(  # type: ignore[return-value]
+                self._api_get("/v0/configuration/snmp"), self._api_get("/v0/state/system")
+            )
         sys_info = parsers.parse_sys_info(self._send_command("show sys-info"))
         return {
             "chassis_id": sys_info.get("Serial#", ""),
@@ -583,7 +669,7 @@ class ExtremeFeDriver(NetworkDriver):
             with os.fdopen(handle, "w") as tmp:
                 tmp.write(content + "\n")
             with ExtremeFeFileTransfer(
-                ssh_conn=self.device,
+                ssh_conn=self._ssh(),
                 source_file=tmp_file,
                 dest_file=dest_file,
                 file_system=self.dest_file_system,
