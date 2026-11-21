@@ -617,6 +617,26 @@ def parse_vlan_members(output: str) -> Dict[int, List[str]]:
     return members
 
 
+# CLI access levels -> NAPALM privilege level (0 - 15, like IOS: 15 = full
+# access, 1 = read only)
+ACCESS_LEVELS = {"ro": 1, "l1": 2, "l2": 3, "l3": 4, "rw": 14, "rwa": 15}
+
+
+def parse_cli_username(output: str) -> Dict[str, Dict]:
+    """Parse ``show cli username`` (columns UserName, AccessLevel, State, Type).
+
+    The CLI shows no password and no SSH keys. Disabled users are listed too.
+    The header sits between two ``===`` rules (no dashed rule), so the rows
+    are matched directly: four columns, the second an access level.
+    """
+    users: Dict[str, Dict] = {}
+    for row in output.splitlines():
+        tokens = row.split()
+        if len(tokens) == 4 and tokens[1] in ACCESS_LEVELS:
+            users[tokens[0]] = {"level": ACCESS_LEVELS[tokens[1]], "password": "", "sshkeys": []}
+    return users
+
+
 def parse_ntp_servers(running_config: str) -> List[str]:
     """Extract configured NTP servers from the running configuration."""
     return list(dict.fromkeys(re.findall(r"^\s*ntp server (\S+)", running_config, re.M)))

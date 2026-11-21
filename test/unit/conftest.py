@@ -1,5 +1,8 @@
 """Test fixtures for the NAPALM getter tests (mocked device)."""
 
+import re
+from datetime import datetime, timedelta
+
 import pytest
 from napalm.base.test import conftest as parent_conftest
 from napalm.base.test.double import BaseTestDouble
@@ -54,7 +57,10 @@ class _FakeRemoteConn:
 class FakeFEDevice(BaseTestDouble):
     """Netmiko replacement.
 
-    ``show`` commands return the content of the mocked_data files.
+    ``show`` commands return the content of the mocked_data files. File and
+    configuration commands (``save config file``, ``ls``, ``copy``, ``source``,
+    ``reset``) are simulated on an in-memory flash; their output follows real
+    Fabric Engine 9.4 output where it is known.
     """
 
     remote_conn = _FakeRemoteConn()
@@ -63,6 +69,33 @@ class FakeFEDevice(BaseTestDouble):
         super().__init__()
         self.sent_config = []
         self.commands = []
+        self.flash = {"/intflash/config.cfg": "startup config"}
+        self.rebooted = False
+        self.scheduled_reset = None
+        self._pending = None
+        self._dialog = None
+        self.users = {}  # user defined accounts: name -> level
+        self.password_changes = []
+        # switch log: (code, message); the first entry is the boot
+        self.log = [("0x00034594", "GlobalRouter SW INFO System boot")]
+
+    def _log(self, code, message):
+        self.log.append((code, message))
+
+    def _log_output(self, code):
+        """``show logging file event-code`` in the real format, oldest first."""
+        start = datetime(2026, 11, 17, 15, 51, 41)
+        lines = [
+            "*" * 84,
+            "                Command Execution Time: Tue Nov 17 16:37:13 2026 UTC",
+            "*" * 84,
+        ]
+        for index, (entry_code, message) in enumerate(self.log):
+            if entry_code != code:
+                continue
+            stamp = (start + timedelta(seconds=index)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            lines.append(f"1 {stamp} 5520-24T-FabricEngine CP1 - {entry_code} - 00000000 {message}")
+        return "\n".join(lines)
 
     def write_channel(self, data):
         pass
@@ -72,14 +105,168 @@ class FakeFEDevice(BaseTestDouble):
 
     def send_command(self, command, **kwargs):
         self.commands.append(command)
+        if command == "y" and self._pending:
+            action, self._pending = self._pending, None
+            return action()
+        if self._pending:  # real switch: any other answer aborts
+            self._pending = None
+            return ""
+        if command.startswith("save config file "):
+            path = command.split()[-1]
+
+            def save():
+                self.flash[path] = "running config"
+                return (
+                    f"CP-1: Save config to file {path} successful.\n"
+                    'WARNING: Choice Primary Node Config file is "/intflash/config.cfg".'
+                )
+
+            if path not in self.flash:
+                return save()
+            self._pending = save
+            question = f"File [{path}] already existing, overwrite (y/n) ? "  # real (9.3)
+            # the driver must wait for it with expect_string, not for the prompt
+            assert re.search(kwargs.get("expect_string", "^$"), question)
+            return question
+        if command.startswith("dir ") and command.endswith(" -l"):
+            directory = command.split()[1].rstrip("/")
+            lines = [
+                "",
+                "       -------- INTFLASH --------",
+                "  size          date       time       name",
+                "--------       ------     ------    --------",
+            ]
+            for path, content in sorted(self.flash.items()):
+                if path.rsplit("/", 1)[0] == directory:
+                    lines.append(f"{len(content):8d}    Nov-17-2026  16:28   {path}")
+            lines.append(
+                "total: 6260543488       used: 202092544         free: 6058450944        bytes"
+            )
+            return "\n".join(lines)
+        if command.startswith("source "):
+            return ""
+        if command.startswith("show logging file event-code "):
+            return self._log_output(command.split()[-1])
         filename = "{}.txt".format(self.sanitize_text(command))
         return self.read_txt_file(self.find_file(filename))
+
+    def send_command_timing(self, command, **kwargs):
+        self.commands.append(command)
+        if self._dialog:  # a password prompt takes the next input as the answer
+            return self._dialog(command)
+        if command == "y" and self._pending:
+            action, self._pending = self._pending, None
+            return action()
+        if self._pending:  # real switch: any other answer aborts
+            self._pending = None
+            return ""
+        if command.startswith("copy "):
+            _, src, dst = command.split()
+            if dst not in self.flash:  # real switch: no output for a new file
+                self.flash[dst] = self.flash[src]
+                return ""
+
+            def copy():
+                self.flash[dst] = self.flash[src]
+                return ""
+
+            self._pending = copy
+            return f"File [{dst}] already existing, overwrite (y/n) ? "
+        if command.startswith("username add "):
+            name, level = command.split()[2], command.split()[4]
+            if name in self.users:
+                return "Error: Failed to create user"
+            answers = []
+
+            def password(text):
+                self.commands[-1] = "<password>"  # never record the password
+                answers.append(text)
+                if len(answers) == 1:
+                    return "*" * len(text) + "\nRe-enter password : "  # real (9.4)
+                self._dialog = None
+                self.users[name] = level
+                return "*" * len(text)
+
+            self._dialog = password
+            return "Enter password : "  # real (9.4)
+        if command.startswith("cli password "):
+            prompts = iter(["Enter the New password : ", "Re-enter the New password : ", None])
+
+            def answer(text):
+                self.commands[-1] = "<password>"
+                nxt = next(prompts)
+                if nxt is None:
+                    self._dialog = None
+                    self.password_changes.append(command.split()[2])
+                return "*" * len(text) + ("\n" + nxt if nxt else "")
+
+            self._dialog = answer
+            return "Enter the old password : "  # real (9.4)
+        if command.startswith("no username "):
+            name = command.split()[2]
+
+            def delete_user():
+                self.users.pop(name, None)
+                return ""
+
+            self._pending = delete_user
+            return "The specified user name will be deleted! Continue (y/n) ? "  # real (9.4)
+        if command.startswith("delete "):
+            path = command.split()[1]
+
+            def delete():
+                self.flash.pop(path, None)
+                return ""
+
+            self._pending = delete
+            return "Are you sure (y/n) ? "  # real prompt (9.4)
+        if command == "reset":
+            self._pending = None  # real prompt; the driver must not need it
+            return "Are you sure you want to reset the switch (y/n) ? "
+        if command == "reset -y":
+            self.rebooted = True
+            self.scheduled_reset = None
+            self._log("0x00034594", "GlobalRouter SW INFO System boot")
+            raise OSError("Socket is closed")
+        if command.startswith("reset -in "):
+            when = command.split()[-1]
+
+            def schedule():
+                self.scheduled_reset = when
+                self._log(
+                    "0x0003068e",
+                    "GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in "
+                    f"0 days 0 hours {when} minutes!",
+                )
+                # real output (9.4): only a log message after the prompt
+                return (
+                    "1 2026-11-17T16:33:05.861Z 5520-24T-FabricEngine CP1 - 0x0003068e - "
+                    "00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset "
+                    "in 0 days 0 hours 10 minutes!"
+                )
+
+            self._pending = schedule
+            return "Are you sure you want to perform a scheduled reset? (y/n) ? "
+        if command == "reset -cancel":
+            if self.scheduled_reset is None:
+                return "Warning! No ongoing scheduled reset!"
+            self.scheduled_reset = None
+            self._log("0x0003068f", "GlobalRouter SW INFO Scheduled reset canceled!")
+            return (  # real output (9.4)
+                "Scheduled reset successfully canceled!\n"
+                "1 2026-11-17T16:33:14.081Z 5520-24T-FabricEngine CP1 - 0x0003068f - "
+                "00000000 GlobalRouter SW INFO Scheduled reset canceled!"
+            )
+        return ""
 
     def send_config_set(self, config_commands, **kwargs):
         self.sent_config.extend(config_commands)
         return "\n".join(config_commands)
 
     def exit_config_mode(self, *args, **kwargs):
+        return ""
+
+    def config_mode(self, *args, **kwargs):
         return ""
 
     def save_config(self, *args, **kwargs):

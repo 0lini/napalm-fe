@@ -58,6 +58,21 @@ CLI_ERROR_RE = re.compile(
     re.M,
 )
 
+# NAPALM privilege levels the switch can create users with (username add
+# accepts only ro, rw and rwa; Fabric Engine 9.4)
+USER_CREATE_LEVELS = {1: "ro", 14: "rw", 15: "rwa"}
+# access level -> "cli password <user> <level>" keyword
+CLI_PASSWORD_LEVELS = {
+    "ro": "read-only",
+    "l1": "layer1",
+    "l2": "layer2",
+    "l3": "layer3",
+    "rw": "read-write",
+    "rwa": "read-write-all",
+}
+USER_TEMPLATES = ("set_users", "delete_users")
+DEFAULT_ACCOUNTS = ("ro", "l1", "l2", "l3", "rw", "rwa")
+
 # Lines of "show running-config" / the saved config file that change on every
 # call; removed so that get_config() output is stable (like the IOS driver).
 CONFIG_VOLATILE_LINES = (
@@ -119,6 +134,9 @@ class FEDriver(NetworkDriver):
         self.netmiko_optional_args = netmiko_args(optional_args)
         self.device: Any = None
         self.candidate_config: Optional[str] = None
+        # pending set_users / delete_users: ("add", name, level, password),
+        # ("password", name, level, password, old_password) or ("delete", name)
+        self.user_changes: List[tuple] = []
         self.profile = [self.platform]
 
     # ------------------------------------------------------------------
@@ -174,6 +192,15 @@ class FEDriver(NetworkDriver):
         return self._send_command_postprocess(
             output, remove_log_messages=not LOG_DISPLAY_COMMAND_RE.match(command)
         )
+
+    def _send_command_timing(self, command: str) -> str:
+        """Send a command that prompts or has no fixed end (copy, delete, reset, y).
+
+        Log messages printed into the session (they may follow a prompt) are
+        removed.
+        """
+        output = str(self._ssh().send_command_timing(command, read_timeout=self.timeout))
+        return LOG_MESSAGE_RE.sub("", output)
 
     def _send_config(self, lines: List[str]) -> str:
         """Send lines in configuration mode; stop at the first rejected line.
@@ -400,6 +427,15 @@ class FEDriver(NetworkDriver):
             "community": {},
         }
 
+    def get_users(self) -> Dict[str, models.UsersDict]:
+        """Return the user accounts (default and user defined, also disabled ones).
+
+        ``show cli username``; the access level is mapped to NAPALM's
+        privilege level (``rwa`` 15, ``rw`` 14, ``l3`` 4, ``l2`` 3, ``l1`` 2,
+        ``ro`` 1). The CLI shows no passwords and no SSH keys.
+        """
+        return parsers.parse_cli_username(self._send_command("show cli username"))  # type: ignore[return-value]
+
     def get_config(
         self,
         retrieve: str = "all",
@@ -452,6 +488,7 @@ class FEDriver(NetworkDriver):
             candidate = self._read_candidate(filename, config)
         except (OSError, ValueError) as exc:
             raise MergeConfigException(str(exc)) from exc
+        self.user_changes = []
         self.candidate_config = "\n".join(parsers.config_lines(candidate))
 
     def compare_config(self) -> str:
@@ -462,6 +499,8 @@ class FEDriver(NetworkDriver):
         incremental diff): ``+line`` is added, ``-line`` removed (``no ...``);
         context lines (``interface ...``) are shown without a prefix.
         """
+        if self.user_changes:
+            return self._user_diff()
         if not self.candidate_config:
             return ""
         running = self._send_command("show running-config")
@@ -479,6 +518,11 @@ class FEDriver(NetworkDriver):
         """
         if message:
             raise NotImplementedError("Commit message not implemented for this platform")
+        if self.user_changes:
+            if revert_in is not None:
+                raise NotImplementedError("revert_in is not supported for set_users / delete_users")
+            self._commit_users()
+            return
         if revert_in is not None:
             raise NotImplementedError("Commit confirm has not been implemented on this platform.")
         if not self.candidate_config:
@@ -533,6 +577,160 @@ class FEDriver(NetworkDriver):
         if self._has_cli_error(output):
             raise self._merge_failed(output)
 
-    def discard_config(self) -> None:
-        """Discard the pending candidate."""
+    # ------------------------------------------------------------------
+    # Users (set_users / delete_users)
+    # ------------------------------------------------------------------
+
+    def load_template(
+        self,
+        template_name: str,
+        template_source: Optional[str] = None,
+        template_path: Optional[str] = None,
+        **template_vars: Any,
+    ) -> None:
+        """Load a configuration template (NAPALM's ``load_template``).
+
+        ``set_users`` and ``delete_users`` (``users``: NAPALM's ``get_users``
+        model) are not configuration lines on Fabric Engine: creating a user
+        asks for the password interactively and deleting one asks (y/n). They
+        are kept as pending user changes; ``commit_config`` applies them like
+        ExtremeCloud IQ Site Engine does, by answering the prompts.
+        All other templates render to configuration lines (merge candidate).
+        """
+        if template_name in USER_TEMPLATES and template_source is None and template_path is None:
+            self._load_user_changes(template_name, template_vars.get("users") or {})
+            return
+        super().load_template(template_name, template_source, template_path, **template_vars)
+
+    def _load_user_changes(self, template_name: str, users: Dict[str, Dict]) -> None:
+        """Validate ``users`` against the switch and keep them as the candidate.
+
+        ``set_users`` creates users that do not exist yet (level 1 = ro, 14 =
+        rw, 15 = rwa; a password is required). For an existing user (also a
+        default account) it changes the password; Fabric Engine needs the old
+        one for that (``old_password``, not part of NAPALM's model) and
+        cannot change the level. ``delete_users`` deletes user defined
+        accounts; unknown users are skipped, the default accounts cannot be
+        deleted.
+        """
+        try:
+            existing = self.get_users()
+            changes: List[tuple] = []
+            for name, details in users.items():
+                details = details or {}
+                if template_name == "delete_users":
+                    if name in DEFAULT_ACCOUNTS:
+                        raise ValueError(f"{name} is a default account and cannot be deleted")
+                    if name in existing:
+                        changes.append(("delete", name))
+                    continue
+                if details.get("sshkeys"):
+                    raise ValueError("SSH keys of users cannot be configured on Fabric Engine")
+                if name in existing:
+                    change = self._user_password_change(name, existing[name], details)
+                    if change:
+                        changes.append(change)
+                    continue
+                level = USER_CREATE_LEVELS.get(details.get("level", 1))
+                if level is None:
+                    raise ValueError(
+                        f"{name}: level must be 1 (ro), 14 (rw) or 15 (rwa), "
+                        "the levels Fabric Engine can create users with"
+                    )
+                if not details.get("password"):
+                    raise ValueError(f"{name}: a password is required to create a user")
+                changes.append(("add", name, level, details["password"]))
+        except ValueError as exc:
+            raise MergeConfigException(str(exc)) from exc
         self.candidate_config = None
+        self.user_changes = changes
+
+    @staticmethod
+    def _user_password_change(name: str, current: Dict, details: Dict) -> Optional[tuple]:
+        """The change of an existing user's password, or None if nothing changes."""
+        level = {v: k for k, v in parsers.ACCESS_LEVELS.items()}[current["level"]]
+        if details.get("level", current["level"]) != current["level"]:
+            raise ValueError(f"{name}: Fabric Engine cannot change the level of a user")
+        if not details.get("password"):
+            return None  # already as requested
+        if not details.get("old_password"):
+            raise ValueError(
+                f"{name} exists: Fabric Engine changes a password only with the old one "
+                "(old_password)"
+            )
+        return ("password", name, level, details["password"], details["old_password"])
+
+    def _user_diff(self) -> str:
+        """``compare_config`` for user changes (passwords are not shown)."""
+        lines = {
+            "add": "+username add {1} level {2} enable",
+            "password": "+cli password {1} {level} (new password)",
+            "delete": "-username {1}",
+        }
+        return "\n".join(
+            lines[c[0]].format(*c, level=CLI_PASSWORD_LEVELS[c[2]] if len(c) > 2 else "")
+            for c in self.user_changes
+        )
+
+    def _commit_users(self) -> None:
+        """Apply the pending user changes (see ``load_template``)."""
+        for change in self.user_changes:
+            try:
+                self._apply_user_change_ssh(change)
+            except CommandErrorException as exc:
+                raise MergeConfigException(f"{change[0]} user {change[1]} failed: {exc}") from exc
+            logger.info("%s: %s user %s", self.hostname, change[0], change[1])
+        self.user_changes = []
+
+    def _apply_user_change_ssh(self, change: tuple) -> None:
+        """Answer the prompts like ExtremeCloud IQ Site Engine's scripts.
+
+        ``username add <name> level <l> enable`` asks ``Enter password :`` and
+        ``Re-enter password :``; ``cli password <name> <level>`` asks ``Enter
+        the old password :``, ``Enter the New password :`` and ``Re-enter the
+        New password :``; ``no username <name>`` asks ``The specified user
+        name will be deleted! Continue (y/n) ?`` (Fabric Engine 9.4). An
+        answer is only sent after its prompt.
+        """
+        device = self._ssh()
+        device.config_mode()
+        try:
+            if change[0] == "add":
+                _, name, level, password = change
+                output = self._answer_prompts(
+                    f"username add {name} level {level} enable",
+                    [("Enter password", password), ("Re-enter password", password)],
+                )
+            elif change[0] == "password":
+                _, name, level, password, old_password = change
+                output = self._answer_prompts(
+                    f"cli password {name} {CLI_PASSWORD_LEVELS[level]}",
+                    [
+                        ("Enter the old password", old_password),
+                        ("Enter the New password", password),
+                        ("Re-enter the New password", password),
+                    ],
+                )
+            else:
+                output = self._send_command_timing(f"no username {change[1]}")
+                if "(y/n)" not in output:
+                    raise CommandErrorException(f"unexpected answer: {output.strip()}")
+                output = self._send_command_timing("y")
+            if self._has_cli_error(output) or re.search(r"aborted|fail", output, re.I):
+                raise CommandErrorException(output.replace("*", "").strip())
+        finally:
+            device.exit_config_mode()
+
+    def _answer_prompts(self, command: str, prompts: List[tuple]) -> str:
+        """Send ``command``, then each answer after its prompt (never without it)."""
+        output = self._send_command_timing(command)
+        for prompt, answer in prompts:
+            if prompt.lower() not in output.lower():
+                raise CommandErrorException(f"unexpected answer: {output.replace('*', '').strip()}")
+            output = self._send_command_timing(answer)
+        return output
+
+    def discard_config(self) -> None:
+        """Discard the pending candidate (also pending user changes)."""
+        self.candidate_config = None
+        self.user_changes = []
