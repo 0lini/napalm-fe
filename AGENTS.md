@@ -273,8 +273,15 @@ ssh: `_apply_user_change_ssh` answers the prompts (the password is only sent
 after `Enter password`), https: `POST configuration/accounts` (levels only
 READ_ONLY / ADMIN_LIMITED / ADMIN: 422 otherwise; 422 if the user exists or
 the password contains the name) and `DELETE configuration/accounts/{name}`
-(422 for default accounts). `PATCH` cannot change a password (every variant:
-"Invalid username or password"), only `enabled`. Verified on 9.4 for both
+(422 for default accounts). Passwords change only with the old one: CLI `cli
+password <user> <read-only|layer1|layer2|layer3|read-write|read-write-all>`
+(asks old, new, new - also for rwa changing another user), API `PATCH
+configuration/accounts/{name}` with `level`, `secret`, `oldSecret` (`level`
+must be the current one: "Incorrect level for this username"). The schema's
+`superUserName` / `superUserPassword` variant is refused with correct rwa
+credentials ("Invalid username or password."), other spellings are not
+accepted; maybe only for enhanced secure mode (not checked). `set_users` takes
+`old_password` for that. Verified on 9.4 for both
 transports. Still to check: whether new users survive a reboot without `save
 config`.
 

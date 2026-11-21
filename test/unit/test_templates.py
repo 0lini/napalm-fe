@@ -138,7 +138,8 @@ def test_users_over_https(monkeypatch):
         ("set_users", {"a": {"level": 3, "password": "x"}}, "level must be 1"),
         ("set_users", {"a": {"level": 1}}, "password is required"),
         ("set_users", {"a": {"level": 1, "password": "x", "sshkeys": ["k"]}}, "SSH keys"),
-        ("set_users", {"rw": {"level": 14, "password": "x"}}, "already exists"),
+        ("set_users", {"rw": {"level": 14, "password": "x"}}, "only with the old one"),
+        ("set_users", {"rw": {"level": 15, "password": "x", "old_password": "y"}}, "level"),
         ("delete_users", {"rwa": {}}, "default account"),
     ],
 )
@@ -180,3 +181,22 @@ def test_user_changes_no_revert(monkeypatch):
     driver.user_changes = [("delete", "x")]
     with pytest.raises(NotImplementedError):
         driver.commit_config(revert_in=300)
+
+
+def test_change_password(monkeypatch):
+    """Fabric Engine changes a password only with the old one (9.4: CLI and API)."""
+    driver = _users_driver(monkeypatch)
+    users = {"rwa": {"level": 15, "password": "New-Pass-2026x", "old_password": "Old-Pass-2025x"}}
+    driver.load_template("set_users", users=users)
+    assert driver.compare_config() == "+cli password rwa read-write-all (new password)"
+    driver.commit_config()
+    assert driver.device.password_changes == ["rwa"]
+    assert driver.device.commands == ["cli password rwa read-write-all", *["<password>"] * 3]
+
+    driver = _users_driver(monkeypatch, transport="https")
+    users = {"l2": {"password": "New-Pass-2026x", "old_password": "Old-Pass-2025x"}}
+    driver.load_template("set_users", users=users)
+    driver.commit_config()
+    assert driver.api.requests == [
+        "PATCH /v0/configuration/accounts/l2 ['level', 'oldSecret', 'secret'] L2_LIMITED"
+    ]

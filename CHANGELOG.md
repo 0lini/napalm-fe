@@ -40,7 +40,7 @@ Tested on Fabric Engine 9.1 - 9.4 (GNS3 VMs, see `docs/fe.rst`).
 - Configuration templates for `load_template()`: `set_hostname`,
   `set_ntp_servers`, `delete_ntp_servers`, `snmp_config`,
   `delete_snmp_config`, `set_users` / `delete_users` (create and delete
-  users; over SSH by answering the prompts like ExtremeCloud IQ Site Engine,
+  users, change passwords with `old_password`; over SSH by answering the prompts like ExtremeCloud IQ Site Engine,
   over `https` through `configuration/accounts`).
 - `ExtremeVspFileTransfer`: Netmiko file transfer class (SCP) for device type
   `extreme_vsp`, written to be contributed to Netmiko.

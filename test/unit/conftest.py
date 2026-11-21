@@ -135,6 +135,9 @@ class FakeOpenApiSession(BaseTestDouble):
     def delete(self, path):
         self.requests.append(f"DELETE {path}")
 
+    def patch(self, path, body):
+        self.requests.append(f"PATCH {path} {sorted(body)} {body['level']}")
+
     def save_config(self, name=None):
         """POST operation/system/config/:save (no prompt, overwrites)."""
         self.saved.append(name)
@@ -171,6 +174,7 @@ class FakeFEDevice(BaseTestDouble):
         self._pending = None
         self._dialog = None
         self.users = {}  # user defined accounts: name -> level
+        self.password_changes = []
         # switch log: (code, message); the first entry is the boot
         self.log = [("0x00034594", "GlobalRouter SW INFO System boot")]
 
@@ -284,6 +288,19 @@ class FakeFEDevice(BaseTestDouble):
 
             self._dialog = password
             return "Enter password : "  # real (9.4)
+        if command.startswith("cli password "):
+            prompts = iter(["Enter the New password : ", "Re-enter the New password : ", None])
+
+            def answer(text):
+                self.commands[-1] = "<password>"
+                nxt = next(prompts)
+                if nxt is None:
+                    self._dialog = None
+                    self.password_changes.append(command.split()[2])
+                return "*" * len(text) + ("\n" + nxt if nxt else "")
+
+            self._dialog = answer
+            return "Enter the old password : "  # real (9.4)
         if command.startswith("no username "):
             name = command.split()[2]
 

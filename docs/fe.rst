@@ -313,18 +313,21 @@ password), ``commit_config()`` applies it, ``discard_config()`` drops it:
 
 * ``set_users`` creates users: level 1 (``ro``), 14 (``rw``) or 15 (``rwa``)
   - the levels Fabric Engine creates users with - and a password (it must
-  not contain the user name). An existing user is an error unless it already
-  has the requested level and no password is given: Fabric Engine cannot
-  change a password without the old one. SSH keys are not supported.
+  not contain the user name). For an existing user - also a default account -
+  it changes the password, which Fabric Engine only does with the old one:
+  pass it as ``old_password`` (not part of NAPALM's model), e.g.
+  ``users={"rwa": {"password": "<new>", "old_password": "<old>"}}``. The
+  level of a user cannot be changed. SSH keys are not supported.
 * ``delete_users`` deletes user defined accounts; unknown users are skipped,
   the default accounts cannot be deleted.
 
 ``ssh`` answers the switch's prompts (``username add <name> level <l>
-enable`` asks the password twice, ``no username <name>`` asks (y/n)), as
-ExtremeCloud IQ Site Engine's scripts do. ``https`` uses
-``POST v0/configuration/accounts`` and ``DELETE
-v0/configuration/accounts/{name}``, never the CLI operation: a password
-prompt sent through it crashed a Fabric Engine 9.4 switch.
+enable`` asks the password twice, ``cli password <name> <level>`` the old one
+and twice the new one, ``no username <name>`` asks (y/n)), as ExtremeCloud IQ
+Site Engine's scripts do; an answer is only sent after its prompt. ``https``
+uses ``POST``, ``PATCH`` (with ``oldSecret``) and ``DELETE`` on
+``v0/configuration/accounts``, never the CLI operation: a password prompt
+sent through it crashed a Fabric Engine 9.4 switch.
 
 
 Known gotchas

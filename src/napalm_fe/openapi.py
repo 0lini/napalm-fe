@@ -128,6 +128,10 @@ class OpenApiSession:
         """POST ``body`` to ``path`` (configuration endpoints answer 204)."""
         self._call("POST", path, (200, 201, 204), json=body)
 
+    def patch(self, path: str, body: Dict[str, Any]) -> None:
+        """PATCH ``path`` with ``body`` (answers 204)."""
+        self._call("PATCH", path, (200, 204), json=body)
+
     def delete(self, path: str) -> None:
         """DELETE ``path`` (answers 204)."""
         self._call("DELETE", path, (200, 204))

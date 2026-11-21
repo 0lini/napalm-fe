@@ -87,7 +87,23 @@ CLI_ERROR_RE = re.compile(
 # NAPALM privilege levels the switch can create users with (username add /
 # POST configuration/accounts accept only ro, rw and rwa; Fabric Engine 9.4)
 USER_CREATE_LEVELS = {1: "ro", 14: "rw", 15: "rwa"}
-API_ACCOUNT_LEVELS = {"ro": "READ_ONLY", "rw": "ADMIN_LIMITED", "rwa": "ADMIN"}
+API_ACCOUNT_LEVELS = {
+    "ro": "READ_ONLY",
+    "l1": "L1_LIMITED",
+    "l2": "L2_LIMITED",
+    "l3": "L3_LIMITED",
+    "rw": "ADMIN_LIMITED",
+    "rwa": "ADMIN",
+}
+# access level -> "cli password <user> <level>" keyword
+CLI_PASSWORD_LEVELS = {
+    "ro": "read-only",
+    "l1": "layer1",
+    "l2": "layer2",
+    "l3": "layer3",
+    "rw": "read-write",
+    "rwa": "read-write-all",
+}
 USER_TEMPLATES = ("set_users", "delete_users")
 DEFAULT_ACCOUNTS = ("ro", "l1", "l2", "l3", "rw", "rwa")
 
@@ -1102,11 +1118,12 @@ class FEDriver(NetworkDriver):
         """Validate ``users`` against the switch and keep them as the candidate.
 
         ``set_users`` creates users that do not exist yet (level 1 = ro, 14 =
-        rw, 15 = rwa; a password is required). Fabric Engine cannot change an
-        existing user's password without the old one, so an existing user is
-        an error unless it already has the requested level and no password is
-        given. ``delete_users`` deletes user defined accounts; unknown users
-        are skipped, the default accounts cannot be deleted.
+        rw, 15 = rwa; a password is required). For an existing user (also a
+        default account) it changes the password; Fabric Engine needs the old
+        one for that (``old_password``, not part of NAPALM's model) and
+        cannot change the level. ``delete_users`` deletes user defined
+        accounts; unknown users are skipped, the default accounts cannot be
+        deleted.
         """
         try:
             existing = self.get_users()
@@ -1121,20 +1138,16 @@ class FEDriver(NetworkDriver):
                     continue
                 if details.get("sshkeys"):
                     raise ValueError("SSH keys of users cannot be configured on Fabric Engine")
+                if name in existing:
+                    change = self._user_password_change(name, existing[name], details)
+                    if change:
+                        changes.append(change)
+                    continue
                 level = USER_CREATE_LEVELS.get(details.get("level", 1))
                 if level is None:
                     raise ValueError(
                         f"{name}: level must be 1 (ro), 14 (rw) or 15 (rwa), "
                         "the levels Fabric Engine can create users with"
-                    )
-                if name in existing:
-                    if not details.get("password") and existing[name]["level"] == details.get(
-                        "level", 1
-                    ):
-                        continue  # already as requested
-                    raise ValueError(
-                        f"{name} already exists; Fabric Engine cannot change a password "
-                        "without the old one - delete the user first"
                     )
                 if not details.get("password"):
                     raise ValueError(f"{name}: a password is required to create a user")
@@ -1145,10 +1158,30 @@ class FEDriver(NetworkDriver):
         self.config_replace = False
         self.user_changes = changes
 
+    @staticmethod
+    def _user_password_change(name: str, current: Dict, details: Dict) -> Optional[tuple]:
+        """The change of an existing user's password, or None if nothing changes."""
+        level = {v: k for k, v in parsers.ACCESS_LEVELS.items()}[current["level"]]
+        if details.get("level", current["level"]) != current["level"]:
+            raise ValueError(f"{name}: Fabric Engine cannot change the level of a user")
+        if not details.get("password"):
+            return None  # already as requested
+        if not details.get("old_password"):
+            raise ValueError(
+                f"{name} exists: Fabric Engine changes a password only with the old one "
+                "(old_password)"
+            )
+        return ("password", name, level, details["password"], details["old_password"])
+
     def _user_diff(self) -> str:
         """``compare_config`` for user changes (passwords are not shown)."""
+        lines = {
+            "add": "+username add {1} level {2} enable",
+            "password": "+cli password {1} {level} (new password)",
+            "delete": "-username {1}",
+        }
         return "\n".join(
-            f"+username add {c[1]} level {c[2]} enable" if c[0] == "add" else f"-username {c[1]}"
+            lines[c[0]].format(*c, level=CLI_PASSWORD_LEVELS[c[2]] if len(c) > 2 else "")
             for c in self.user_changes
         )
 
@@ -1177,6 +1210,16 @@ class FEDriver(NetworkDriver):
                     "secret": {"isEncrypted": False, "value": password},
                 },
             )
+        elif change[0] == "password":
+            _, name, level, password, old_password = change
+            self._api().patch(
+                f"/v0/configuration/accounts/{name}",
+                {
+                    "level": API_ACCOUNT_LEVELS[level],
+                    "secret": {"isEncrypted": False, "value": password},
+                    "oldSecret": {"isEncrypted": False, "value": old_password},
+                },
+            )
         else:
             self._api().delete(f"/v0/configuration/accounts/{change[1]}")
 
@@ -1184,19 +1227,31 @@ class FEDriver(NetworkDriver):
         """Answer the prompts like ExtremeCloud IQ Site Engine's scripts.
 
         ``username add <name> level <l> enable`` asks ``Enter password :`` and
-        ``Re-enter password :``; ``no username <name>`` asks ``The specified
-        user name will be deleted! Continue (y/n) ?`` (Fabric Engine 9.4).
+        ``Re-enter password :``; ``cli password <name> <level>`` asks ``Enter
+        the old password :``, ``Enter the New password :`` and ``Re-enter the
+        New password :``; ``no username <name>`` asks ``The specified user
+        name will be deleted! Continue (y/n) ?`` (Fabric Engine 9.4). An
+        answer is only sent after its prompt.
         """
         device = self._ssh()
         device.config_mode()
         try:
             if change[0] == "add":
                 _, name, level, password = change
-                output = self._send_command_timing(f"username add {name} level {level} enable")
-                for prompt in ("Enter password", "Re-enter password"):
-                    if prompt.lower() not in output.lower():
-                        raise CommandErrorException(f"unexpected answer: {output.strip()}")
-                    output = self._send_command_timing(password)
+                output = self._answer_prompts(
+                    f"username add {name} level {level} enable",
+                    [("Enter password", password), ("Re-enter password", password)],
+                )
+            elif change[0] == "password":
+                _, name, level, password, old_password = change
+                output = self._answer_prompts(
+                    f"cli password {name} {CLI_PASSWORD_LEVELS[level]}",
+                    [
+                        ("Enter the old password", old_password),
+                        ("Enter the New password", password),
+                        ("Re-enter the New password", password),
+                    ],
+                )
             else:
                 output = self._send_command_timing(f"no username {change[1]}")
                 if "(y/n)" not in output:
@@ -1206,6 +1261,15 @@ class FEDriver(NetworkDriver):
                 raise CommandErrorException(output.replace("*", "").strip())
         finally:
             device.exit_config_mode()
+
+    def _answer_prompts(self, command: str, prompts: List[tuple]) -> str:
+        """Send ``command``, then each answer after its prompt (never without it)."""
+        output = self._send_command_timing(command)
+        for prompt, answer in prompts:
+            if prompt.lower() not in output.lower():
+                raise CommandErrorException(f"unexpected answer: {output.replace('*', '').strip()}")
+            output = self._send_command_timing(answer)
+        return output
 
     def rollback(self) -> None:
         """Restore the configuration saved before the last commit.
