@@ -1,0 +1,192 @@
+[
+  {
+    "vlanId": 10,
+    "macAddress": "00:50:79:66:68:02",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "1:2",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "LEARNED"
+  },
+  {
+    "vlanId": 10,
+    "macAddress": "0c:3b:8d:e3:01:01",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "cpp",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 20,
+    "macAddress": "00:50:79:66:68:03",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "1:3",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "LEARNED"
+  },
+  {
+    "vlanId": 20,
+    "macAddress": "0c:3b:8d:e3:01:02",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "cpp",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4048,
+    "macAddress": "00:01:02:03:01:00",
+    "bmac": "00:01:02:03:00:84",
+    "cvid": 0,
+    "interfaceName": "1:1",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "LEARNED"
+  },
+  {
+    "vlanId": 4051,
+    "macAddress": "00:01:02:03:00:84",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "1:1",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4051,
+    "macAddress": "09:00:2b:00:00:05",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "cpp",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4051,
+    "macAddress": "0c:22:37:8c:00:84",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "1:1",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4051,
+    "macAddress": "0c:3b:8d:e3:00:84",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "cpp",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4051,
+    "macAddress": "f2:fb:63:ff:ff:ff",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "1:1",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4051,
+    "macAddress": "f2:fb:da:ff:ff:ff",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "cpp",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4051,
+    "macAddress": "f2:fd:7a:ff:ff:ff",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "1:1",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4052,
+    "macAddress": "00:01:02:03:00:84",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "1:1",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4052,
+    "macAddress": "09:00:2b:00:00:05",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "cpp",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4052,
+    "macAddress": "0c:22:37:8c:00:84",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "1:1",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4052,
+    "macAddress": "0c:3b:8d:e3:00:84",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "cpp",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4052,
+    "macAddress": "f2:fb:63:ff:ff:ff",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "1:1",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4052,
+    "macAddress": "f2:fb:da:ff:ff:ff",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "cpp",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  },
+  {
+    "vlanId": 4052,
+    "macAddress": "f2:fd:7a:ff:ff:ff",
+    "bmac": "00:00:00:00:00:00",
+    "cvid": 0,
+    "interfaceName": "1:1",
+    "interfaceType": "ETHERNET",
+    "smltRemote": false,
+    "status": "SELF"
+  }
+]

@@ -1,8 +1,10 @@
 """NAPALM driver for Extreme Networks Fabric Engine (formerly VOSS / VSP).
 
-Like NAPALM's IOS driver, the driver talks to the switch over SSH (Netmiko,
-device type ``extreme_vsp``) and parses the CLI output; it works on every
-release.
+The default transport (``ssh``, like NAPALM's IOS driver) is the CLI over
+Netmiko (``extreme_vsp``); it works on every release. ``transport="https"``
+uses the switch's API (OpenAPI, Fabric Engine 9.3.1 or later with a Premier
+license); like NAPALM's NX-OS driver, an SSH connection is then only opened
+for what the API cannot do: uploading files (SCP).
 """
 
 import logging
@@ -13,15 +15,24 @@ from napalm.base import NetworkDriver, models
 from napalm.base.exceptions import (
     CommandErrorException,
     ConnectionClosedException,
+    ConnectionException,
     MergeConfigException,
 )
 from napalm.base.helpers import sanitize_configs
 from napalm.base.netmiko_helpers import netmiko_args
 from netmiko.exceptions import ConfigInvalidException
 
-from napalm_fe import parsers
+from napalm_fe import openapi_parsers, parsers
+from napalm_fe.openapi import DEFAULT_PORT as DEFAULT_HTTPS_PORT
+from napalm_fe.openapi import OpenApiSession
 
 logger = logging.getLogger(__name__)
+
+SUPPORTED_TRANSPORTS = ("https", "ssh")
+
+# Like the NX-OS driver, the SSH connection the https transport opens for file
+# uploads always uses port 22 ("port" is the API port).
+SSH_PORT = 22
 
 # Extreme renamed VOSS (VSP Operating System Software) to Fabric Engine;
 # Netmiko still calls it "extreme_vsp".
@@ -50,7 +61,7 @@ LOG_DISPLAY_COMMAND_RE = re.compile(r"^\s*show\s+log", re.I)
 # Output that shows that the CLI rejected a command. Fabric Engine 9.4 also
 # reports errors as e.g. "Error: The community entry already exists." (no
 # "%"), sometimes after a BEL ("\x07Error: The specified VLAN ID is invalid or
-# already in use"). Also passed to Netmiko's
+# already in use", OpenAPI CLI operation). Also passed to Netmiko's
 # send_config_set(error_pattern=...), which applies it with re.M as well.
 CLI_ERROR_RE = re.compile(
     r"% (?:Invalid input|Incomplete command|Ambiguous command|Unrecognized command|Cannot |Error)"
@@ -102,6 +113,15 @@ class FEDriver(NetworkDriver):
         Supported ``optional_args`` (in addition to the Netmiko arguments such
         as ``port``, ``secret``, ``key_file``, ``ssh_config_file``...):
 
+        * ``transport`` (default ``"ssh"``): how the driver talks to the
+          switch, like NAPALM's EOS and NX-OS drivers. ``"ssh"``: CLI via
+          Netmiko, every release. ``"https"``: the switch's OpenAPI (Fabric
+          Engine 9.3.1 or later, Premier license); SSH (port 22, like NX-OS)
+          is opened on first use for file uploads (SCP).
+        * ``port``: port of the transport (default ``22`` for ``ssh``,
+          ``9443`` for ``https``).
+        * ``ssl_verify`` (default ``False``, like NX-OS): check the API's TLS
+          certificate; ``True`` or the path of a CA bundle.
         * ``save_config`` (bool, default ``True``): run ``save config`` after
           a successful ``commit_config``.
         * ``startup_config_file`` (str, default ``/intflash/config.cfg``):
@@ -113,11 +133,23 @@ class FEDriver(NetworkDriver):
         self.timeout = timeout
         optional_args = optional_args or {}
 
+        self.transport = optional_args.get("transport", "ssh")
+        if self.transport not in SUPPORTED_TRANSPORTS:
+            raise ConnectionException(f"Unknown transport: {self.transport}")
         self.save_on_commit = bool(optional_args.get("save_config", True))
         self.startup_config_file = optional_args.get("startup_config_file", "/intflash/config.cfg")
         self.force_no_enable = bool(optional_args.get("force_no_enable", False))
         self.netmiko_optional_args = netmiko_args(optional_args)
+        self.ssl_verify: Union[bool, str] = optional_args.get("ssl_verify", False)
+        if self.transport == "https":
+            self.port = int(optional_args.get("port", DEFAULT_HTTPS_PORT))
+            if "port" in self.netmiko_optional_args:
+                self.netmiko_optional_args["port"] = SSH_PORT
+        else:
+            self.port = int(optional_args.get("port", SSH_PORT))
+
         self.device: Any = None
+        self.api: Optional[OpenApiSession] = None
         self.candidate_config: Optional[str] = None
         self.profile = [self.platform]
 
@@ -126,19 +158,46 @@ class FEDriver(NetworkDriver):
     # ------------------------------------------------------------------
 
     def open(self) -> None:
-        """Open the SSH connection to the device."""
+        """Open a connection to the device.
+
+        With ``transport="https"`` only the API session is opened (it gets a
+        token); SSH follows when something needs it (see ``_ssh``).
+        """
+        if self.transport == "https":
+            self.api = OpenApiSession(
+                self.hostname,
+                self.username,
+                self.password,
+                port=self.port,
+                verify=self.ssl_verify,
+                timeout=self.timeout,
+            )
+            self.api.open()
+            return
+        self._ssh_open()
+
+    def _ssh_open(self) -> None:
         self.device = self._netmiko_open(
             NETMIKO_DEVICE_TYPE, netmiko_optional_args=self.netmiko_optional_args
         )
 
     def close(self) -> None:
-        """Close the connection to the device."""
+        """Close the connection(s) to the device."""
+        if self.api is not None:
+            self.api.close()
+            self.api = None
         if self.device is not None:
             self._netmiko_close()
             self.device = None
 
     def is_alive(self) -> models.AliveDict:
-        """Return whether the SSH connection is still usable."""
+        """Return whether the connection is still usable.
+
+        https: whether the session holds a token (no request, like the EOS and
+        NX-OS drivers); ssh: whether the SSH transport is active.
+        """
+        if self.transport == "https":
+            return {"is_alive": self.api is not None and self.api.token is not None}
         if self.device is None:
             return {"is_alive": False}
         try:
@@ -150,27 +209,53 @@ class FEDriver(NetworkDriver):
 
     # ------------------------------------------------------------------
     # Transport primitives (like NAPALM's NX-OS drivers): everything that
-    # talks to Netmiko is here.
+    # talks to the API or to Netmiko is here.
+    #
+    # https transport: everything goes through the API except file uploads
+    # (SCP, _upload_config), which need SSH, see _ssh().
     # ------------------------------------------------------------------
 
+    def _api(self) -> OpenApiSession:
+        if self.api is None:
+            raise ConnectionClosedException("Not connected to the device, call open() first")
+        return self.api
+
+    def _api_get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """GET an OpenAPI path (below ``/rest/openapi``)."""
+        return self._api().get(path, params)
+
     def _ssh(self) -> Any:
-        """The Netmiko session."""
+        """The Netmiko session; with the https transport opened on first use.
+
+        Like the NX-OS driver's ``ensure_netmiko_conn``: same credentials,
+        port 22. With https only SCP uploads need it.
+        """
+        if self.device is None and self.api is not None:
+            self._ssh_open()
         if self.device is None:
             raise ConnectionClosedException("Not connected to the device, call open() first")
         return self.device
 
     def _send_command(self, command: str, **kwargs: Any) -> str:
-        """Send a command (Netmiko ``send_command``, ``kwargs`` are passed on)
-        and return its post-processed output."""
-        device = self._ssh()
-        # Large tables (running-config, FDB on a chassis) can take longer than
-        # Netmiko's 10 second default; use the driver timeout instead.
-        kwargs.setdefault("read_timeout", self.timeout)
-        logger.debug("%s: sending %r", self.hostname, command)
-        try:
-            output = str(device.send_command(command, **kwargs))
-        except (OSError, EOFError) as exc:
-            raise ConnectionClosedException(str(exc)) from exc
+        """Send a command and return its post-processed output.
+
+        https: through ``POST /v0/operation/system/cli`` (same output as over
+        SSH, without the ``Command Execution Time`` banner). ssh: Netmiko
+        ``send_command``; ``kwargs`` are passed on.
+        """
+        if self.transport == "https":
+            logger.debug("%s: sending %r (API)", self.hostname, command)
+            output = self._api().cli([command])[0]
+        else:
+            device = self._ssh()
+            # Large tables (running-config, FDB on a chassis) can take longer
+            # than Netmiko's 10 second default; use the driver timeout instead.
+            kwargs.setdefault("read_timeout", self.timeout)
+            logger.debug("%s: sending %r", self.hostname, command)
+            try:
+                output = str(device.send_command(command, **kwargs))
+            except (OSError, EOFError) as exc:
+                raise ConnectionClosedException(str(exc)) from exc
         return self._send_command_postprocess(
             output, remove_log_messages=not LOG_DISPLAY_COMMAND_RE.match(command)
         )
@@ -180,6 +265,8 @@ class FEDriver(NetworkDriver):
 
         Raises ``ConfigInvalidException`` (Netmiko) for a rejected line.
         """
+        if self.transport == "https":
+            return self._send_config_api(lines)
         try:
             return str(
                 self._ssh().send_config_set(
@@ -193,8 +280,39 @@ class FEDriver(NetworkDriver):
                 pass
             raise
 
+    def _send_config_api(self, lines: List[str]) -> str:
+        """``_send_config`` through ``POST /v0/operation/system/cli``.
+
+        Each request starts in privileged EXEC mode, hence ``configure
+        terminal`` / ``end``. Without ``continue_on_failure`` the switch skips
+        every command after the first one it counts as failed (any output
+        containing "Error"), so it stops at a rejected line like Netmiko does
+        with ``error_pattern`` (Fabric Engine 9.4).
+        """
+        commands = ["configure terminal", *lines, "end"]
+        outputs = self._api().cli(commands, continue_on_failure=False)
+        ran = list(zip(commands, outputs, strict=False))
+        transcript = "\n".join(f"{c}\n{o}".rstrip() for c, o in ran)
+        failed = next((c for c, o in ran if self._has_cli_error(o)), None)
+        if failed:
+            raise ConfigInvalidException(
+                f"Invalid input detected at command: {failed}\n{transcript}"
+            )
+        if len(outputs) < len(commands):
+            last = ran[-1][0] if ran else commands[0]
+            raise ConfigInvalidException(
+                f"The switch skipped the commands after: {last}\n{transcript}"
+            )
+        return transcript
+
     def _copy_run_start(self, exc_class: type = CommandErrorException) -> None:
         """Save the running configuration (``save config``)."""
+        if self.transport == "https":
+            try:
+                self._api().save_config()
+            except CommandErrorException as exc:
+                raise exc_class(f"Saving the configuration failed: {exc}") from exc
+            return
         output = str(self._ssh().save_config())
         if not self._save_successful(output):
             raise exc_class(f"Saving the configuration failed:\n{output}")
@@ -251,6 +369,12 @@ class FEDriver(NetworkDriver):
 
     def get_facts(self) -> models.FactsDict:
         """Return a set of facts about the device."""
+        if self.transport == "https":
+            return openapi_parsers.facts(  # type: ignore[return-value]
+                self._api_get("/v0/state/system"),
+                self._api_get("/v0/configuration/dns"),
+                self._api_get("/v1/state/ports"),
+            )
         sys_info = parsers.parse_sys_info(self._send_command("show sys-info"))
         interfaces = parsers.parse_interfaces(self._send_command("show interfaces gigabitEthernet"))
 
@@ -293,6 +417,8 @@ class FEDriver(NetworkDriver):
         interfaces = parsers.parse_interfaces(output)
         names = parsers.parse_interfaces_name(output)
         now = parsers.command_execution_time(output)
+        if now is None:  # no banner (https transport): the switch's clock
+            now = parsers.parse_clock(self._send_command("show clock"))
         state_changes = parsers.parse_port_state(output)
 
         result: Dict[str, models.InterfaceDict] = {}
@@ -350,15 +476,28 @@ class FEDriver(NetworkDriver):
     def get_lldp_neighbors_detail(self, interface: str = "") -> models.LLDPNeighborsDetailDict:
         """Return detailed LLDP neighbor information."""
         detail: Dict[str, List] = {}
-        command = f"show lldp neighbor port {interface}" if interface else "show lldp neighbor"
-        for raw in parsers.parse_lldp_neighbors(self._send_command(command)):
-            detail.setdefault(raw["local_port"], []).append(parsers.lldp_neighbor_to_napalm(raw))
+        if self.transport == "https":
+            detail = openapi_parsers.lldp_neighbors_detail(self._api_get("/v0/state/lldp"))
+        else:
+            command = f"show lldp neighbor port {interface}" if interface else "show lldp neighbor"
+            for raw in parsers.parse_lldp_neighbors(self._send_command(command)):
+                detail.setdefault(raw["local_port"], []).append(
+                    parsers.lldp_neighbor_to_napalm(raw)
+                )
         if interface:
             detail = {port: n for port, n in detail.items() if port == interface}
         return detail  # type: ignore[return-value]
 
     def get_arp_table(self, vrf: str = "") -> List[models.ARPTableDict]:
         """Return the ARP table, optionally for a given VRF."""
+        if self.transport == "https":
+            # all VRFs in one response; vr_name=... would be case-sensitive
+            arp = self._api_get("/v0/state/forwarding/ip-arp")
+            if vrf and vrf.lower() not in {t.get("vrName", "").lower() for t in arp}:
+                configured = self._api_get("/v0/configuration/vrf")
+                if vrf.lower() not in {v.get("name", "").lower() for v in configured}:
+                    raise CommandErrorException(f"VRF {vrf!r} does not exist")
+            return openapi_parsers.arp_table(arp, vrf)  # type: ignore[return-value]
         command = "show ip arp"
         if vrf:
             command += f" vrf {vrf}"
@@ -369,10 +508,18 @@ class FEDriver(NetworkDriver):
 
     def get_mac_address_table(self) -> List[models.MACAdressTable]:
         """Return the MAC address table."""
+        if self.transport == "https":
+            return openapi_parsers.mac_address_table(  # type: ignore[return-value]
+                self._api_get("/v0/state/forwarding/mac-fdb")
+            )
         return parsers.parse_mac_address_table(self._send_command("show vlan mac-address-entry"))
 
     def get_vlans(self) -> Dict[str, models.VlanDict]:
         """Return the configured VLANs and their member ports."""
+        if self.transport == "https":
+            return openapi_parsers.vlans(  # type: ignore[return-value]
+                self._api_get("/v0/configuration/vlan"), self._api_get("/v1/state/vlan")
+            )
         names = parsers.parse_vlan_basic(self._send_command("show vlan basic"))
         members = parsers.parse_vlan_members(self._send_command("show vlan members"))
         return {
@@ -382,6 +529,8 @@ class FEDriver(NetworkDriver):
 
     def get_ntp_servers(self) -> Dict[str, models.NTPServerDict]:
         """Return the configured NTP servers."""
+        if self.transport == "https":
+            return openapi_parsers.ntp_servers(self._api_get("/v0/configuration/ntp"))  # type: ignore[return-value]
         running = self._send_command("show running-config")
         return {server: {} for server in parsers.parse_ntp_servers(running)}
 
@@ -390,8 +539,12 @@ class FEDriver(NetworkDriver):
 
         ``community`` is always empty: Fabric Engine never displays SNMPv1/v2c
         community strings (stored encrypted outside the configuration, masked
-        in ``show snmp-server community``).
+        in ``show snmp-server community``). The https transport returns them.
         """
+        if self.transport == "https":
+            return openapi_parsers.snmp_information(  # type: ignore[return-value]
+                self._api_get("/v0/configuration/snmp"), self._api_get("/v0/state/system")
+            )
         sys_info = parsers.parse_sys_info(self._send_command("show sys-info"))
         return {
             "chassis_id": sys_info.get("Serial#", ""),

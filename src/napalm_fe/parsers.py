@@ -197,6 +197,11 @@ def command_execution_time(output: str) -> Optional[datetime]:
     return _switch_time(output, r"Command Execution Time:\s+")
 
 
+def parse_clock(output: str) -> Optional[datetime]:
+    """Parse ``show clock`` (``Fri Nov 20 16:31:55 2026 UTC``, Fabric Engine 9.4)."""
+    return _switch_time(output, r"^\s*")
+
+
 def _rows_of(output: str, title: str) -> List[str]:
     """Rows of the tables titled ``title``; all rows if no table has a title."""
     tables = list(iter_tables(output))

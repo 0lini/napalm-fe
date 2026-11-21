@@ -5,11 +5,16 @@ start with ``test_``, so the normal test run (and CI) does not collect it.
 Run it explicitly against a LAB switch::
 
     NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<password> \\
-    NAPALM_OPTIONAL_ARGS='{"port": 22}' pytest test/unit/TestFEDriver.py
+    NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestFEDriver.py
+
+Every test runs for both transports (``https``, ``ssh``) and both
+``config_method`` values. ``NAPALM_OPTIONAL_ARGS`` must not set ``port``
+(it is the port of the transport: 9443 for https, 22 for ssh).
 
 The tests only change ``snmp-server location`` and restore the original value
 afterwards. ``save_config`` is disabled, so nothing is written to the startup
-configuration.
+configuration. ``config_method="file"`` leaves ``napalm_merge.cfg`` and
+``napalm_rollback.cfg`` in ``/intflash``.
 """
 
 import json
@@ -28,9 +33,11 @@ def read_file(name):
         return handle.read().strip()
 
 
-class TestConfig(unittest.TestCase):
-    """Merge, typo and discard tests."""
+class _ConfigTests:
+    """Merge tests, run once per config_method."""
 
+    config_method = "cli"
+    transport = "https"
     device: FEDriver
     original_location: str
 
@@ -40,7 +47,9 @@ class TestConfig(unittest.TestCase):
         if not hostname:
             raise unittest.SkipTest("NAPALM_HOSTNAME is not set (live switch tests)")
         optional_args = json.loads(os.environ.get("NAPALM_OPTIONAL_ARGS", "{}"))
-        optional_args["save_config"] = False
+        optional_args.update(
+            {"transport": cls.transport, "config_method": cls.config_method, "save_config": False}
+        )
         cls.device = FEDriver(
             hostname,
             os.environ["NAPALM_USERNAME"],
@@ -97,3 +106,29 @@ class TestConfig(unittest.TestCase):
         self.device.discard_config()
         self.assertEqual(self.device.compare_config(), "")
         self.assertEqual(self.device.get_snmp_information()["location"], self.original_location)
+
+
+class TestConfigCLI(_ConfigTests, unittest.TestCase):
+    """Merge by sending the lines in configuration mode (through the API)."""
+
+    config_method = "cli"
+
+
+class TestConfigFile(_ConfigTests, unittest.TestCase):
+    """Merge by SCP upload, restore point and 'source' (IOS style)."""
+
+    config_method = "file"
+
+
+class TestConfigCLISSH(_ConfigTests, unittest.TestCase):
+    """Merge by sending the lines in configuration mode over SSH."""
+
+    config_method = "cli"
+    transport = "ssh"
+
+
+class TestConfigFileSSH(_ConfigTests, unittest.TestCase):
+    """config_method="file" with transport="ssh"."""
+
+    config_method = "file"
+    transport = "ssh"
