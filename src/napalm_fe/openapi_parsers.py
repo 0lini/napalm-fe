@@ -24,17 +24,6 @@ LLDP_CAPABILITIES = {
 
 DEFAULT_VRF = "GlobalRouter"
 
-# Access levels of the six fixed accounts (ro, l1, l2, l3, rw, rwa) -> NAPALM
-# privilege level (0 - 15, like IOS: 15 = full access, 1 = read only)
-ACCOUNT_LEVELS = {
-    "READ_ONLY": 1,
-    "L1_LIMITED": 2,
-    "L2_LIMITED": 3,
-    "L3_LIMITED": 4,
-    "ADMIN_LIMITED": 14,
-    "ADMIN": 15,
-}
-
 
 def port_name(name: str) -> str:
     """API port name -> CLI / NAPALM name: ``1:2`` -> ``1/2`` (``cpp`` unchanged)."""
@@ -156,23 +145,6 @@ def ntp_servers(ntp: Dict) -> Dict[str, Dict]:
         for settings in ntp.get("vrBasedSettings", [])
         for server in settings.get("servers", [])
         if server.get("ipAddress", {}).get("address")
-    }
-
-
-def users(accounts: List[Dict]) -> Dict[str, Dict]:
-    """``configuration/accounts`` -> NAPALM users.
-
-    ``password`` is the encrypted secret as the switch stores it (like IOS
-    returns the hash); SSH keys are not in the API, so ``sshkeys`` is empty.
-    """
-    return {
-        account["username"]: {
-            "level": ACCOUNT_LEVELS.get(account.get("level", ""), 0),
-            "password": account.get("secret", {}).get("value", ""),
-            "sshkeys": [],
-        }
-        for account in accounts
-        if account.get("username")
     }
 
 

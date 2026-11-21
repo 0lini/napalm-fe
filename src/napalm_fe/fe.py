@@ -654,19 +654,6 @@ class FEDriver(NetworkDriver):
             "community": {},
         }
 
-    def get_users(self) -> Dict[str, models.UsersDict]:
-        """Return the user accounts (default and user defined, also disabled ones).
-
-        The access level is mapped to NAPALM's privilege level (``rwa`` 15,
-        ``rw`` 14, ``l3`` 4, ``l2`` 3, ``l1`` 2, ``ro`` 1). Only the https
-        transport returns ``password`` (the encrypted secret the switch
-        stores); ``show cli username`` shows no passwords. SSH keys are not
-        reported by either.
-        """
-        if self.transport == "https":
-            return openapi_parsers.users(self._api_get("/v0/configuration/accounts"))  # type: ignore[return-value]
-        return parsers.parse_cli_username(self._send_command("show cli username"))  # type: ignore[return-value]
-
     def get_config(
         self,
         retrieve: str = "all",
