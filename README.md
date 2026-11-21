@@ -88,7 +88,7 @@ instances, ping/traceroute, IPv6 neighbours.
 
 Configuration templates for `load_template()` (like NAPALM's drivers):
 `set_hostname`, `set_ntp_servers`, `delete_ntp_servers`, `snmp_config`,
-`delete_snmp_config`, see [docs/fe.rst](docs/fe.rst#available-configuration-templates).
+`delete_snmp_config`, `set_users`, `delete_users`, see [docs/fe.rst](docs/fe.rst#available-configuration-templates).
 
 Configuration (in the format of NAPALM's configuration support matrix):
 

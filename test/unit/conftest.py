@@ -129,6 +129,12 @@ class FakeOpenApiSession(BaseTestDouble):
             return output.split(" overwrite")[0] if "already existing" in output else ""
         return output
 
+    def post(self, path, body):
+        self.requests.append(f"POST {path} {body}")
+
+    def delete(self, path):
+        self.requests.append(f"DELETE {path}")
+
     def save_config(self, name=None):
         """POST operation/system/config/:save (no prompt, overwrites)."""
         self.saved.append(name)
@@ -163,6 +169,8 @@ class FakeFEDevice(BaseTestDouble):
         self.rebooted = False
         self.scheduled_reset = None
         self._pending = None
+        self._dialog = None
+        self.users = {}  # user defined accounts: name -> level
         # switch log: (code, message); the first entry is the boot
         self.log = [("0x00034594", "GlobalRouter SW INFO System boot")]
 
@@ -239,6 +247,8 @@ class FakeFEDevice(BaseTestDouble):
 
     def send_command_timing(self, command, **kwargs):
         self.commands.append(command)
+        if self._dialog:  # a password prompt takes the next input as the answer
+            return self._dialog(command)
         if command == "y" and self._pending:
             action, self._pending = self._pending, None
             return action()
@@ -257,6 +267,32 @@ class FakeFEDevice(BaseTestDouble):
 
             self._pending = copy
             return f"File [{dst}] already existing, overwrite (y/n) ? "
+        if command.startswith("username add "):
+            name, level = command.split()[2], command.split()[4]
+            if name in self.users:
+                return "Error: Failed to create user"
+            answers = []
+
+            def password(text):
+                self.commands[-1] = "<password>"  # never record the password
+                answers.append(text)
+                if len(answers) == 1:
+                    return "*" * len(text) + "\nRe-enter password : "  # real (9.4)
+                self._dialog = None
+                self.users[name] = level
+                return "*" * len(text)
+
+            self._dialog = password
+            return "Enter password : "  # real (9.4)
+        if command.startswith("no username "):
+            name = command.split()[2]
+
+            def delete_user():
+                self.users.pop(name, None)
+                return ""
+
+            self._pending = delete_user
+            return "The specified user name will be deleted! Continue (y/n) ? "  # real (9.4)
         if command.startswith("delete "):
             path = command.split()[1]
 
@@ -310,6 +346,9 @@ class FakeFEDevice(BaseTestDouble):
         return "\n".join(config_commands)
 
     def exit_config_mode(self, *args, **kwargs):
+        return ""
+
+    def config_mode(self, *args, **kwargs):
         return ""
 
     def save_config(self, *args, **kwargs):

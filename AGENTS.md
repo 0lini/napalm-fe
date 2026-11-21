@@ -265,8 +265,18 @@ interactively). `username <name> level <l>` (without `add`) renames the
 default account of that level after `Do you want to change username for the
 default RO user ? (y/n) ?`. `no username <name> enable` disables, `no
 username <name>` deletes after `The specified user name will be deleted!
-Continue (y/n) ?`. So no user templates (password prompt; the (y/n) would
-eat the next line over SSH, the API answers it itself).
+Continue (y/n) ?`. No `-y` / password argument (command reference 8.10 -
+9.2, Extreme KB 000081060); XIQ-SE's scripts answer the prompts in the CLI
+session. So `set_users` / `delete_users` are not configuration lines:
+`load_template` keeps them as `user_changes`, `commit_config` applies them -
+ssh: `_apply_user_change_ssh` answers the prompts (the password is only sent
+after `Enter password`), https: `POST configuration/accounts` (levels only
+READ_ONLY / ADMIN_LIMITED / ADMIN: 422 otherwise; 422 if the user exists or
+the password contains the name) and `DELETE configuration/accounts/{name}`
+(422 for default accounts). `PATCH` cannot change a password (every variant:
+"Invalid username or password"), only `enabled`. Verified on 9.4 for both
+transports. Still to check: whether new users survive a reboot without `save
+config`.
 
 Not implemented yet (NotImplementedError, skipped in tests): BGP,
 optics, route table, NTP stats/peers, network instances, ping/traceroute,

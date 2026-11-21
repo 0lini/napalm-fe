@@ -287,11 +287,12 @@ templates, verified on Fabric Engine 9.4:
 * :code:`delete_snmp_config` (same variables) - ``no snmp-server location``,
   ``no snmp-server contact``, ``no snmp-server community <community>``.
 
-There are no NTP peer, probe or user templates. Fabric Engine has no NTP
-peers. ``set_users`` / ``delete_users`` cannot be written as configuration
-lines that work on both transports: ``username add <name> level <level>
-enable`` asks for the password interactively, ``no username <name>`` asks
-(y/n) - over SSH the next line would be taken as the answer.
+* :code:`set_users` / :code:`delete_users` (``users``, NAPALM's
+  ``get_users`` model) - see `Users`_. They are not rendered to configuration
+  lines but applied by ``commit_config`` like ExtremeCloud IQ Site Engine
+  does it.
+
+There are no NTP peer or probe templates (no NTP peers on Fabric Engine).
 
 
 Users
@@ -305,6 +306,25 @@ mapped to NAPALM's privilege level: ``rwa`` 15, ``rw`` 14, ``l3`` 4, ``l2``
 3, ``l1`` 2, ``ro`` 1. Only ``https`` returns ``password`` (the encrypted
 secret the switch stores); the CLI shows no passwords. SSH keys are not
 reported (``sshkeys`` is empty).
+
+``load_template("set_users", users={...})`` / ``load_template("delete_users",
+users={...})`` change users; ``compare_config()`` shows the change (never the
+password), ``commit_config()`` applies it, ``discard_config()`` drops it:
+
+* ``set_users`` creates users: level 1 (``ro``), 14 (``rw``) or 15 (``rwa``)
+  - the levels Fabric Engine creates users with - and a password (it must
+  not contain the user name). An existing user is an error unless it already
+  has the requested level and no password is given: Fabric Engine cannot
+  change a password without the old one. SSH keys are not supported.
+* ``delete_users`` deletes user defined accounts; unknown users are skipped,
+  the default accounts cannot be deleted.
+
+``ssh`` answers the switch's prompts (``username add <name> level <l>
+enable`` asks the password twice, ``no username <name>`` asks (y/n)), as
+ExtremeCloud IQ Site Engine's scripts do. ``https`` uses
+``POST v0/configuration/accounts`` and ``DELETE
+v0/configuration/accounts/{name}``, never the CLI operation: a password
+prompt sent through it crashed a Fabric Engine 9.4 switch.
 
 
 Known gotchas
