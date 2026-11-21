@@ -1077,3 +1077,13 @@ def test_log_wait_gives_up(reboot_driver, monkeypatch, caplog):
     monkeypatch.setattr(fe.time, "sleep", lambda s: None)
     reboot_driver._wait_for_log(pending=True)
     assert "does not show the change yet" in caplog.text
+
+
+def test_commit_updates_the_prompt(driver):
+    """A new system name (prompt "...") changes the SSH prompt: Netmiko's base
+    prompt is updated after the commit, like the NX-OS driver does."""
+    prompts = []
+    driver.device.set_base_prompt = lambda: prompts.append(1)
+    driver.load_merge_candidate(config='prompt "sw1"')
+    driver.commit_config()
+    assert driver.device.sent_config == ['prompt "sw1"'] and prompts == [1]
