@@ -7,7 +7,7 @@ responses of Fabric Engine 9.4 (OpenAPI server 0.1.13.12, schema 0.2.0).
 
 from typing import Any, Dict, List
 
-from napalm_extreme_fe.parsers import parse_os_version
+from napalm_fe.parsers import parse_os_version
 
 # sysCapSupported / sysCapEnabled values -> NAPALM capability names (the CLI
 # path maps the letters of the same LLDP capabilities)
@@ -75,20 +75,6 @@ def lldp_neighbors_detail(lldp: Dict) -> Dict[str, List[Dict]]:
     return result
 
 
-def lldp_neighbors(lldp: Dict) -> Dict[str, List[Dict]]:
-    """``state/lldp`` -> ``{local port: [{"hostname", "port"}]}`` (like the CLI path)."""
-    return {
-        port: [
-            {
-                "hostname": n["remote_system_name"] or n["remote_chassis_id"],
-                "port": n["remote_port"],
-            }
-            for n in neighbors
-        ]
-        for port, neighbors in lldp_neighbors_detail(lldp).items()
-    }
-
-
 def arp_table(arp: List[Dict], vrf: str = "") -> List[Dict]:
     """``state/forwarding/ip-arp`` (all VRFs) -> the entries of one VRF.
 
@@ -115,11 +101,6 @@ def arp_table(arp: List[Dict], vrf: str = "") -> List[Dict]:
                 {"interface": interface, "mac": mac, "ip": entry.get("ipAddress", ""), "age": -1.0}
             )
     return entries
-
-
-def vrf_names(arp: List[Dict]) -> List[str]:
-    """VRF names in a ``state/forwarding/ip-arp`` response."""
-    return [table.get("vrName", "") for table in arp]
 
 
 def mac_address_table(fdb: List[Dict]) -> List[Dict]:

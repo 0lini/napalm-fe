@@ -10,9 +10,9 @@ from napalm.base.exceptions import (
     ConnectionException,
 )
 
-from napalm_extreme_fe import openapi
-from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
-from napalm_extreme_fe.openapi import OpenApiSession
+from napalm_fe import openapi
+from napalm_fe.fe import FEDriver
+from napalm_fe.openapi import OpenApiSession
 
 # Real error body (Fabric Engine 9.4): "debugLog" holds the decoded token
 VRF_ERROR = {
@@ -232,8 +232,8 @@ def test_driver_opens_only_the_api(monkeypatch):
         def close(self):
             opened.append("closed")
 
-    monkeypatch.setattr("napalm_extreme_fe.extreme_fe.OpenApiSession", Session)
-    driver = ExtremeFeDriver(
+    monkeypatch.setattr("napalm_fe.fe.OpenApiSession", Session)
+    driver = FEDriver(
         "192.0.2.10", "rwa", "secret", optional_args={"transport": "https", "ssl_verify": False}
     )
     driver.open()
@@ -254,9 +254,9 @@ def test_driver_opens_only_the_api(monkeypatch):
 
 
 def _api_driver(test, case="fabric_engine_9.4_openapi"):
-    from .conftest import PatchedExtremeFeDriver
+    from .conftest import PatchedFEDriver
 
-    driver = PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "https"})
+    driver = PatchedFEDriver("h", "u", "p", optional_args={"transport": "https"})
     for attr in ("device", "api"):
         getattr(driver, attr).current_test = test
         getattr(driver, attr).current_test_case = case
@@ -282,7 +282,7 @@ def test_arp_vrf_case_and_unknown_vrf():
 
 
 def test_driver_without_connection():
-    driver = ExtremeFeDriver("192.0.2.10", "rwa", "secret", optional_args={"transport": "https"})
+    driver = FEDriver("192.0.2.10", "rwa", "secret", optional_args={"transport": "https"})
     with pytest.raises(ConnectionClosedException):
         driver._api_get("/v0/state/system")
     with pytest.raises(ConnectionClosedException):

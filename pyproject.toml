@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "napalm-extreme-fe"
+name = "napalm-fe"
 version = "0.1.0"
 description = "NAPALM community driver for Extreme Networks Fabric Engine (formerly VOSS)"
 readme = "README.md"
@@ -44,16 +44,16 @@ Changelog = "https://github.com/0lini/napalm-fe/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["napalm_extreme_fe*"]
+include = ["napalm_fe*"]
 
 [tool.setuptools.package-data]
-napalm_extreme_fe = ["py.typed"]
+napalm_fe = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
 
 [tool.coverage.run]
-source = ["napalm_extreme_fe"]
+source = ["napalm_fe"]
 
 [tool.coverage.report]
 fail_under = 85

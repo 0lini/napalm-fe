@@ -1,7 +1,7 @@
 Extreme Fabric Engine
 ---------------------
 
-Caveats of the ``extreme_fe`` community driver for Extreme Networks Fabric
+Caveats of the ``fe`` community driver for Extreme Networks Fabric
 Engine (formerly VOSS), in the format of NAPALM's driver caveats
 (``docs/support/<driver>.rst``).
 
@@ -62,7 +62,7 @@ The transport argument
 ______________________
 
 =============== ======================================
-_               extreme_fe
+_               fe
 =============== ======================================
 **Default**     ``ssh``
 **Supported**   ``https``, ``ssh``

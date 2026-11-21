@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import tempfile
+import time
 from typing import Any, Dict, List, Optional, Union
 
 from napalm.base import NetworkDriver, models
@@ -26,10 +27,10 @@ from napalm.base.helpers import sanitize_configs
 from napalm.base.netmiko_helpers import netmiko_args
 from netmiko.exceptions import ConfigInvalidException
 
-from napalm_extreme_fe import openapi_parsers, parsers
-from napalm_extreme_fe.file_transfer import ExtremeFeFileTransfer, parse_dir
-from napalm_extreme_fe.openapi import DEFAULT_PORT as DEFAULT_HTTPS_PORT
-from napalm_extreme_fe.openapi import OpenApiSession
+from napalm_fe import openapi_parsers, parsers
+from napalm_fe.file_transfer import ExtremeVspFileTransfer, parse_dir
+from napalm_fe.openapi import DEFAULT_PORT as DEFAULT_HTTPS_PORT
+from napalm_fe.openapi import OpenApiSession
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,10 @@ EVENT_RESET_SCHEDULED = "0x0003068e"  # Scheduled reset enabled! Unit will reset
 EVENT_RESET_CANCELED = "0x0003068f"  # Scheduled reset canceled!
 EVENT_SYSTEM_BOOT = "0x00034594"  # System boot
 
+# The switch writes these log entries a few seconds after the command (9.4:
+# up to ~5 s through the API); seconds to wait until the log shows the change.
+LOG_DELAY = 30
+
 # Output that shows that the CLI rejected a command. Fabric Engine 9.4 also
 # reports errors as e.g. "Error: The community entry already exists." (no
 # "%"), sometimes after a BEL ("\x07Error: The specified VLAN ID is invalid or
@@ -105,10 +110,10 @@ SANITIZE_FILTERS = {
 }
 
 
-class ExtremeFeDriver(NetworkDriver):
+class FEDriver(NetworkDriver):
     """NAPALM driver for Extreme Networks Fabric Engine."""
 
-    platform = "extreme_fe"
+    platform = "fe"
 
     def __init__(
         self,
@@ -301,12 +306,15 @@ class ExtremeFeDriver(NetworkDriver):
         https: through the CLI operation, which confirms (y/n) questions
         itself (Fabric Engine 9.4: ``copy`` overwrites an existing file and
         only echoes ``File [...] already existing,``; ``delete`` and ``reset
-        -in`` print nothing), so ``_confirm`` never has to answer.
+        -in`` print nothing), so ``_confirm`` never has to answer. Log messages
+        printed into the session (they may follow a prompt) are removed.
         """
         if self.transport == "https":
             logger.debug("%s: sending %r (API)", self.hostname, command)
-            return self._api().cli([command])[0]
-        return str(self._ssh().send_command_timing(command, read_timeout=self.timeout))
+            output = self._api().cli([command])[0]
+        else:
+            output = str(self._ssh().send_command_timing(command, read_timeout=self.timeout))
+        return LOG_MESSAGE_RE.sub("", output)
 
     def _send_config(self, lines: List[str]) -> str:
         """Send lines in configuration mode; stop at the first rejected line.
@@ -339,16 +347,15 @@ class ExtremeFeDriver(NetworkDriver):
         """
         commands = ["configure terminal", *lines, "end"]
         outputs = self._api().cli(commands, continue_on_failure=False)
-        transcript = "\n".join(
-            f"{c}\n{o}".rstrip() for c, o in zip(commands, outputs, strict=False)
-        )
-        for command, output in zip(commands, outputs, strict=False):
-            if self._has_cli_error(output):
-                raise ConfigInvalidException(
-                    f"Invalid input detected at command: {command}\n{transcript}"
-                )
+        ran = list(zip(commands, outputs, strict=False))
+        transcript = "\n".join(f"{c}\n{o}".rstrip() for c, o in ran)
+        failed = next((c for c, o in ran if self._has_cli_error(o)), None)
+        if failed:
+            raise ConfigInvalidException(
+                f"Invalid input detected at command: {failed}\n{transcript}"
+            )
         if len(outputs) < len(commands):
-            last = commands[len(outputs) - 1] if outputs else commands[0]
+            last = ran[-1][0] if ran else commands[0]
             raise ConfigInvalidException(
                 f"The switch skipped the commands after: {last}\n{transcript}"
             )
@@ -555,46 +562,41 @@ class ExtremeFeDriver(NetworkDriver):
         return parsers.parse_interface_counters(output)
 
     def get_lldp_neighbors(self) -> Dict[str, List[models.LLDPNeighborDict]]:
-        """Return LLDP neighbors."""
-        if self.transport == "https":
-            return openapi_parsers.lldp_neighbors(self._api_get("/v0/state/lldp"))  # type: ignore[return-value]
-        result: Dict[str, List[models.LLDPNeighborDict]] = {}
-        for raw in parsers.parse_lldp_neighbors(self._send_command("show lldp neighbor")):
-            detail = parsers.lldp_neighbor_to_napalm(raw)
-            result.setdefault(raw["local_port"], []).append(
+        """Return LLDP neighbors (the system name, or the chassis ID without one)."""
+        return {
+            port: [
                 {
-                    "hostname": detail["remote_system_name"] or detail["remote_chassis_id"],
-                    "port": detail["remote_port"],
+                    "hostname": n["remote_system_name"] or n["remote_chassis_id"],
+                    "port": n["remote_port"],
                 }
-            )
-        return result
+                for n in neighbors
+            ]
+            for port, neighbors in self.get_lldp_neighbors_detail().items()
+        }
 
     def get_lldp_neighbors_detail(self, interface: str = "") -> models.LLDPNeighborsDetailDict:
         """Return detailed LLDP neighbor information."""
+        detail: Dict[str, List] = {}
         if self.transport == "https":
             detail = openapi_parsers.lldp_neighbors_detail(self._api_get("/v0/state/lldp"))
-            if interface:
-                detail = {port: n for port, n in detail.items() if port == interface}
-            return detail  # type: ignore[return-value]
-        command = "show lldp neighbor"
+        else:
+            command = f"show lldp neighbor port {interface}" if interface else "show lldp neighbor"
+            for raw in parsers.parse_lldp_neighbors(self._send_command(command)):
+                detail.setdefault(raw["local_port"], []).append(
+                    parsers.lldp_neighbor_to_napalm(raw)
+                )
         if interface:
-            command += f" port {interface}"
-        result: models.LLDPNeighborsDetailDict = {}
-        for raw in parsers.parse_lldp_neighbors(self._send_command(command)):
-            if interface and raw["local_port"] != interface:
-                continue
-            result.setdefault(raw["local_port"], []).append(parsers.lldp_neighbor_to_napalm(raw))
-        return result
+            detail = {port: n for port, n in detail.items() if port == interface}
+        return detail  # type: ignore[return-value]
 
     def get_arp_table(self, vrf: str = "") -> List[models.ARPTableDict]:
         """Return the ARP table, optionally for a given VRF."""
         if self.transport == "https":
             # all VRFs in one response; vr_name=... would be case-sensitive
             arp = self._api_get("/v0/state/forwarding/ip-arp")
-            names = openapi_parsers.vrf_names(arp)
-            if vrf and vrf.lower() not in (n.lower() for n in names):
-                configured = [v.get("name", "") for v in self._api_get("/v0/configuration/vrf")]
-                if vrf.lower() not in (n.lower() for n in configured):
+            if vrf and vrf.lower() not in {t.get("vrName", "").lower() for t in arp}:
+                configured = self._api_get("/v0/configuration/vrf")
+                if vrf.lower() not in {v.get("name", "").lower() for v in configured}:
                     raise CommandErrorException(f"VRF {vrf!r} does not exist")
             return openapi_parsers.arp_table(arp, vrf)  # type: ignore[return-value]
         command = "show ip arp"
@@ -709,13 +711,8 @@ class ExtremeFeDriver(NetworkDriver):
             candidate = self._read_candidate(filename, config)
         except (OSError, ValueError) as exc:
             raise MergeConfigException(str(exc)) from exc
-        lines = [
-            line.rstrip()
-            for line in candidate.splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]
         self.config_replace = False
-        self.candidate_config = "\n".join(lines)
+        self.candidate_config = "\n".join(parsers.config_lines(candidate))
         if self.config_method == "file":
             try:
                 self._upload_config(self.candidate_config, self.merge_cfg)
@@ -755,7 +752,7 @@ class ExtremeFeDriver(NetworkDriver):
         try:
             with os.fdopen(handle, "w") as tmp:
                 tmp.write(content + "\n")
-            with ExtremeFeFileTransfer(
+            with ExtremeVspFileTransfer(
                 ssh_conn=self._ssh(),
                 source_file=tmp_file,
                 dest_file=dest_file,
@@ -895,6 +892,7 @@ class ExtremeFeDriver(NetworkDriver):
             raise CommitConfirmException(f"Could not schedule the revert reset:\n{output}")
         self.pending_revert = True
         logger.info("%s: revert reset scheduled in %s", self.hostname, revert_time)
+        self._wait_for_log(pending=True)
 
     def has_pending_commit(self) -> bool:
         """Whether a reset is scheduled on the switch (like IOS, asks the switch).
@@ -906,23 +904,19 @@ class ExtremeFeDriver(NetworkDriver):
         the switch, which logs "System boot"). So a commit with ``revert_in``
         made by another session is found too.
         """
-        latest = {}
-        for code in (EVENT_RESET_SCHEDULED, EVENT_RESET_CANCELED, EVENT_SYSTEM_BOOT):
-            latest[code] = parsers.latest_log_time(
-                self._send_command(f"show logging file event-code {code}")
-            )
-        scheduled = latest[EVENT_RESET_SCHEDULED]
+        scheduled, canceled, booted = (
+            parsers.latest_log_time(self._send_command(f"show logging file event-code {code}"))
+            for code in (EVENT_RESET_SCHEDULED, EVENT_RESET_CANCELED, EVENT_SYSTEM_BOOT)
+        )
         if scheduled is None:
             return False
-        others = [t for c, t in latest.items() if c != EVENT_RESET_SCHEDULED and t]
-        return all(scheduled > other for other in others)
+        return all(scheduled > other for other in (canceled, booted) if other)
 
     def confirm_commit(self) -> None:
         """Cancel the scheduled revert reset and save the configuration."""
         if not (self.pending_revert or self.has_pending_commit()):
             raise CommitConfirmException("No pending configuration")
         output = self._send_command_timing("reset -cancel")
-        output = LOG_MESSAGE_RE.sub("", output)
         self.pending_revert = False
         if re.search(r"No ongoing scheduled reset", output, re.I):
             raise CommitConfirmException(
@@ -934,7 +928,23 @@ class ExtremeFeDriver(NetworkDriver):
             raise CommitConfirmException(
                 f"Could not confirm that the revert reset was cancelled:\n{output.strip()}"
             )
+        self._wait_for_log(pending=False)
         self._copy_run_start(CommitConfirmException)
+
+    def _wait_for_log(self, pending: bool) -> None:
+        """Wait until ``has_pending_commit()`` shows the reset just (un)scheduled.
+
+        The switch logs "Scheduled reset enabled / canceled" a few seconds
+        after the command; without waiting, ``has_pending_commit()`` right
+        after a commit or confirm would still report the old state. The
+        command itself succeeded, so a timeout is only logged.
+        """
+        deadline = time.monotonic() + LOG_DELAY
+        while self.has_pending_commit() != pending:
+            if time.monotonic() > deadline:
+                logger.warning("%s: the switch log does not show the change yet", self.hostname)
+                return
+            time.sleep(1)
 
     def _gen_rollback_cfg(self, exc_class: type = MergeConfigException) -> None:
         """Save the running config to ``rollback_cfg`` (like the IOS driver)."""
@@ -994,11 +1004,9 @@ class ExtremeFeDriver(NetworkDriver):
         e.g. ``copy`` to an existing file asks
         ``File [/intflash/test2.cfg] already existing, overwrite (y/n) ?``
         """
-        # a log message may arrive after the prompt: remove it before looking
-        output = LOG_MESSAGE_RE.sub("", self._send_command_timing(command))
+        output = self._send_command_timing(command)
         if re.search(r"\(y/n\)", output):
-            answer = self._send_command_timing("y")
-            output += LOG_MESSAGE_RE.sub("", answer)
+            output += self._send_command_timing("y")
         return output
 
     def _file_exists(self, path: str) -> bool:
@@ -1067,7 +1075,3 @@ class ExtremeFeDriver(NetworkDriver):
             return
         if self._has_cli_error(output) or re.search(r"can't|cannot|fail", output, re.I):
             logger.warning("%s: could not delete %s: %s", self.hostname, path, output.strip())
-
-
-# Name up to 0.1.0, kept so that existing imports keep working
-ExtremeFEDriver = ExtremeFeDriver

@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from napalm_extreme_fe import parsers
+from napalm_fe import parsers
 
 
 @pytest.mark.parametrize(

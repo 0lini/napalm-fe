@@ -207,26 +207,17 @@ def _rows_of(output: str, title: str) -> List[str]:
     """Rows of the tables titled ``title``; all rows if no table has a title."""
     tables = list(iter_tables(output))
     if any(t[0] for t in tables):
-        tables = tables_by_title(output, title)
-    rows: List[str] = []
-    for _, _, data in tables:
-        rows.extend(data)
-    return rows
+        tables = [t for t in tables if t[0].lower() == title.lower()]
+    return [row for _, _, data in tables for row in data]
 
 
 def table_rows(output: str) -> List[str]:
     """Return the data lines of every table in ``output``."""
-    rows: List[str] = []
-    for _, _, data in iter_tables(output):
-        rows.extend(data)
-    return rows
+    return [row for _, _, data in iter_tables(output) for row in data]
 
 
-def parse_key_value(output: str) -> Dict[str, str]:
-    """Parse ``Key : Value`` style output (e.g. ``show sys-info``).
-
-    The first occurrence of a key wins.
-    """
+def parse_sys_info(output: str) -> Dict[str, str]:
+    """Parse ``show sys-info`` (``Key : Value`` lines; the first occurrence wins)."""
     result: Dict[str, str] = {}
     for line in output.splitlines():
         match = re.match(r"^\s*([^:]+?)\s*:\s?(.*)$", line)
@@ -304,11 +295,6 @@ def netmask_to_prefixlen(netmask: str) -> int:
 # --------------------------------------------------------------------------
 # Command specific parsers
 # --------------------------------------------------------------------------
-
-
-def parse_sys_info(output: str) -> Dict[str, str]:
-    """Parse ``show sys-info``."""
-    return parse_key_value(output)
 
 
 def parse_os_version(sys_descr: str) -> str:
@@ -470,12 +456,7 @@ def _parse_lldp_capabilities(raw: str) -> Tuple[List[str], List[str]]:
         supported = enabled = raw
 
     def _letters(value: str) -> List[str]:
-        caps = []
-        for letter in value:
-            cap = LLDP_CAPABILITIES.get(letter)
-            if cap and cap not in caps:
-                caps.append(cap)
-        return sorted(caps)
+        return sorted({LLDP_CAPABILITIES[c] for c in value if c in LLDP_CAPABILITIES})
 
     return _letters(supported), _letters(enabled)
 
@@ -644,12 +625,7 @@ def parse_vlan_members(output: str) -> Dict[int, List[str]]:
 
 def parse_ntp_servers(running_config: str) -> List[str]:
     """Extract configured NTP servers from the running configuration."""
-    servers: List[str] = []
-    for line in running_config.splitlines():
-        match = re.match(r"^\s*ntp server (\S+)", line)
-        if match and match.group(1) not in servers:
-            servers.append(match.group(1))
-    return servers
+    return list(dict.fromkeys(re.findall(r"^\s*ntp server (\S+)", running_config, re.M)))
 
 
 def split_sections(output: str) -> Dict[str, List[str]]:
@@ -879,7 +855,7 @@ def merge_diff(running_config: str, candidate: str) -> str:
     return "\n".join(diff)
 
 
-def _config_lines(config: str) -> List[str]:
+def config_lines(config: str) -> List[str]:
     """Configuration lines without comments and blank lines."""
     return [
         line.rstrip()
@@ -891,10 +867,10 @@ def _config_lines(config: str) -> List[str]:
 def replace_diff(running_config: str, candidate: str) -> str:
     """Line diff for a replace: ``-line`` (removed) / ``+line`` (added).
 
-    ``running_config`` without banners (``ExtremeFeDriver._clean_config``).
+    ``running_config`` without banners (``FEDriver._clean_config``).
     """
     diff = difflib.unified_diff(
-        _config_lines(running_config), _config_lines(candidate), lineterm="", n=0
+        config_lines(running_config), config_lines(candidate), lineterm="", n=0
     )
     return "\n".join(line for line in diff if not line.startswith(("---", "+++", "@@")))
 

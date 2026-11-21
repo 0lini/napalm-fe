@@ -9,7 +9,7 @@ import pytest
 from napalm.base.test import conftest as parent_conftest
 from napalm.base.test.double import BaseTestDouble
 
-from napalm_extreme_fe import extreme_fe
+from napalm_fe import fe
 
 
 @pytest.fixture(scope="class")
@@ -21,9 +21,9 @@ def set_device_parameters(request):
 
     request.addfinalizer(fin)
 
-    request.cls.driver = extreme_fe.ExtremeFeDriver
-    request.cls.patched_driver = PatchedExtremeFeDriver
-    request.cls.vendor = "extreme_fe"
+    request.cls.driver = fe.FEDriver
+    request.cls.patched_driver = PatchedFEDriver
+    request.cls.vendor = "fe"
     # like parent_conftest.set_device_parameters, with the transport of the class
     driver = request.cls.patched_driver if parent_conftest.NAPALM_TEST_MOCK else request.cls.driver
     request.cls.device = driver(
@@ -55,13 +55,13 @@ def pytest_generate_tests(metafunc):
     metafunc.parametrize("test_case", cases)
 
 
-class PatchedExtremeFeDriver(extreme_fe.ExtremeFeDriver):
+class PatchedFEDriver(fe.FEDriver):
     """Driver whose SSH session (and OpenAPI session) is replaced by a fake."""
 
     def __init__(self, hostname, username, password, timeout=60, optional_args=None):
         super().__init__(hostname, username, password, timeout, optional_args)
         self.patched_attrs = ["device"]
-        self.device = FakeExtremeFeDevice()
+        self.device = FakeFEDevice()
         if self.transport == "https":
             self.patched_attrs.append("api")
             self.api = FakeOpenApiSession(self.device)
@@ -144,7 +144,7 @@ class _FakeRemoteConn:
     transport = _FakeTransport()
 
 
-class FakeExtremeFeDevice(BaseTestDouble):
+class FakeFEDevice(BaseTestDouble):
     """Netmiko replacement.
 
     ``show`` commands return the content of the mocked_data files. File and

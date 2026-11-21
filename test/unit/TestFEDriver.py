@@ -5,7 +5,7 @@ start with ``test_``, so the normal test run (and CI) does not collect it.
 Run it explicitly against a LAB switch::
 
     NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<password> \\
-    NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestExtremeFeDriver.py
+    NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestFEDriver.py
 
 Every test runs for both transports (``https``, ``ssh``) and both
 ``config_method`` values. ``NAPALM_OPTIONAL_ARGS`` must not set ``port``
@@ -23,9 +23,9 @@ import unittest
 
 from napalm.base import exceptions
 
-from napalm_extreme_fe import ExtremeFeDriver
+from napalm_fe import FEDriver
 
-FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extreme_fe")
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fe")
 
 
 def read_file(name):
@@ -38,7 +38,7 @@ class _ConfigTests:
 
     config_method = "cli"
     transport = "https"
-    device: ExtremeFeDriver
+    device: FEDriver
     original_location: str
 
     @classmethod
@@ -50,7 +50,7 @@ class _ConfigTests:
         optional_args.update(
             {"transport": cls.transport, "config_method": cls.config_method, "save_config": False}
         )
-        cls.device = ExtremeFeDriver(
+        cls.device = FEDriver(
             hostname,
             os.environ["NAPALM_USERNAME"],
             os.environ["NAPALM_PASSWORD"],

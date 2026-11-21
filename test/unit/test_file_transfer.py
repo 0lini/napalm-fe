@@ -5,7 +5,7 @@ import hashlib
 import pytest
 from scp import SCPException
 
-from napalm_extreme_fe.file_transfer import ExtremeFeFileTransfer, parse_dir, parse_dir_free
+from napalm_fe.file_transfer import ExtremeVspFileTransfer, parse_dir, parse_dir_free
 
 # Real output of "dir /intflash -l" (Fabric Engine 9.4 VM, trimmed)
 DIR_INTFLASH = """\
@@ -108,32 +108,32 @@ class FakeSCPConn:
 
 def test_put_file_without_final_ack(local_file):
     """Fabric Engine 9.3 writes the file but does not acknowledge it."""
-    transfer = ExtremeFeFileTransfer(FakeConn(), source_file=local_file, dest_file="a.cfg")
+    transfer = ExtremeVspFileTransfer(FakeConn(), source_file=local_file, dest_file="a.cfg")
     transfer.scp_conn = FakeSCPConn(SCPException("No response from server"))
     transfer.put_file()  # no error: verify_file() checks the result
     assert transfer.scp_conn.closed
 
 
 def test_put_file_other_scp_errors_raise(local_file):
-    transfer = ExtremeFeFileTransfer(FakeConn(), source_file=local_file, dest_file="a.cfg")
+    transfer = ExtremeVspFileTransfer(FakeConn(), source_file=local_file, dest_file="a.cfg")
     transfer.scp_conn = FakeSCPConn(SCPException("scp: /intflash/a.cfg: Permission denied"))
     with pytest.raises(SCPException, match="Permission denied"):
         transfer.put_file()
 
 
 def test_process_md5_real_output():
-    assert ExtremeFeFileTransfer.process_md5(MD5_OUTPUT) == "5a922729bc0fa85437e7e3b8c339ea34"
+    assert ExtremeVspFileTransfer.process_md5(MD5_OUTPUT) == "5a922729bc0fa85437e7e3b8c339ea34"
     # Fabric Engine 9.4 VM, test1.cfg from DIR_INTFLASH
     vm_output = "MD5 (/intflash/test1.cfg) = 1ea7d1fb127766a9b2b25e86e46ed21d\n"
-    assert ExtremeFeFileTransfer.process_md5(vm_output) == "1ea7d1fb127766a9b2b25e86e46ed21d"
+    assert ExtremeVspFileTransfer.process_md5(vm_output) == "1ea7d1fb127766a9b2b25e86e46ed21d"
     # Fabric Engine 9.3 VM, napalm_merge.cfg from DIR_INTFLASH_9_3
     output_9_3 = "MD5 (/intflash/napalm_merge.cfg) = 8b39bbca1591945c2ddecb77063db158\n"
-    assert ExtremeFeFileTransfer.process_md5(output_9_3) == "8b39bbca1591945c2ddecb77063db158"
+    assert ExtremeVspFileTransfer.process_md5(output_9_3) == "8b39bbca1591945c2ddecb77063db158"
 
 
 def test_file_exists_size_and_md5(local_file):
     conn = FakeConn(md5_output=f"MD5 (/intflash/test1.cfg) = {LOCAL_MD5}")
-    transfer = ExtremeFeFileTransfer(conn, source_file=local_file, dest_file="test1.cfg")
+    transfer = ExtremeVspFileTransfer(conn, source_file=local_file, dest_file="test1.cfg")
     assert transfer.file_system == "/intflash"
     assert transfer.check_file_exists()
     assert transfer.remote_file_size() == 9852
@@ -144,19 +144,19 @@ def test_file_exists_size_and_md5(local_file):
 
 
 def test_directory_is_not_a_file(local_file):
-    transfer = ExtremeFeFileTransfer(FakeConn(), source_file=local_file, dest_file="config")
+    transfer = ExtremeVspFileTransfer(FakeConn(), source_file=local_file, dest_file="config")
     assert not transfer.check_file_exists()
 
 
 def test_md5_mismatch(local_file):
     conn = FakeConn(md5_output="MD5 (/intflash/test1.cfg) = " + "0" * 32)
-    transfer = ExtremeFeFileTransfer(conn, source_file=local_file, dest_file="test1.cfg")
+    transfer = ExtremeVspFileTransfer(conn, source_file=local_file, dest_file="test1.cfg")
     assert not transfer.verify_file()
 
 
 def test_size_only_without_hash(local_file):
     conn = FakeConn()
-    transfer = ExtremeFeFileTransfer(
+    transfer = ExtremeVspFileTransfer(
         conn, source_file=local_file, dest_file="test1.cfg", hash_supported=False
     )
     assert transfer.verify_file()
@@ -164,7 +164,7 @@ def test_size_only_without_hash(local_file):
 
 
 def test_file_missing(local_file):
-    transfer = ExtremeFeFileTransfer(FakeConn(), source_file=local_file, dest_file="missing.cfg")
+    transfer = ExtremeVspFileTransfer(FakeConn(), source_file=local_file, dest_file="missing.cfg")
     assert not transfer.check_file_exists()
     assert not transfer.verify_file()
     with pytest.raises(IOError):
@@ -172,7 +172,7 @@ def test_file_missing(local_file):
 
 
 def test_md5_unparsable(local_file):
-    transfer = ExtremeFeFileTransfer(
+    transfer = ExtremeVspFileTransfer(
         FakeConn(md5_output="% Error"), source_file=local_file, dest_file="a.cfg"
     )
     with pytest.raises(ValueError):
@@ -181,7 +181,7 @@ def test_md5_unparsable(local_file):
 
 def test_remote_space_available_real_dir(local_file):
     conn = FakeConn()
-    transfer = ExtremeFeFileTransfer(conn, source_file=local_file, dest_file="a.cfg")
+    transfer = ExtremeVspFileTransfer(conn, source_file=local_file, dest_file="a.cfg")
     assert transfer.remote_space_available() == 6058450944
     assert transfer.verify_space_available()
     assert conn.commands[-1] == "dir /intflash -l"
@@ -189,7 +189,7 @@ def test_remote_space_available_real_dir(local_file):
 
 def test_insufficient_space(local_file):
     full = "total: 6260543488       used: 6260540000         free: 3488        bytes\n"
-    transfer = ExtremeFeFileTransfer(
+    transfer = ExtremeVspFileTransfer(
         FakeConn(dir_output=full), source_file=local_file, dest_file="a.cfg"
     )
     assert not transfer.verify_space_available()  # 9852 bytes do not fit
@@ -197,7 +197,7 @@ def test_insufficient_space(local_file):
 
 def test_space_unknown_raises(local_file):
     """Like Netmiko's Cisco implementation: unreadable free space is an error."""
-    transfer = ExtremeFeFileTransfer(
+    transfer = ExtremeVspFileTransfer(
         FakeConn(dir_output="% Invalid input"), source_file=local_file, dest_file="a.cfg"
     )
     with pytest.raises(ValueError):
@@ -208,7 +208,7 @@ def test_space_unknown_raises(local_file):
 
 def test_space_on_usb(local_file):
     conn = FakeConn()
-    transfer = ExtremeFeFileTransfer(
+    transfer = ExtremeVspFileTransfer(
         conn, source_file=local_file, dest_file="a.cfg", file_system="/usb"
     )
     assert transfer.verify_space_available()

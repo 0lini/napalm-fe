@@ -1,4 +1,4 @@
-# napalm-extreme-fe
+# napalm-fe
 
 [NAPALM](https://github.com/napalm-automation/napalm) community driver for
 **Extreme Networks Fabric Engine** (formerly VOSS, the VSP Operating System
@@ -13,7 +13,7 @@ cannot do: uploading files (SCP).
 
 Tested (GNS3 VMs): Fabric Engine 9.1, 9.2, 9.3, 9.3.1 and 9.4 over SSH, 9.3.1
 and 9.4 over `https`; VOSS 8.10 works over SSH with paramiko 3.x. Details in
-[docs/extreme_fe.rst](docs/extreme_fe.rst#minimum-version).
+[docs/fe.rst](docs/fe.rst#minimum-version).
 
 > **Status: beta.** The getters are tested against real device output (see
 > `test/unit/mocked_data/`). Output formats can differ between releases - if
@@ -21,13 +21,13 @@ and 9.4 over `https`; VOSS 8.10 works over SSH with paramiko 3.x. Details in
 > CLI output (see [Reporting parsing problems](#reporting-parsing-problems)).
 
 Caveats, the optional arguments and what uses the API or SSH are in
-[docs/extreme_fe.rst](docs/extreme_fe.rst) (same format as NAPALM's driver
+[docs/fe.rst](docs/fe.rst) (same format as NAPALM's driver
 caveats).
 
 ## Installation
 
 ```bash
-pip install napalm-extreme-fe
+pip install napalm-fe
 ```
 
 Requires Python 3.10+, NAPALM 5 and Netmiko 4.
@@ -46,7 +46,7 @@ openapi local-mgmt enable
 ```python
 from napalm import get_network_driver
 
-driver = get_network_driver("extreme_fe")
+driver = get_network_driver("fe")
 with driver("192.0.2.10", "admin", "secret") as device:  # ssh, port 22
     print(device.get_facts())
     print(device.get_lldp_neighbors())
@@ -60,7 +60,7 @@ with driver("192.0.2.10", "admin", "secret", optional_args={"transport": "https"
     print(device.get_facts())
 ```
 
-Optional arguments (details in [docs/extreme_fe.rst](docs/extreme_fe.rst#optional-arguments)):
+Optional arguments (details in [docs/fe.rst](docs/fe.rst#optional-arguments)):
 
 | Argument              | Default                | Description |
 |-----------------------|------------------------|-------------|
@@ -87,7 +87,7 @@ instances, ping/traceroute, IPv6 neighbours.
 
 Configuration (in the format of NAPALM's configuration support matrix):
 
-| _                     | extreme_fe |
+| _                     | fe |
 |-----------------------|------------|
 | **Config. replace**   | Yes [1] |
 | **Config. merge**     | Yes |
@@ -100,12 +100,12 @@ Configuration (in the format of NAPALM's configuration support matrix):
    ExtremeCloud IQ Site Engine; requires `allow_reboot=True`.
 2. Hand-crafted by the driver: Fabric Engine has no on-box diff.
 
-See [docs/extreme_fe.rst](docs/extreme_fe.rst) for the commands and API
+See [docs/fe.rst](docs/fe.rst) for the commands and API
 endpoints per method and what still needs SSH.
 
 ### File transfer
 
-`napalm_extreme_fe.file_transfer.ExtremeFeFileTransfer` implements Netmiko's
+`napalm_fe.file_transfer.ExtremeVspFileTransfer` implements Netmiko's
 `BaseFileTransfer` interface for Fabric Engine (SCP via the SSH server,
 `dir <directory> -l` for existence, size and free space, `file-checksum md5` to
 verify transfers). It is written so that it can be contributed to Netmiko as-is.
@@ -114,7 +114,7 @@ verify transfers). It is written so that it can be contributed to Netmiko as-is.
 
 Please open an issue with the Fabric Engine release and the raw output of the
 command that does not parse (the commands per getter are listed in
-[docs/extreme_fe.rst](docs/extreme_fe.rst#where-the-data-comes-from)). Remove
+[docs/fe.rst](docs/fe.rst#where-the-data-comes-from)). Remove
 anything sensitive (hostnames, IP addresses, serial numbers, keys) first.
 
 ## Development
@@ -136,12 +136,12 @@ Tests are organised like NAPALM's IOS driver tests:
   hand-written.
 - `test/unit/test_parsers.py`, `test_config.py` and `test_file_transfer.py`
   are unit tests for parsers, configuration management and file transfer.
-- `test/unit/TestExtremeFeDriver.py` runs configuration tests against a live
+- `test/unit/TestFEDriver.py` runs configuration tests against a live
   lab switch (like `TestIOSDriver.py`); it is not part of the normal test run:
 
   ```bash
   NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<password> \
-  NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestExtremeFeDriver.py
+  NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestFEDriver.py
   ```
 
 Releases: bump `version` in `pyproject.toml`, update `CHANGELOG.md`, push a tag

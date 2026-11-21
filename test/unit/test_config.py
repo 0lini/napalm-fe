@@ -6,12 +6,12 @@ import pytest
 from napalm.base.exceptions import MergeConfigException, ReplaceConfigException
 from netmiko.exceptions import ConfigInvalidException
 
-from .conftest import PatchedExtremeFeDriver
+from .conftest import PatchedFEDriver
 
 
 @pytest.fixture
 def driver():
-    driver = PatchedExtremeFeDriver("host", "user", "pass", optional_args={"transport": "ssh"})
+    driver = PatchedFEDriver("host", "user", "pass", optional_args={"transport": "ssh"})
     # compare_config() reads the running config of the real Fabric Engine 9.4 capture
     driver.device.current_test = "test_get_config"
     driver.device.current_test_case = "fabric_engine_9.4"
@@ -119,7 +119,7 @@ def test_commit_no_save(driver):
 def test_netmiko_device_type():
     from netmiko.ssh_dispatcher import CLASS_MAPPER
 
-    from napalm_extreme_fe.extreme_fe import NETMIKO_DEVICE_TYPE
+    from napalm_fe.fe import NETMIKO_DEVICE_TYPE
 
     assert NETMIKO_DEVICE_TYPE in CLASS_MAPPER
 
@@ -154,11 +154,11 @@ class FakeTransfer:
 
 
 def _make_driver(monkeypatch, **optional_args):
-    from napalm_extreme_fe import extreme_fe
+    from napalm_fe import fe
 
     FakeTransfer.instances = []
-    monkeypatch.setattr(extreme_fe, "ExtremeFeFileTransfer", FakeTransfer)
-    driver = PatchedExtremeFeDriver(
+    monkeypatch.setattr(fe, "ExtremeVspFileTransfer", FakeTransfer)
+    driver = PatchedFEDriver(
         "host", "user", "pass", optional_args={"transport": "ssh", **optional_args}
     )
     # compare_config() reads the running config of the real Fabric Engine 9.4 capture
@@ -207,7 +207,7 @@ def test_file_method_source_error(file_driver):
 
 def test_invalid_config_method():
     with pytest.raises(ValueError):
-        PatchedExtremeFeDriver("host", "user", "pass", optional_args={"config_method": "x"})
+        PatchedFEDriver("host", "user", "pass", optional_args={"config_method": "x"})
 
 
 def test_save_failure_detected(driver):
@@ -222,7 +222,7 @@ def test_save_failure_detected(driver):
 def test_sanitize_filters():
     from napalm.base.helpers import sanitize_config
 
-    from napalm_extreme_fe.extreme_fe import SANITIZE_FILTERS
+    from napalm_fe.fe import SANITIZE_FILTERS
 
     config = "\n".join(
         [
@@ -389,13 +389,10 @@ PROMPT = "5520-24T-FabricEngine:1>"
 
 
 def test_log_messages_are_removed_from_output():
-    from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
+    from napalm_fe.fe import FEDriver
 
     output = f"VLAN    PORT\n{LOG_LINE}\n1       1/1\n{PROMPT}{LOG_LINE}\n10      1/2\n"
-    assert (
-        ExtremeFeDriver._send_command_postprocess(output)
-        == "VLAN    PORT\n1       1/1\n10      1/2"
-    )
+    assert FEDriver._send_command_postprocess(output) == "VLAN    PORT\n1       1/1\n10      1/2"
 
 
 def test_getter_ignores_log_messages(driver):
@@ -428,19 +425,19 @@ def test_getter_ignores_log_messages(driver):
     ],
 )
 def test_log_message_formats(line):
-    from napalm_extreme_fe.extreme_fe import LOG_MESSAGE_RE
+    from napalm_fe.fe import LOG_MESSAGE_RE
 
     assert LOG_MESSAGE_RE.fullmatch(line)
 
 
 def test_log_message_in_the_middle_of_a_line():
     """A message that interrupts a line is removed and the line is joined again."""
-    from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
+    from napalm_fe.fe import FEDriver
 
     row = "1/1      192   10GbNone         true  false    1950  00:51:00:ce:20:00 up     up"
     split = row.index("1950") + 4  # interrupted right after a number
     output = f"PORT\n{row[:split]}{LOG_LINE}\n{row[split:]}\n1/2      193"
-    assert ExtremeFeDriver._send_command_postprocess(output) == f"PORT\n{row}\n1/2      193"
+    assert FEDriver._send_command_postprocess(output) == f"PORT\n{row}\n1/2      193"
 
 
 def test_confirm_prompt_followed_by_log_message(reboot_driver):
@@ -459,7 +456,7 @@ def test_confirm_prompt_followed_by_log_message(reboot_driver):
 
 
 def test_config_lines_are_not_log_messages():
-    from napalm_extreme_fe.extreme_fe import LOG_MESSAGE_RE
+    from napalm_fe.fe import LOG_MESSAGE_RE
 
     for line in (
         'snmp-server location "DC1"',
@@ -480,9 +477,9 @@ SOURCE_OUTPUT = """\
 
 
 def test_file_method_real_source_output(file_driver):
-    from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
+    from napalm_fe.fe import FEDriver
 
-    assert ExtremeFeDriver._send_command_postprocess(SOURCE_OUTPUT) == ""
+    assert FEDriver._send_command_postprocess(SOURCE_OUTPUT) == ""
     original = file_driver.device.send_command
 
     def send_command(command, **kwargs):
@@ -501,7 +498,7 @@ def test_file_method_real_source_output(file_driver):
 
 
 # Real output of "source /intflash/napalm_merge.cfg debug" (Fabric Engine 9.3 VM,
-# TestExtremeFeDriver.py) as Netmiko returns it: echo and final prompt removed.
+# TestFEDriver.py) as Netmiko returns it: echo and final prompt removed.
 # Without "debug" the switch prints nothing, also for the rejected line.
 SOURCE_DEBUG_TYPO = """\
 
@@ -554,19 +551,19 @@ def test_file_method_source_debug_output(file_driver, output, fails):
     [(60, "1"), (300, "5"), (359, "5"), (3600, "01:00"), (5400, "01:30"), (90000, "1:01:00")],
 )
 def test_revert_time(seconds, expected):
-    from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
+    from napalm_fe.fe import FEDriver
 
-    assert ExtremeFeDriver._revert_time(seconds) == expected
+    assert FEDriver._revert_time(seconds) == expected
 
 
 @pytest.mark.parametrize("seconds", [0, 59, 10 * 86400])
 def test_revert_time_out_of_range(seconds):
     from napalm.base.exceptions import CommitConfirmException
 
-    from napalm_extreme_fe.extreme_fe import ExtremeFeDriver
+    from napalm_fe.fe import FEDriver
 
     with pytest.raises(CommitConfirmException):
-        ExtremeFeDriver._revert_time(seconds)
+        FEDriver._revert_time(seconds)
 
 
 def test_commit_with_revert_and_confirm(reboot_driver):
@@ -580,13 +577,14 @@ def test_commit_with_revert_and_confirm(reboot_driver):
         "save config",
         "reset -in 5",
         "y",
+        *LOG_QUERIES,  # until the log shows the scheduled reset
     ]
     assert device.sent_config == ["ntp server 192.0.2.99"]
     assert device.scheduled_reset == "5"
     assert reboot_driver.has_pending_commit()
 
     reboot_driver.confirm_commit()
-    assert device.commands[-2:] == ["reset -cancel", "save config"]
+    assert device.commands[-5:] == ["reset -cancel", *LOG_QUERIES, "save config"]
     assert device.scheduled_reset is None
     assert not reboot_driver.has_pending_commit()
 
@@ -734,13 +732,13 @@ def test_confirm_commit_of_another_session(reboot_driver):
     device._log("0x0003068e", "GlobalRouter SW INFO Scheduled reset enabled! ...")
     assert not reboot_driver.pending_revert
     reboot_driver.confirm_commit()
-    assert device.commands[-2:] == ["reset -cancel", "save config"]
+    assert device.commands[-5:] == ["reset -cancel", *LOG_QUERIES, "save config"]
 
 
 def test_latest_log_time():
     from datetime import datetime
 
-    from napalm_extreme_fe import parsers
+    from napalm_fe import parsers
 
     assert parsers.latest_log_time(SCHEDULED) == datetime(2026, 11, 17, 16, 36, 19, 303000)
     assert parsers.latest_log_time("") is None
@@ -783,7 +781,7 @@ Error: The community entry already exists.
 def test_config_error_pattern_matches_real_errors():
     import re
 
-    from napalm_extreme_fe.extreme_fe import CLI_ERROR_RE
+    from napalm_fe.fe import CLI_ERROR_RE
 
     pattern = CLI_ERROR_RE.pattern  # as passed to Netmiko, which applies re.M
     assert re.search(pattern, COMMUNITY_EXISTS, flags=re.M)
@@ -830,10 +828,10 @@ def test_upload_stops_if_free_space_unknown(monkeypatch):
         def transfer_file(self):
             raise AssertionError("must not transfer")
 
-    from napalm_extreme_fe import extreme_fe
+    from napalm_fe import fe
 
     driver = _make_driver(monkeypatch, config_method="file")
-    monkeypatch.setattr(extreme_fe, "ExtremeFeFileTransfer", NoSpaceInfo)
+    monkeypatch.setattr(fe, "ExtremeVspFileTransfer", NoSpaceInfo)
     with pytest.raises(MergeConfigException, match="Free space not found"):
         driver.load_merge_candidate(config="ntp server 192.0.2.99")
 
@@ -855,28 +853,23 @@ def test_discard_survives_failed_delete(reboot_driver):
     assert reboot_driver.compare_config() == ""
 
 
-def test_old_class_names():
-    # renamed after 0.1.0 (FE -> Fe); the old names still work
-    import napalm_extreme_fe
+def test_driver_name():
     from napalm import get_network_driver
-    from napalm_extreme_fe.file_transfer import ExtremeFEFileTransfer, ExtremeFeFileTransfer
 
-    assert napalm_extreme_fe.ExtremeFEDriver is napalm_extreme_fe.ExtremeFeDriver
-    assert ExtremeFEFileTransfer is ExtremeFeFileTransfer
-    assert get_network_driver("extreme_fe").__name__ == "ExtremeFeDriver"
+    assert get_network_driver("fe").__name__ == "FEDriver"
 
 
 def test_transport_option():
     from napalm.base.exceptions import ConnectionException
 
-    from .conftest import PatchedExtremeFeDriver
+    from .conftest import PatchedFEDriver
 
     # ssh is the default (every release); "port" is the port of the transport
-    ssh = PatchedExtremeFeDriver("h", "u", "p")
+    ssh = PatchedFEDriver("h", "u", "p")
     assert (ssh.transport, ssh.port) == ("ssh", 22)
-    api = PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "https"})
+    api = PatchedFEDriver("h", "u", "p", optional_args={"transport": "https"})
     assert (api.transport, api.port, api.ssl_verify) == ("https", 9443, False)
-    api = PatchedExtremeFeDriver(
+    api = PatchedFEDriver(
         "h",
         "u",
         "p",
@@ -885,10 +878,10 @@ def test_transport_option():
     assert (api.port, api.ssl_verify) == (8443, "/etc/ca.pem")
     # the SSH connection of the https transport uses port 22 (like NX-OS)
     assert api.netmiko_optional_args["port"] == 22
-    ssh = PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "ssh", "port": 2222})
+    ssh = PatchedFEDriver("h", "u", "p", optional_args={"transport": "ssh", "port": 2222})
     assert (ssh.transport, ssh.port, ssh.netmiko_optional_args["port"]) == ("ssh", 2222, 2222)
     with pytest.raises(ConnectionException, match="Unknown transport: netconf"):
-        PatchedExtremeFeDriver("h", "u", "p", optional_args={"transport": "netconf"})
+        PatchedFEDriver("h", "u", "p", optional_args={"transport": "netconf"})
 
 
 def test_failed_merge_message(driver):
@@ -996,7 +989,7 @@ def test_https_revert_through_the_api(monkeypatch):
     assert driver.api.saved == ["/intflash/napalm_rollback.cfg", None]
     assert driver.has_pending_commit()  # the log is read through the API
     driver.confirm_commit()
-    assert driver.api.requests[-1] == "cli: reset -cancel"
+    assert [r for r in driver.api.requests if "reset" in r][-1] == "cli: reset -cancel"
     assert driver.api.saved[-1] is None  # saved after the confirm
     assert not driver.has_pending_commit()
     assert driver.device.commands == []  # no SSH
@@ -1058,3 +1051,29 @@ def test_https_merge_stops_at_vlan_error(monkeypatch):
     driver.load_merge_candidate(config="vlan create 10 type port-mstprstp 0")
     with pytest.raises(MergeConfigException, match="already in use"):
         driver.commit_config()
+
+
+def test_commit_confirm_waits_for_the_log(reboot_driver, monkeypatch):
+    """The switch logs a scheduled reset a few seconds late (9.4, API)."""
+    from napalm_fe import fe
+
+    real = reboot_driver.has_pending_commit
+    # the pre-commit check, then the log is behind twice, then the real state
+    answers = iter([False, False, False])
+    monkeypatch.setattr(reboot_driver, "has_pending_commit", lambda: next(answers, real()))
+    sleeps = []
+    monkeypatch.setattr(fe.time, "sleep", sleeps.append)
+    reboot_driver.load_merge_candidate(config="foo")
+    reboot_driver.commit_config(revert_in=300)
+    assert sleeps == [1, 1]
+
+
+def test_log_wait_gives_up(reboot_driver, monkeypatch, caplog):
+    from napalm_fe import fe
+
+    monkeypatch.setattr(reboot_driver, "has_pending_commit", lambda: False)
+    clock = iter(range(0, 1000, 10))
+    monkeypatch.setattr(fe.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(fe.time, "sleep", lambda s: None)
+    reboot_driver._wait_for_log(pending=True)
+    assert "does not show the change yet" in caplog.text

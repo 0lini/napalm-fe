@@ -1,8 +1,11 @@
 """Netmiko file transfer (SCP) support for Extreme Networks Fabric Engine.
 
 Netmiko has no file transfer class for Fabric Engine yet. This one follows
-Netmiko's ``BaseFileTransfer`` interface so it can be contributed upstream
-unchanged (registered as ``extreme_fe`` / ``extreme_voss`` / ``extreme_vsp``).
+Netmiko's ``BaseFileTransfer`` interface and naming so it can be contributed
+upstream unchanged: Netmiko's device type for Fabric Engine / VOSS is
+``extreme_vsp`` (``ExtremeVspSSH`` in ``netmiko/extreme/extreme_vsp_ssh.py``),
+so the class is ``ExtremeVspFileTransfer``, to be registered in
+``FILE_TRANSFER_MAP`` as ``"extreme_vsp"`` (like ``ExtremeExosFileTransfer``).
 
 Fabric Engine differences to the base (Cisco) implementation:
 
@@ -54,7 +57,7 @@ def parse_dir_free(output: str) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
-class ExtremeFeFileTransfer(BaseFileTransfer):
+class ExtremeVspFileTransfer(BaseFileTransfer):
     """SCP file transfer for Fabric Engine (formerly VOSS / VSP)."""
 
     def __init__(
@@ -181,7 +184,3 @@ class ExtremeFeFileTransfer(BaseFileTransfer):
     def disable_scp(self, cmd: str = "") -> None:
         """SCP is served by the SSH server (``boot config flags sshd``)."""
         raise NotImplementedError("SCP is part of the SSH server on Fabric Engine")
-
-
-# Name up to 0.1.0, kept so that existing imports keep working
-ExtremeFEFileTransfer = ExtremeFeFileTransfer

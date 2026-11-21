@@ -20,7 +20,7 @@ All notable changes to this project are documented here. The format follows
   replace candidates). `port` is the port of the transport (22 /
   9443), `ssl_verify` (default `False`, like NX-OS) checks the certificate.
   Over `https`, `get_snmp_information` returns the community strings.
-- `docs/extreme_fe.rst`: caveats in the format of NAPALM's driver docs,
+- `docs/fe.rst`: caveats in the format of NAPALM's driver docs,
   including what uses the API, what still needs SSH and the tested releases
   (Fabric Engine 9.1 - 9.4; VOSS 8.10 over SSH with paramiko 3.x).
 - `discard_config()` deletes an uploaded replace candidate on the switch
@@ -40,8 +40,6 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - An unknown `transport` raises `ConnectionException` (like EOS).
-- Classes renamed to `ExtremeFeDriver` and `ExtremeFeFileTransfer`; the old
-  names `ExtremeFEDriver` and `ExtremeFEFileTransfer` still work (aliases).
 - `get_snmp_information` no longer reads the running configuration (Fabric
   Engine never shows community strings; `community` was always empty).
 - `get_interfaces_counters` always reads `statistics`, `statistics verbose` and
@@ -74,7 +72,7 @@ All notable changes to this project are documented here. The format follows
 - Every commit after the first one failed: `save config file` asks before
   overwriting the existing `rollback_cfg` (`... already existing, overwrite
   (y/n) ?`); the driver now answers it and waits for the save to finish.
-- `ExtremeFeFileTransfer` uploads failed with `No response from server`: the
+- `ExtremeVspFileTransfer` uploads failed with `No response from server`: the
   switch writes the file but closes the SCP channel without the final
   acknowledgement (Fabric Engine 9.3). This error is ignored, the upload
   is verified by size and MD5 as before.
@@ -93,4 +91,4 @@ First release. Requires Python 3.10+, NAPALM 5 and Netmiko 4.
 - Merge configuration management: `load_merge_candidate`, incremental
   `compare_config`, `commit_config`, `discard_config`.
 - `config_method="file"`: SCP upload, restore point and `source` (IOS-style).
-- `ExtremeFEFileTransfer`: Netmiko file transfer class for Fabric Engine.
+- `ExtremeVspFileTransfer`: Netmiko file transfer class for Fabric Engine.

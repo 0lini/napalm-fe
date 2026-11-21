@@ -1,4 +1,4 @@
-# Agent guide: napalm-extreme-fe
+# Agent guide: napalm-fe
 
 NAPALM community driver for Extreme Networks Fabric Engine (formerly VOSS).
 Read `README.md` first for the user-facing behaviour.
@@ -7,17 +7,17 @@ Read `README.md` first for the user-facing behaviour.
 
 | Path | What |
 |------|------|
-| `src/napalm_extreme_fe/extreme_fe.py` | The driver (`ExtremeFeDriver`): connection, getters, config management |
-| `src/napalm_extreme_fe/parsers.py` | Pure text parsers, one per CLI output; no device access |
-| `src/napalm_extreme_fe/file_transfer.py` | Netmiko `BaseFileTransfer` for Fabric Engine (SCP) |
-| `src/napalm_extreme_fe/openapi.py` | HTTP session for `transport="https"` (token, CLI / save / reboot operations, errors without `debugLog`) |
-| `src/napalm_extreme_fe/openapi_parsers.py` | Pure converters from OpenAPI JSON to NAPALM structures; no device access |
+| `src/napalm_fe/fe.py` | The driver (`FEDriver`): connection, getters, config management |
+| `src/napalm_fe/parsers.py` | Pure text parsers, one per CLI output; no device access |
+| `src/napalm_fe/file_transfer.py` | Netmiko `BaseFileTransfer` for Fabric Engine (SCP) |
+| `src/napalm_fe/openapi.py` | HTTP session for `transport="https"` (token, CLI / save / reboot operations, errors without `debugLog`) |
+| `src/napalm_fe/openapi_parsers.py` | Pure converters from OpenAPI JSON to NAPALM structures; no device access |
 | `test/unit/mocked_data/<test>/<case>/` | Getter test data: raw output per command + `expected_result.json` (same layout as NAPALM's IOS tests) |
 | `test/unit/test_getters.py` | NAPALM's getter test suite, run for every case in `mocked_data` |
 | `test/unit/test_*.py` | Unit tests for parsers, config management, file transfer |
 | `test/unit/openapi/` | Trimmed OpenAPI schema and supported operations of the switch (Fabric Engine 9.4), see "OpenAPI transport" |
-| `docs/extreme_fe.rst` | User docs / caveats in the format of NAPALM's `docs/support/<driver>.rst` (keep in sync with the code) |
-| `test/unit/TestExtremeFeDriver.py` | Config tests against a live lab switch (not collected by default), fixtures in `test/unit/extreme_fe/` |
+| `docs/fe.rst` | User docs / caveats in the format of NAPALM's `docs/support/<driver>.rst` (keep in sync with the code) |
+| `test/unit/TestFEDriver.py` | Config tests against a live lab switch (not collected by default), fixtures in `test/unit/fe/` |
 
 ## Commands
 
@@ -114,7 +114,7 @@ Run all of them before every commit, and only commit when they pass
 
    ```bash
    NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<pw> \
-   NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestExtremeFeDriver.py -v
+   NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestFEDriver.py -v
    ```
 
    Runs merge, typo and discard tests for `config_method="cli"` and `"file"`,
@@ -128,7 +128,7 @@ Run all of them before every commit, and only commit when they pass
 ### Safety rules for the switch
 
 - Only send read-only commands (`show`, `dir`, `ls`, `more`, `file-checksum`), except
-  through `TestExtremeFeDriver.py` (step 5) or when the user explicitly allows
+  through `TestFEDriver.py` (step 5) or when the user explicitly allows
   writing on a lab switch.
 - Never ask for CLI help (`reset ?` etc.) over SSH: the line stays in the
   input buffer and a later newline runs it (9.4: `reset ?` became `reset`
@@ -148,13 +148,13 @@ Confirmed on Fabric Engine 9.4: all getters except the ones below,
 
 VOSS / Fabric Engine 8.x is end of life (8.10 is the last 8.x release) and is
 not supported; do not add test cases for it. VOSS 8.10.1.0 (GNS3) passes the
-getter suite and `TestExtremeFeDriver.py` over SSH, but only with paramiko
+getter suite and `TestFEDriver.py` over SSH, but only with paramiko
 3.x: it only offers the host keys `ssh-rsa` / `ssh-dss`.
 
 Version matrix (GNS3 VMs, 2026-11-20; lab nodes fe810 / fe91 / fe92 / fe931,
 see `~/vms/gns3/versions_boot.sh` and `versions_data.sh`): 9.1.0.0, 9.2.0.0,
 9.3.0.0, 9.3.1.0 and 9.4.0.0 pass NAPALM's getter suite (53) and
-`TestExtremeFeDriver.py` (6) over SSH. OpenAPI: 9.1 / 9.2 have no
+`TestFEDriver.py` (6) over SSH. OpenAPI: 9.1 / 9.2 have no
 `openapi local-mgmt` command (`% Invalid input`), 9.3.0.0 refuses it (license
 of the image), 9.3.1.0 and 9.4.0.0 pass the getter suite and the config tests
 over `https`.
@@ -162,7 +162,7 @@ over `https`.
 Confirmed on the Fabric Engine 9.3 VM (GNS3 image of Extreme, reports as
 `5520-24T-FabricEngine`): NAPALM's getter suite (all 39 with the test data of
 the `fabric_engine_9.3` cases; on a fresh VM ARP, VRF `TEST` and NTP are
-empty) and `TestExtremeFeDriver.py` (all 6).
+empty) and `TestFEDriver.py` (all 6).
 Findings there:
 
 - `save config file <file>` to an existing file asks
@@ -218,6 +218,11 @@ Findings there:
    `has_pending_commit()` reads the log (`show logging file event-code`,
    oldest entry first): pending if the newest `0x0003068e` (enabled) is newer
    than the newest `0x0003068f` (canceled) and `0x00034594` (System boot).
+   The switch writes these entries a few seconds after the command (through
+   the API the driver is faster than that), so after `reset -in` / `reset
+   -cancel` the driver waits until the log shows the change (`_wait_for_log`,
+   at most `LOG_DELAY` seconds); without it `has_pending_commit()` right after
+   a commit / confirm reported the old state (seen on 9.4, 2026-11-21).
    Confirmed on the 9.4 VM: an expired `reset -in` reboots the switch, and the
    log afterwards holds only the new `System boot` entry (the VM starts with an
    empty log), so nothing is reported pending. Still to check: that an unsaved
