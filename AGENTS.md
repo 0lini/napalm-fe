@@ -17,7 +17,7 @@ merge one back when it is ready:
 | `feature/replace-rollback` | replace + `rollback()` (boot config + reboot, `allow_reboot`); needs the SCP upload, so it contains `feature/file-method` |
 | `feature/commit-confirm` | `revert_in`, `confirm_commit`, `has_pending_commit` (`reset -in`, switch log) |
 | `feature/templates` | `load_template`: `set_hostname`, NTP and SNMP templates |
-| `feature/users` | `get_users`, `set_users` / `delete_users` |
+| `feature/users` | `get_users`, `set_users` / `delete_users` (SSH; the OpenAPI variant via `configuration/accounts` is in `archive/full`) |
 | `archive/full` | everything together (state of 2026-11-21) |
 
 The findings below about these features (lab results, API behaviour, safety
