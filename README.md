@@ -5,14 +5,10 @@
 Software). It works with any switch running Fabric Engine / VOSS; the CLI is the
 same across hardware platforms, so there is no model-specific code.
 
-By default it uses the CLI over SSH ([Netmiko](https://github.com/ktbyers/netmiko)
-`extreme_vsp`), which works on every release. With `transport="https"` it uses
-the switch's API (OpenAPI, Fabric Engine 9.3.1 or later with a Premier
-license) and, like NAPALM's NX-OS driver, only opens SSH for what the API
-cannot do: uploading files (SCP).
-
-Tested (GNS3 VMs): Fabric Engine 9.1, 9.2, 9.3, 9.3.1 and 9.4 over SSH, 9.3.1
-and 9.4 over `https`; VOSS 8.10 works over SSH with paramiko 3.x. Details in
+Like NAPALM's IOS driver, it connects over SSH
+([Netmiko](https://github.com/ktbyers/netmiko) `extreme_vsp`) and parses the
+CLI output. Tested (GNS3 VMs): Fabric Engine 9.1, 9.2, 9.3, 9.3.1 and 9.4;
+VOSS 8.10 works with paramiko 3.x. Details in
 [docs/fe.rst](docs/fe.rst#minimum-version).
 
 > **Status: beta.** The getters are tested against real device output (see
@@ -20,9 +16,10 @@ and 9.4 over `https`; VOSS 8.10 works over SSH with paramiko 3.x. Details in
 > something does not parse on your switch, please open an issue with the raw
 > CLI output (see [Reporting parsing problems](#reporting-parsing-problems)).
 
-Caveats, the optional arguments and what uses the API or SSH are in
-[docs/fe.rst](docs/fe.rst) (same format as NAPALM's driver
-caveats).
+Caveats and the optional arguments are in [docs/fe.rst](docs/fe.rst) (same
+format as NAPALM's driver caveats). Features in development (OpenAPI transport,
+replace / rollback, commit confirm, SCP merge, templates, user management) live
+on `feature/*` branches.
 
 ## Installation
 
@@ -32,95 +29,58 @@ pip install napalm-fe
 
 Requires Python 3.10+, NAPALM 5 and Netmiko 4.
 
-The `https` transport needs the OpenAPI on the switch (Fabric Engine 9.3.1 or
-later, Premier license):
-
-```
-configure terminal
-application
-openapi local-mgmt enable
-```
-
 ## Usage
 
 ```python
 from napalm import get_network_driver
 
 driver = get_network_driver("fe")
-with driver("192.0.2.10", "admin", "secret") as device:  # ssh, port 22
+with driver("192.0.2.10", "admin", "secret", optional_args={"port": 22}) as device:
     print(device.get_facts())
     print(device.get_lldp_neighbors())
 
     device.load_merge_candidate(config='snmp-server location "DC1"')
     print(device.compare_config())  # +snmp-server location "DC1"
     device.commit_config()  # applies the change and runs "save config"
-
-# OpenAPI (port 9443); ssl_verify=True or a CA bundle to check the certificate
-with driver("192.0.2.10", "admin", "secret", optional_args={"transport": "https"}) as device:
-    print(device.get_facts())
 ```
 
 Optional arguments (details in [docs/fe.rst](docs/fe.rst#optional-arguments)):
 
 | Argument              | Default                | Description |
 |-----------------------|------------------------|-------------|
-| `transport`           | `ssh`                  | `ssh` (CLI) or `https` (OpenAPI), like NAPALM's EOS / NX-OS drivers |
-| `port`                | `22` / `9443`          | Port of the transport. With `https`, SSH (when needed) uses port 22, like NX-OS |
-| `ssl_verify`          | `False`                | Check the API's TLS certificate (`True` or a CA bundle path), like NX-OS |
 | `save_config`         | `True`                 | Run `save config` after a successful commit |
 | `startup_config_file` | `/intflash/config.cfg` | File returned as `startup` by `get_config()` |
-| `force_no_enable`     | `False`                | SSH: do not enter privileged mode |
-| `config_method`       | `cli`                  | Merge with configuration lines (`cli`) or SCP + `source` (`file`) |
-| `allow_reboot`        | `False`                | Allow replace, `rollback()` and `revert_in`, which reboot the switch |
-| `dest_file_system`, `candidate_cfg`, `merge_cfg`, `rollback_cfg` | `/intflash`, `napalm_*.cfg` | Files of the driver on the switch |
+| `force_no_enable`     | `False`                | Do not enter privileged mode |
 
-All Netmiko connection arguments are passed to the SSH connection.
+All Netmiko connection arguments (`port`, `secret`, `key_file`, ...) are passed
+through.
 
 ## Support matrix
 
 Getters: `get_facts`, `get_environment`, `get_interfaces`, `get_interfaces_ip`,
 `get_interfaces_counters`, `get_lldp_neighbors`, `get_lldp_neighbors_detail`,
 `get_arp_table`, `get_mac_address_table`, `get_vlans`, `get_ntp_servers`,
-`get_snmp_information`, `get_users`, `get_config` (with
-`sanitized`), `cli`, `is_alive`.
-Not implemented yet: BGP, optics, route table, NTP stats/peers, network
-instances, ping/traceroute, IPv6 neighbours.
-
-Configuration templates for `load_template()` (like NAPALM's drivers):
-`set_hostname`, `set_ntp_servers`, `delete_ntp_servers`, `snmp_config`,
-`delete_snmp_config`, `set_users`, `delete_users`, see [docs/fe.rst](docs/fe.rst#available-configuration-templates).
+`get_snmp_information`, `get_config` (with `sanitized`), `cli`, `is_alive`.
 
 Configuration (in the format of NAPALM's configuration support matrix):
 
 | _                     | fe |
-|-----------------------|------------|
-| **Config. replace**   | Yes [1] |
+|-----------------------|----|
+| **Config. replace**   | No |
 | **Config. merge**     | Yes |
-| **Commit Confirm**    | Yes [1] |
-| **Compare config**    | Yes [2] |
+| **Commit Confirm**    | No |
+| **Compare config**    | Yes [1] |
 | **Atomic Changes**    | No |
-| **Rollback**          | Yes [1] |
+| **Rollback**          | No |
 
-1. Emulated with a reboot (Fabric Engine has no `configure replace`), like
-   ExtremeCloud IQ Site Engine; requires `allow_reboot=True`.
-2. Hand-crafted by the driver: Fabric Engine has no on-box diff.
-
-See [docs/fe.rst](docs/fe.rst) for the commands and API
-endpoints per method and what still needs SSH.
-
-### File transfer
-
-`napalm_fe.file_transfer.ExtremeVspFileTransfer` implements Netmiko's
-`BaseFileTransfer` interface for Fabric Engine (SCP via the SSH server,
-`dir <directory> -l` for existence, size and free space, `file-checksum md5` to
-verify transfers). It is written so that it can be contributed to Netmiko as-is.
+1. Hand-crafted by the driver: Fabric Engine has no on-box diff.
 
 ## Reporting parsing problems
 
 Please open an issue with the Fabric Engine release and the raw output of the
 command that does not parse (the commands per getter are listed in
-[docs/fe.rst](docs/fe.rst#where-the-data-comes-from)). Remove
-anything sensitive (hostnames, IP addresses, serial numbers, keys) first.
+[docs/fe.rst](docs/fe.rst#commands-per-getter)). Remove anything sensitive
+(hostnames, IP addresses, serial numbers, keys) first.
 
 ## Development
 
@@ -133,20 +93,18 @@ mypy src
 
 Tests are organised like NAPALM's IOS driver tests:
 
-- `test/unit/test_getters.py` runs NAPALM's getter test suite for both
-  transports against mocked device output in
-  `test/unit/mocked_data/<test>/<case>/` (one file per command or API request
-  plus `expected_result.json`; `*_openapi` cases are for `https`).
-  `fabric_engine_*` cases are real, anonymised output; `synthetic` cases are
-  hand-written.
-- `test/unit/test_parsers.py`, `test_config.py` and `test_file_transfer.py`
-  are unit tests for parsers, configuration management and file transfer.
+- `test/unit/test_getters.py` runs NAPALM's getter test suite against mocked
+  device output in `test/unit/mocked_data/<test>/<case>/` (one file per command
+  plus `expected_result.json`). `fabric_engine_*` cases are real, anonymised
+  output; `synthetic` cases are hand-written.
+- `test/unit/test_parsers.py` and `test_config.py` are unit tests for parsers
+  and configuration management.
 - `test/unit/TestFEDriver.py` runs configuration tests against a live
   lab switch (like `TestIOSDriver.py`); it is not part of the normal test run:
 
   ```bash
   NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<password> \
-  NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestFEDriver.py
+  NAPALM_OPTIONAL_ARGS='{"port": 22}' pytest test/unit/TestFEDriver.py
   ```
 
 Releases: bump `version` in `pyproject.toml`, update `CHANGELOG.md`, push a tag

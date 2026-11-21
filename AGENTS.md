@@ -3,19 +3,37 @@
 NAPALM community driver for Extreme Networks Fabric Engine (formerly VOSS).
 Read `README.md` first for the user-facing behaviour.
 
+## Branches
+
+`main` is the core: SSH only (like NAPALM's IOS driver), the getters and the
+merge workflow. Features are developed on their own branches, each `main` plus
+exactly that feature (created by reverting its "Remove ..." commit on `main`);
+merge one back when it is ready:
+
+| Branch | Feature |
+|--------|---------|
+| `feature/openapi` | `transport="https"` (OpenAPI, Fabric Engine 9.3.1+, Premier license) |
+| `feature/file-method` | `config_method="file"` (SCP upload + `source`), `ExtremeVspFileTransfer` for Netmiko |
+| `feature/replace-rollback` | replace + `rollback()` (boot config + reboot, `allow_reboot`); needs the SCP upload, so it contains `feature/file-method` |
+| `feature/commit-confirm` | `revert_in`, `confirm_commit`, `has_pending_commit` (`reset -in`, switch log) |
+| `feature/templates` | `load_template`: `set_hostname`, NTP and SNMP templates |
+| `feature/users` | `get_users`, `set_users` / `delete_users` |
+| `archive/full` | everything together (state of 2026-11-21) |
+
+The findings below about these features (lab results, API behaviour, safety
+rules) stay here so they are not lost; the code is on the branches. User docs
+of a feature (README, `docs/fe.rst`, CHANGELOG) come back with its merge
+(`archive/full` has them).
+
 ## Layout
 
 | Path | What |
 |------|------|
 | `src/napalm_fe/fe.py` | The driver (`FEDriver`): connection, getters, config management |
 | `src/napalm_fe/parsers.py` | Pure text parsers, one per CLI output; no device access |
-| `src/napalm_fe/file_transfer.py` | Netmiko `BaseFileTransfer` for Fabric Engine (SCP) |
-| `src/napalm_fe/openapi.py` | HTTP session for `transport="https"` (token, CLI / save / reboot operations, errors without `debugLog`) |
-| `src/napalm_fe/openapi_parsers.py` | Pure converters from OpenAPI JSON to NAPALM structures; no device access |
 | `test/unit/mocked_data/<test>/<case>/` | Getter test data: raw output per command + `expected_result.json` (same layout as NAPALM's IOS tests) |
 | `test/unit/test_getters.py` | NAPALM's getter test suite, run for every case in `mocked_data` |
-| `test/unit/test_*.py` | Unit tests for parsers, config management, file transfer |
-| `test/unit/openapi/` | Trimmed OpenAPI schema and supported operations of the switch (Fabric Engine 9.4), see "OpenAPI transport" |
+| `test/unit/test_*.py` | Unit tests for parsers and config management |
 | `docs/fe.rst` | User docs / caveats in the format of NAPALM's `docs/support/<driver>.rst` (keep in sync with the code) |
 | `test/unit/TestFEDriver.py` | Config tests against a live lab switch (not collected by default), fixtures in `test/unit/fe/` |
 
@@ -37,21 +55,15 @@ Run all of them before every commit, and only commit when they pass
   allows it: IOS (`napalm/ios/ios.py`) for the CLI workflow and NX-OS
   (`napalm/nxos/nxos.py`, `nxos_ssh`) for the structure. Like NX-OS, all
   transport specific code is in a few primitives (`open`, `close`, `is_alive`,
-  `_send_command`, `_send_command_timing`, `_send_config`, `_copy_run_start`,
-  `_save_config_file`, `_source_file`; the CLI ones reach SSH through `_ssh`,
-  the API ones through `_api` / `_api_get`). `ssh` is the default
-  transport (works on every release, like IOS); with `https` (OpenAPI, like
-  EOS / NX-OS), as in the NX-OS driver, SSH is only
-  opened on first use, on port 22, for what the API cannot do (see
-  "OpenAPI transport"; only SCP uploads). Option names follow NAPALM: `transport`, `port` (of
-  the transport), `ssl_verify` (default `False`, like NX-OS). A reference
-  checkout of NAPALM may be in `napalm/` (ignored by git). Known deviations: a failed
+  `_send_command`, `_send_config`, `_copy_run_start`; they reach SSH through
+  `_ssh`), so that a second transport (`feature/openapi`) only implements
+  those. A reference checkout of NAPALM may be in `napalm/` (ignored by git).
+  Known deviations: a failed
   merge is not rolled back automatically (rollback reboots the switch). IOS and
   NX-OS roll back because their devices can do it without a reboot; community
   drivers for platforms that cannot (napalm-dellos10, napalm-netiron,
   napalm-aos) raise and leave it to the caller, and so do we, with
-  napalm-dellos10's wording ("automatic rollback not available") plus the
-  rollback file and how to restore it. The
+  napalm-dellos10's wording ("automatic rollback not available"). The
   merge diff is our own (`parsers.merge_diff`) because netutils'
   `diff_network_config` has no Fabric Engine / VOSS parser.
 - Parsers live in `parsers.py`, take raw output and return plain data. Prefer
@@ -97,14 +109,9 @@ Run all of them before every commit, and only commit when they pass
 
    ```bash
    NAPALM_TEST_MOCK=0 NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> \
-   NAPALM_PASSWORD=<pw> NAPALM_OPTIONAL_ARGS='{"port": <port>}' \
-   pytest test/unit/test_getters.py -k TestGetterHttps   # port: OpenAPI (9443)
-   ... pytest test/unit/test_getters.py -k "not Https"     # port: SSH (22)
+   NAPALM_PASSWORD=<pw> NAPALM_OPTIONAL_ARGS='{"port": 22}' \
+   pytest test/unit/test_getters.py
    ```
-
-   `port` is the port of the transport, so run the two classes separately
-   when the ports are forwarded. Only getters with a `*_openapi` case run
-   for `https`; compare the other getters of both transports by hand.
 
    Getters that fail, or return empty results where the switch has data, are
    bugs. (Some tests require non-empty results, e.g. ARP; an empty table on the
@@ -114,16 +121,11 @@ Run all of them before every commit, and only commit when they pass
 
    ```bash
    NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<pw> \
-   NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestFEDriver.py -v
+   NAPALM_OPTIONAL_ARGS='{"port": 22}' pytest test/unit/TestFEDriver.py -v
    ```
 
-   Runs merge, typo and discard tests for `config_method="cli"` and `"file"`,
-   for both transports (with forwarded ports: `-k "not SSH"` with the API
-   port, `-k SSH` with the SSH port; `TestConfigFile` over `https` needs SSH
-   on port 22).
-   It only changes `snmp-server location`, restores it, and never saves the
-   configuration. It does not test replace / `rollback()` (they reboot the
-   switch).
+   Runs merge, typo and discard tests. It only changes `snmp-server
+   location`, restores it, and never saves the configuration.
 
 ### Safety rules for the switch
 
@@ -245,7 +247,7 @@ Findings there:
 8. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
    prompt / login behaviour has not been tested.
 
-Configuration templates (`src/napalm_fe/templates/*.j2`, `load_template()`),
+Configuration templates (branch `feature/templates`; `src/napalm_fe/templates/*.j2`, `load_template()`),
 verified on 9.4 for both transports (2026-11-21): `sys name X` sets the
 system name, but the running config shows `prompt "X"` (also settable, `no
 prompt` resets it), so `set_hostname` uses `prompt`; a changed prompt is
@@ -255,7 +257,7 @@ read-only, `v1v2grp` read-write; `snmp-server community <c> group <g> index
 index). Open: over `https`, `get_snmp_information` lists every community once
 per context (`c`, `c::1`, `c::512` - VRF contexts), as the API returns it.
 
-Users (2026-11-21, 9.4; `show cli username` also on 9.3): `show cli
+Users (branch `feature/users`; 2026-11-21, 9.4; `show cli username` also on 9.3): `show cli
 username` lists all accounts (UserName, AccessLevel, State, Type; header
 between two `===` rules); the API `configuration/accounts` the same plus the
 encrypted secret and `removable`; the running config shows none. Six default
@@ -285,11 +287,18 @@ accepted; maybe only for enhanced secure mode (not checked). `set_users` takes
 transports. Still to check: whether new users survive a reboot without `save
 config`.
 
-Not implemented yet (NotImplementedError, skipped in tests): BGP,
+Enhanced secure mode: `boot config flags enhancedsecure-mode non-jitc` asks
+`Changing enhancedsecure-mode flag will result in deleting all sensitive
+files, are you sure you want to continue? (y/n) ?` (9.4) before `save config`
+and a reboot; then `admin` / `admin` with a forced complex password, roles
+admin / privilege / operator / security / auditor, users with `password
+create-user <role> <name>`. Not tested yet (lab node `fe94esm`).
+
+Not implemented yet (NotImplementedError, skipped in tests): BGP, users,
 optics, route table, NTP stats/peers, network instances, ping/traceroute,
 IPv6 neighbours. Implement them with real captures only.
 
-## OpenAPI transport (`transport="https"`)
+## OpenAPI transport (`transport="https"`, branch `feature/openapi`)
 
 One driver with a `transport` option like EOS / NX-OS; `ssh` (default) is
 the CLI over Netmiko, `https` the switch's OpenAPI. History (never
