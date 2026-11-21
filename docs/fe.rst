@@ -264,6 +264,32 @@ step 1. ``has_pending_commit()`` reads the switch log (no command shows a
 scheduled reset), so it also finds a commit made by another session.
 
 
+Available configuration templates
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``load_template()`` (NAPALM base method) renders a template from
+``napalm_fe/templates`` and loads it as a merge candidate; commit it with
+``commit_config()``. Same names and variables as NAPALM's IOS / NX-OS / EOS
+templates, verified on Fabric Engine 9.4:
+
+* :code:`set_hostname` (``hostname``) - ``prompt "<hostname>"``: sets the
+  system name; the running configuration shows it as ``prompt``, so
+  ``compare_config()`` recognises an unchanged hostname. After the commit the
+  driver updates Netmiko's base prompt (like NX-OS).
+* :code:`set_ntp_servers` / :code:`delete_ntp_servers` (``servers``) -
+  ``[no] ntp server <server>``.
+* :code:`snmp_config` (``location``, ``contact``, ``community``) - a community
+  with ``mode: rw`` is added to the read-write group ``v1v2grp``, all others
+  to the read-only group ``readgrp``; its index and security name are the
+  community string. ``chassis_id`` is ignored (not settable on Fabric
+  Engine).
+* :code:`delete_snmp_config` (same variables) - ``no snmp-server location``,
+  ``no snmp-server contact``, ``no snmp-server community <community>``.
+
+There are no NTP peer, probe or user templates (no NTP peers on Fabric
+Engine; users come with ``get_users``).
+
+
 Known gotchas
 _____________
 

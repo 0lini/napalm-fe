@@ -1,0 +1,15 @@
+{% if (location is defined) and location %}
+snmp-server location "{{location}}"
+{% endif %}
+{% if (contact is defined) and contact %}
+snmp-server contact "{{contact}}"
+{% endif %}
+{% if (community is defined) and community %}
+{% for comm_name, comm_details in community.items() %}
+{% if (comm_details is defined) and comm_details and comm_details.get('mode') == 'rw' %}
+snmp-server community {{comm_name}} group v1v2grp index {{comm_name}} secname {{comm_name}}
+{% else %}
+snmp-server community {{comm_name}} group readgrp index {{comm_name}} secname {{comm_name}}
+{% endif %}
+{% endfor %}
+{% endif %}

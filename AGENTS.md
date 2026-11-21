@@ -239,6 +239,16 @@ Findings there:
 8. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
    prompt / login behaviour has not been tested.
 
+Configuration templates (`src/napalm_fe/templates/*.j2`, `load_template()`),
+verified on 9.4 for both transports (2026-11-21): `sys name X` sets the
+system name, but the running config shows `prompt "X"` (also settable, `no
+prompt` resets it), so `set_hostname` uses `prompt`; a changed prompt is
+handled by `set_base_prompt()` after a commit. SNMPv1/v2c groups: `readgrp`
+read-only, `v1v2grp` read-write; `snmp-server community <c> group <g> index
+<i> secname <s>`; `no snmp-server community <community string>` (not the
+index). Open: over `https`, `get_snmp_information` lists every community once
+per context (`c`, `c::1`, `c::512` - VRF contexts), as the API returns it.
+
 Not implemented yet (NotImplementedError, skipped in tests): BGP, users,
 optics, route table, NTP stats/peers, network instances, ping/traceroute,
 IPv6 neighbours. Implement them with real captures only.

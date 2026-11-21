@@ -47,7 +47,7 @@ where = ["src"]
 include = ["napalm_fe*"]
 
 [tool.setuptools.package-data]
-napalm_fe = ["py.typed"]
+napalm_fe = ["py.typed", "templates/*.j2"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]

@@ -20,6 +20,9 @@ All notable changes to this project are documented here. The format follows
   replace candidates). `port` is the port of the transport (22 /
   9443), `ssl_verify` (default `False`, like NX-OS) checks the certificate.
   Over `https`, `get_snmp_information` returns the community strings.
+- Configuration templates for `load_template()` (like NAPALM's IOS / NX-OS /
+  EOS drivers): `set_hostname`, `set_ntp_servers`, `delete_ntp_servers`,
+  `snmp_config`, `delete_snmp_config`.
 - `docs/fe.rst`: caveats in the format of NAPALM's driver docs,
   including what uses the API, what still needs SSH and the tested releases
   (Fabric Engine 9.1 - 9.4; VOSS 8.10 over SSH with paramiko 3.x).

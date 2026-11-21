@@ -852,6 +852,13 @@ class FEDriver(NetworkDriver):
             self._commit_from_file()
         else:
             self._commit_from_cli()
+        if self.device is not None:
+            # a new hostname ("prompt", set_hostname template) changes the SSH
+            # prompt; update Netmiko's base prompt like the NX-OS driver
+            try:
+                self.device.set_base_prompt()
+            except AttributeError:
+                pass
 
         if self.save_on_commit and not revert_time:
             self._copy_run_start(CommandErrorException)

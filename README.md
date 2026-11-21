@@ -85,6 +85,10 @@ Getters: `get_facts`, `get_environment`, `get_interfaces`, `get_interfaces_ip`,
 Not implemented yet: BGP, users, optics, route table, NTP stats/peers, network
 instances, ping/traceroute, IPv6 neighbours.
 
+Configuration templates for `load_template()` (like NAPALM's drivers):
+`set_hostname`, `set_ntp_servers`, `delete_ntp_servers`, `snmp_config`,
+`delete_snmp_config`, see [docs/fe.rst](docs/fe.rst#available-configuration-templates).
+
 Configuration (in the format of NAPALM's configuration support matrix):
 
 | _                     | fe |
