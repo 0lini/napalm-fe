@@ -63,6 +63,7 @@ class FakeFEDevice(BaseTestDouble):
         super().__init__()
         self.sent_config = []
         self.commands = []
+        self.flash = {"/intflash/config.cfg": "startup config"}
 
     def write_channel(self, data):
         pass
@@ -72,6 +73,8 @@ class FakeFEDevice(BaseTestDouble):
 
     def send_command(self, command, **kwargs):
         self.commands.append(command)
+        if command.startswith("source "):
+            return ""
         filename = "{}.txt".format(self.sanitize_text(command))
         return self.read_txt_file(self.find_file(filename))
 

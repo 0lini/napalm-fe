@@ -6,7 +6,9 @@ release.
 """
 
 import logging
+import os
 import re
+import tempfile
 from typing import Any, Dict, List, Optional, Union
 
 from napalm.base import NetworkDriver, models
@@ -20,6 +22,7 @@ from napalm.base.netmiko_helpers import netmiko_args
 from netmiko.exceptions import ConfigInvalidException
 
 from napalm_fe import parsers
+from napalm_fe.file_transfer import ExtremeVspFileTransfer
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +107,13 @@ class FEDriver(NetworkDriver):
 
         * ``save_config`` (bool, default ``True``): run ``save config`` after
           a successful ``commit_config``.
+        * ``config_method`` (``"cli"`` or ``"file"``, default ``"cli"``): how
+          ``commit_config`` applies a merge candidate. ``"cli"`` sends the lines
+          in configuration mode. ``"file"`` works like the IOS driver: the
+          candidate is copied to the switch with SCP on load and applied with
+          ``source``.
+        * ``dest_file_system`` (default ``/intflash``) and ``merge_cfg`` (default
+          ``napalm_merge.cfg``): files on the switch.
         * ``startup_config_file`` (str, default ``/intflash/config.cfg``):
           the file returned as the ``startup`` configuration by ``get_config``.
         """
@@ -116,6 +126,11 @@ class FEDriver(NetworkDriver):
         self.save_on_commit = bool(optional_args.get("save_config", True))
         self.startup_config_file = optional_args.get("startup_config_file", "/intflash/config.cfg")
         self.force_no_enable = bool(optional_args.get("force_no_enable", False))
+        self.config_method = optional_args.get("config_method", "cli")
+        if self.config_method not in ("cli", "file"):
+            raise ValueError("config_method must be 'cli' or 'file'")
+        self.dest_file_system = optional_args.get("dest_file_system", "/intflash").rstrip("/")
+        self.merge_cfg = optional_args.get("merge_cfg", "napalm_merge.cfg")
         self.netmiko_optional_args = netmiko_args(optional_args)
         self.device: Any = None
         self.candidate_config: Optional[str] = None
@@ -198,6 +213,23 @@ class FEDriver(NetworkDriver):
         output = str(self._ssh().save_config())
         if not self._save_successful(output):
             raise exc_class(f"Saving the configuration failed:\n{output}")
+
+    def _source_file(self, path: str) -> str:
+        """Run the configuration file ``path`` on the switch (``source <file> debug``).
+
+        Without ``debug`` the switch prints nothing, not even for a rejected
+        line; ``stop`` (stop on error) is silent as well and cannot be combined
+        with ``debug`` (Fabric Engine 9.3). With ``debug`` every line is
+        echoed after a prompt (``5520-24T-FabricEngine:1(config)#asdasda``)
+        followed by its error (``% Invalid input detected at '^' marker.``);
+        the following lines are still run. As the echo contains the prompt,
+        this waits for the prompt at the end of the output.
+        """
+        read_timeout = max(self.timeout, 120)
+        prompt = re.escape(self._ssh().find_prompt())
+        return self._send_command(
+            f"source {path} debug", expect_string=rf"{prompt}\s*$", read_timeout=read_timeout
+        )
 
     @staticmethod
     def _send_command_postprocess(output: str, remove_log_messages: bool = True) -> str:
@@ -447,12 +479,56 @@ class FEDriver(NetworkDriver):
     def load_merge_candidate(
         self, filename: Optional[str] = None, config: Optional[str] = None
     ) -> None:
-        """Load configuration lines to be merged on commit (kept in memory)."""
+        """Load configuration lines to be merged on commit.
+
+        With ``config_method="cli"`` the candidate is kept in memory and sent
+        line by line on commit; with ``config_method="file"`` it is also copied
+        to ``merge_cfg`` on the switch (like the IOS driver).
+        """
         try:
             candidate = self._read_candidate(filename, config)
         except (OSError, ValueError) as exc:
             raise MergeConfigException(str(exc)) from exc
         self.candidate_config = "\n".join(parsers.config_lines(candidate))
+        if self.config_method == "file":
+            try:
+                self._upload_config(self.candidate_config, self.merge_cfg)
+            except CommandErrorException as exc:
+                raise MergeConfigException(str(exc)) from exc
+
+    def _gen_full_path(self, filename: str) -> str:
+        if filename.startswith("/"):
+            return filename
+        return f"{self.dest_file_system}/{filename}"
+
+    def _upload_config(self, config: str, dest_file: str) -> None:
+        """Copy a configuration to the switch with SCP, as a config file."""
+        content = config
+        if not re.search(r"^\s*conf(?:ig(?:ure)?)?\s+t(?:erminal)?\b", content, re.I | re.M):
+            content = "config terminal\n" + content
+        if not re.search(r"^\s*end\s*$", content, re.M):
+            content += "\nend"
+        handle, tmp_file = tempfile.mkstemp(prefix="napalm_fe_", suffix=".cfg")
+        try:
+            with os.fdopen(handle, "w") as tmp:
+                tmp.write(content + "\n")
+            with ExtremeVspFileTransfer(
+                ssh_conn=self._ssh(),
+                source_file=tmp_file,
+                dest_file=dest_file,
+                file_system=self.dest_file_system,
+            ) as transfer:
+                if not transfer.verify_space_available():
+                    raise CommandErrorException("Insufficient space on the switch")
+                transfer.transfer_file()
+                if not transfer.verify_file():
+                    raise CommandErrorException("File transfer to the switch failed")
+        except CommandErrorException:
+            raise
+        except Exception as exc:
+            raise CommandErrorException(f"File transfer to the switch failed: {exc}") from exc
+        finally:
+            os.remove(tmp_file)
 
     def compare_config(self) -> str:
         """Return the difference between the candidate and the running config.
@@ -470,9 +546,10 @@ class FEDriver(NetworkDriver):
     def commit_config(self, message: str = "", revert_in: Optional[int] = None) -> None:
         """Apply the merge candidate (like the IOS driver).
 
-        The lines are sent in configuration mode; the first rejected line stops
-        the merge and raises ``MergeConfigException`` (lines before it stay
-        applied).
+        * ``config_method="cli"``: the lines are sent in configuration mode;
+          the first rejected line stops the merge and raises
+          ``MergeConfigException`` (lines before it stay applied)
+        * ``config_method="file"``: the uploaded file is applied with ``source``
 
         A merge is saved with ``save config`` unless ``save_config`` is ``False``.
         ``revert_in`` (commit confirm) is not supported.
@@ -487,7 +564,10 @@ class FEDriver(NetworkDriver):
         logger.info(
             "%s: merging %d line(s)", self.hostname, len(self.candidate_config.splitlines())
         )
-        self._commit_from_cli()
+        if self.config_method == "file":
+            self._commit_from_file()
+        else:
+            self._commit_from_cli()
         if self.device is not None:
             # a new hostname ("prompt", set_hostname template) changes the SSH
             # prompt; update Netmiko's base prompt like the NX-OS driver
@@ -523,6 +603,11 @@ class FEDriver(NetworkDriver):
             "Configuration merge failed; automatic rollback not available, the "
             f"switch may be left partly changed (not saved):\n{output.strip()}"
         )
+
+    def _commit_from_file(self) -> None:
+        output = self._source_file(self._gen_full_path(self.merge_cfg))
+        if self._has_cli_error(output):
+            raise self._merge_failed(output)
 
     def _commit_from_cli(self) -> None:
         lines = (self.candidate_config or "").splitlines()

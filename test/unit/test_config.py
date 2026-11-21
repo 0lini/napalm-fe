@@ -342,3 +342,180 @@ def test_commit_confirm_not_supported(driver):
     driver.load_merge_candidate(config=CONFIG)
     with pytest.raises(NotImplementedError):
         driver.commit_config(revert_in=300)
+
+
+# config_method="file": SCP upload and "source <file> debug"
+
+
+class FakeTransfer:
+    """Replaces the SCP transfer: stores the file in the fake switch's flash."""
+
+    instances = []
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        with open(kwargs["source_file"]) as handle:
+            self.content = handle.read()
+        path = f"{kwargs['file_system']}/{kwargs['dest_file']}"
+        kwargs["ssh_conn"].flash[path] = self.content
+        FakeTransfer.instances.append(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass
+
+    def verify_space_available(self):
+        return True
+
+    def transfer_file(self):
+        pass
+
+    def verify_file(self):
+        return True
+
+
+def _make_driver(monkeypatch, **optional_args):
+    from napalm_fe import fe
+
+    FakeTransfer.instances = []
+    monkeypatch.setattr(fe, "ExtremeVspFileTransfer", FakeTransfer)
+    driver = PatchedFEDriver(
+        "host", "user", "pass", optional_args={"transport": "ssh", **optional_args}
+    )
+    # compare_config() reads the running config of the real Fabric Engine 9.4 capture
+    driver.device.current_test = "test_get_config"
+    driver.device.current_test_case = "fabric_engine_9.4"
+    return driver
+
+
+@pytest.fixture
+def file_driver(monkeypatch):
+    return _make_driver(monkeypatch, config_method="file")
+
+
+def test_file_method_upload_and_commit(file_driver):
+    file_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    upload = FakeTransfer.instances[0]
+    assert upload.kwargs["dest_file"] == "napalm_merge.cfg"
+    assert upload.kwargs["file_system"] == "/intflash"
+    assert upload.content == "config terminal\nntp server 192.0.2.99\nend\n"
+
+    assert file_driver.compare_config() == "+ntp server 192.0.2.99"
+    file_driver.commit_config()
+    assert file_driver.device.commands[-2:] == [
+        "source /intflash/napalm_merge.cfg debug",
+        "save config",
+    ]
+    assert file_driver.device.sent_config == []  # nothing sent line by line
+
+
+def test_file_method_source_error(file_driver):
+    file_driver.load_merge_candidate(config="bogus command")
+    file_driver.device.send_command = lambda command, **kw: (
+        "% Invalid input detected at '^' marker." if command.startswith("source") else ""
+    )
+    with pytest.raises(MergeConfigException, match="Invalid input"):
+        file_driver.commit_config()
+
+
+def test_invalid_config_method():
+    with pytest.raises(ValueError):
+        PatchedFEDriver("host", "user", "pass", optional_args={"config_method": "x"})
+
+
+SOURCE_OUTPUT = """\
+1 2026-11-17T16:28:54.149Z 5520-24T-FabricEngine CP1 - 0x001dc70e - 00000000 GlobalRouter ISIS INFO Loading ISIS Md5 config key file with size 0 bytes.
+1 2026-11-17T16:28:54.149Z 5520-24T-FabricEngine CP1 - 0x001dc70e - 00000000 GlobalRouter ISIS INFO Loading ISIS simple config key file with size 0 bytes.
+1 2026-11-17T16:28:54.149Z 5520-24T-FabricEngine CP1 - 0x001dc70e - 00000000 GlobalRouter ISIS INFO Loading ISIS sha256 config key file with size 0 bytes.
+"""
+
+
+def test_file_method_real_source_output(file_driver):
+    from napalm_fe.fe import FEDriver
+
+    assert FEDriver._send_command_postprocess(SOURCE_OUTPUT) == ""
+    original = file_driver.device.send_command
+
+    def send_command(command, **kwargs):
+        if command.startswith("source "):
+            file_driver.device.commands.append(command)
+            return SOURCE_OUTPUT
+        return original(command, **kwargs)
+
+    file_driver.device.send_command = send_command
+    file_driver.load_merge_candidate(config='snmp-server location "napalm-test"')
+    file_driver.commit_config()
+    assert file_driver.device.commands[-2:] == [
+        "source /intflash/napalm_merge.cfg debug",
+        "save config",
+    ]
+
+
+SOURCE_DEBUG_TYPO = """\
+
+5520-24T-FabricEngine:1#config terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+5520-24T-FabricEngine:1(config)#snmp-server location "napalm-test"
+5520-24T-FabricEngine:1(config)#asdasda
+                                 ^
+% Invalid input detected at '^' marker.
+5520-24T-FabricEngine:1(config)#end
+"""
+
+
+SOURCE_DEBUG_GOOD = """\
+
+5520-24T-FabricEngine:1#config terminal
+Enter configuration commands, one per line.  End with CNTL/Z.
+5520-24T-FabricEngine:1(config)#snmp-server location "napalm-test"
+5520-24T-FabricEngine:1(config)#end
+"""
+
+
+@pytest.mark.parametrize("output, fails", [(SOURCE_DEBUG_TYPO, True), (SOURCE_DEBUG_GOOD, False)])
+def test_file_method_source_debug_output(file_driver, output, fails):
+    original = file_driver.device.send_command
+
+    def send_command(command, **kwargs):
+        if command.startswith("source "):
+            # the echo contains the prompt: only the prompt at the end may match
+            assert not re.search(kwargs["expect_string"], output)
+            assert re.search(kwargs["expect_string"], output + "5520-24T-FabricEngine:1#")
+            return output
+        return original(command, **kwargs)
+
+    file_driver.device.send_command = send_command
+    file_driver.load_merge_candidate(config='snmp-server location "napalm-test"\nasdasda')
+    if fails:
+        with pytest.raises(MergeConfigException, match="Invalid input"):
+            file_driver.commit_config()
+        assert "save config" not in file_driver.device.commands
+    else:
+        file_driver.commit_config()
+        assert file_driver.device.commands[-1] == "save config"
+
+
+def test_upload_stops_if_free_space_unknown(monkeypatch):
+    """The upload is refused (no transfer) if 'dir' output cannot be read."""
+
+    class NoSpaceInfo(FakeTransfer):
+        def verify_space_available(self):
+            raise ValueError("Free space not found in the output of 'dir'")
+
+        def transfer_file(self):
+            raise AssertionError("must not transfer")
+
+    from napalm_fe import fe
+
+    driver = _make_driver(monkeypatch, config_method="file")
+    monkeypatch.setattr(fe, "ExtremeVspFileTransfer", NoSpaceInfo)
+    with pytest.raises(MergeConfigException, match="Free space not found"):
+        driver.load_merge_candidate(config="ntp server 192.0.2.99")
+
+
+def test_discard_merge_deletes_nothing(file_driver):
+    file_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    file_driver.discard_config()
+    assert not any(c.startswith("delete") for c in file_driver.device.commands)

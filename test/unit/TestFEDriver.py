@@ -29,8 +29,9 @@ def read_file(name):
 
 
 class TestConfig(unittest.TestCase):
-    """Merge, typo and discard tests."""
+    """Merge, typo and discard tests (lines sent in configuration mode)."""
 
+    config_method = "cli"
     device: FEDriver
     original_location: str
 
@@ -40,7 +41,7 @@ class TestConfig(unittest.TestCase):
         if not hostname:
             raise unittest.SkipTest("NAPALM_HOSTNAME is not set (live switch tests)")
         optional_args = json.loads(os.environ.get("NAPALM_OPTIONAL_ARGS", "{}"))
-        optional_args["save_config"] = False
+        optional_args.update({"save_config": False, "config_method": cls.config_method})
         cls.device = FEDriver(
             hostname,
             os.environ["NAPALM_USERNAME"],
@@ -97,3 +98,12 @@ class TestConfig(unittest.TestCase):
         self.device.discard_config()
         self.assertEqual(self.device.compare_config(), "")
         self.assertEqual(self.device.get_snmp_information()["location"], self.original_location)
+
+
+class TestConfigFile(TestConfig):
+    """The same with config_method="file" (SCP upload, restore point, source).
+
+    Leaves ``napalm_merge.cfg`` in ``/intflash``.
+    """
+
+    config_method = "file"
