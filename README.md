@@ -81,7 +81,7 @@ All Netmiko connection arguments are passed to the SSH connection.
 Getters: `get_facts`, `get_environment`, `get_interfaces`, `get_interfaces_ip`,
 `get_interfaces_counters`, `get_lldp_neighbors`, `get_lldp_neighbors_detail`,
 `get_arp_table`, `get_mac_address_table`, `get_vlans`, `get_ntp_servers`,
-`get_snmp_information`, `get_users` (`https` only), `get_config` (with
+`get_snmp_information`, `get_users`, `get_config` (with
 `sanitized`), `cli`, `is_alive`.
 Not implemented yet: BGP, optics, route table, NTP stats/peers, network
 instances, ping/traceroute, IPv6 neighbours.

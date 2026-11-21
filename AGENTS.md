@@ -255,12 +255,18 @@ read-only, `v1v2grp` read-write; `snmp-server community <c> group <g> index
 index). Open: over `https`, `get_snmp_information` lists every community once
 per context (`c`, `c::1`, `c::512` - VRF contexts), as the API returns it.
 
-Users (2026-11-21, 9.4): six fixed accounts (`ro`, `l1`, `l2`, `l3`, `rw`,
-`rwa`); `username <name> level <l>` does not add a user but renames the
+Users (2026-11-21, 9.4; `show cli username` also on 9.3): `show cli
+username` lists all accounts (UserName, AccessLevel, State, Type; header
+between two `===` rules); the API `configuration/accounts` the same plus the
+encrypted secret and `removable`; the running config shows none. Six default
+accounts (`ro`, `l1`, `l2`, `l3`, `rw`, `rwa`), up to seven more with
+`username add <name> level <ro|rw|rwa> enable` (asks the password twice,
+interactively). `username <name> level <l>` (without `add`) renames the
 default account of that level after `Do you want to change username for the
-default RO user ? (y/n) ?`, then asks for the password. No CLI command lists
-the accounts (not in the running config, not in `show cli password`), so
-`get_users` is `https` only (`configuration/accounts`); no user templates.
+default RO user ? (y/n) ?`. `no username <name> enable` disables, `no
+username <name>` deletes after `The specified user name will be deleted!
+Continue (y/n) ?`. So no user templates (password prompt; the (y/n) would
+eat the next line over SSH, the API answers it itself).
 
 Not implemented yet (NotImplementedError, skipped in tests): BGP,
 optics, route table, NTP stats/peers, network instances, ping/traceroute,

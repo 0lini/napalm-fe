@@ -25,7 +25,7 @@ Tested on Fabric Engine 9.1 - 9.4 (GNS3 VMs, see `docs/fe.rst`).
   `get_interfaces_ip`, `get_interfaces_counters`, `get_lldp_neighbors`,
   `get_lldp_neighbors_detail`, `get_arp_table`, `get_mac_address_table`,
   `get_vlans`, `get_ntp_servers`, `get_snmp_information`, `get_users`
-  (`https` only: the CLI does not list the accounts), `get_config` (with
+  (password only over `https`), `get_config` (with
   `sanitized`), `cli`, `is_alive`.
 - Configuration management like the IOS driver: `load_merge_candidate`,
   incremental `compare_config`, `commit_config`, `discard_config`; the running

@@ -121,7 +121,7 @@ Method                         ``https``                                        
 ``get_vlans``                  ``v0/configuration/vlan``, ``v1/state/vlan``              ``show vlan basic``, ``show vlan members``
 ``get_ntp_servers``            ``v0/configuration/ntp``                                  ``show running-config``
 ``get_snmp_information``       ``v0/configuration/snmp``, ``v0/state/system``            ``show sys-info``
-``get_users``                  ``v0/configuration/accounts``                             - (not available, see below)
+``get_users``                  ``v0/configuration/accounts``                             ``show cli username``
 ``get_config``                 CLI through the API                                       ``show running-config [verbose]``, ``more <startup file>``
 ``cli``                        CLI through the API                                       any command
 ============================== ========================================================= ==========================================================
@@ -289,20 +289,22 @@ templates, verified on Fabric Engine 9.4:
 
 There are no NTP peer, probe or user templates. Fabric Engine has no NTP
 peers. ``set_users`` / ``delete_users`` cannot be written as configuration
-lines: ``username <name> level <level>`` renames one of the fixed accounts
-after a (y/n) question and the password is only asked interactively.
+lines that work on both transports: ``username add <name> level <level>
+enable`` asks for the password interactively, ``no username <name>`` asks
+(y/n) - over SSH the next line would be taken as the answer.
 
 
 Users
 ~~~~~
 
-Fabric Engine has six fixed accounts: ``ro``, ``l1``, ``l2``, ``l3``, ``rw``
-and ``rwa`` (they can be renamed). ``get_users`` needs ``transport="https"``:
-only the API (``v0/configuration/accounts``) lists them; no CLI command shows
-them, so over ``ssh`` it raises ``NotImplementedError``. The access level is
+``get_users`` returns the six default accounts (``ro``, ``l1``, ``l2``,
+``l3``, ``rw``, ``rwa``; they can be renamed) and up to seven user defined
+ones (``username add``), also disabled ones. ``ssh``: ``show cli
+username``; ``https``: ``v0/configuration/accounts``. The access level is
 mapped to NAPALM's privilege level: ``rwa`` 15, ``rw`` 14, ``l3`` 4, ``l2``
-3, ``l1`` 2, ``ro`` 1. ``password`` is the encrypted secret as the switch
-stores it; SSH keys are not reported (``sshkeys`` is empty).
+3, ``l1`` 2, ``ro`` 1. Only ``https`` returns ``password`` (the encrypted
+secret the switch stores); the CLI shows no passwords. SSH keys are not
+reported (``sshkeys`` is empty).
 
 
 Known gotchas
