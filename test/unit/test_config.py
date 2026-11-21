@@ -3,7 +3,7 @@
 import re
 
 import pytest
-from napalm.base.exceptions import MergeConfigException, ReplaceConfigException
+from napalm.base.exceptions import MergeConfigException
 from netmiko.exceptions import ConfigInvalidException
 
 from .conftest import PatchedFEDriver
@@ -166,11 +166,6 @@ def file_driver(monkeypatch):
     return _make_driver(monkeypatch, config_method="file")
 
 
-@pytest.fixture
-def reboot_driver(monkeypatch):
-    return _make_driver(monkeypatch, allow_reboot=True)
-
-
 def test_file_method_upload_and_commit(file_driver):
     file_driver.load_merge_candidate(config="ntp server 192.0.2.99")
     upload = FakeTransfer.instances[0]
@@ -180,8 +175,7 @@ def test_file_method_upload_and_commit(file_driver):
 
     assert file_driver.compare_config() == "+ntp server 192.0.2.99"
     file_driver.commit_config()
-    assert file_driver.device.commands[-3:] == [
-        "save config file /intflash/napalm_rollback.cfg",
+    assert file_driver.device.commands[-2:] == [
         "source /intflash/napalm_merge.cfg debug",
         "save config",
     ]
@@ -191,11 +185,9 @@ def test_file_method_upload_and_commit(file_driver):
 def test_file_method_source_error(file_driver):
     file_driver.load_merge_candidate(config="bogus command")
     file_driver.device.send_command = lambda command, **kw: (
-        "% Invalid input detected at '^' marker."
-        if command.startswith("source")
-        else "CP-1: Save config to file /intflash/napalm_rollback.cfg successful."
+        "% Invalid input detected at '^' marker." if command.startswith("source") else ""
     )
-    with pytest.raises(MergeConfigException, match="napalm_rollback.cfg"):
+    with pytest.raises(MergeConfigException, match="Invalid input"):
         file_driver.commit_config()
 
 
@@ -247,130 +239,10 @@ def test_sanitize_filters():
 # --- rollback file (like the IOS driver: saved before every commit) --------
 
 
-def test_merge_saves_rollback_file_first(driver):
-    driver.load_merge_candidate(config="ntp server 192.0.2.99")
-    driver.commit_config()
-    assert driver.device.commands[0] == "save config file /intflash/napalm_rollback.cfg"
-    assert "/intflash/napalm_rollback.cfg" in driver.device.flash
-    assert driver.device.sent_config == ["ntp server 192.0.2.99"]
-
-
-def test_second_commit_overwrites_rollback_file(driver):
-    # the rollback file exists from the first commit: the switch asks before
-    # overwriting it (Fabric Engine 9.3) and aborts on any answer but "y"
-    driver.load_merge_candidate(config="ntp server 192.0.2.99")
-    driver.commit_config()
-    driver.load_merge_candidate(config="ntp server 192.0.2.98")
-    driver.commit_config()
-    assert driver.device.commands.count("save config file /intflash/napalm_rollback.cfg") == 2
-    assert driver.device.commands.count("y") == 1
-    assert driver.device.sent_config == ["ntp server 192.0.2.99", "ntp server 192.0.2.98"]
-
-
-def test_merge_aborts_if_rollback_file_fails(driver):
-    driver.device.send_command = lambda command, **kw: "Error: flash is full"
-    driver.load_merge_candidate(config="ntp server 192.0.2.99")
-    with pytest.raises(
-        MergeConfigException,
-        match="Could not save the configuration to /intflash/napalm_rollback.cfg",
-    ):
-        driver.commit_config()
-    assert driver.device.sent_config == []
-
-
 # --- replace (Site Engine style: install as boot config + reboot) ----------
-
-FULL_CONFIG = """\
-config terminal
-prompt "fe-sw-013"
-ntp server 192.0.2.21
-end
-"""
-
-
-def test_replace_compare_and_commit(reboot_driver):
-    device = reboot_driver.device
-    reboot_driver.load_replace_candidate(config=FULL_CONFIG)
-    upload = FakeTransfer.instances[0]
-    assert upload.kwargs["dest_file"] == "napalm_candidate.cfg"
-    assert upload.content == FULL_CONFIG
-
-    diff = reboot_driver.compare_config().splitlines()
-    assert "-ntp server 192.0.2.22" in diff
-    assert "-sys mtu 9600" in diff
-    assert not any(line.startswith("+") for line in diff)  # nothing new in the candidate
-
-    reboot_driver.commit_config()
-    assert device.commands == [
-        "show running-config",
-        "save config file /intflash/napalm_rollback.cfg",
-        "dir /intflash -l",
-        "copy /intflash/napalm_candidate.cfg /intflash/config.cfg",
-        "y",
-        "reset -y",
-    ]
-    assert device.flash["/intflash/config.cfg"] == FULL_CONFIG
-    assert device.rebooted
-    assert reboot_driver.compare_config() == ""  # candidate consumed
-
-
-def test_replace_requires_allow_reboot(monkeypatch):
-    driver = _make_driver(monkeypatch)
-    driver.load_replace_candidate(config=FULL_CONFIG)
-    with pytest.raises(ReplaceConfigException, match="allow_reboot"):
-        driver.commit_config()
-    assert not driver.device.rebooted
-    assert driver.device.flash["/intflash/config.cfg"] == "startup config"
-
-
-def test_replace_from_missing_file(reboot_driver):
-    with pytest.raises(ReplaceConfigException):
-        reboot_driver.load_replace_candidate(filename="/does/not/exist")
-    assert reboot_driver.compare_config() == ""
-
-
-def test_discard_replace(reboot_driver):
-    reboot_driver.load_replace_candidate(config=FULL_CONFIG)
-    assert "/intflash/napalm_candidate.cfg" in reboot_driver.device.flash
-    reboot_driver.discard_config()
-    # like NX-OS: the uploaded candidate is deleted on the switch
-    assert reboot_driver.device.commands[-2:] == ["delete /intflash/napalm_candidate.cfg", "y"]
-    assert "/intflash/napalm_candidate.cfg" not in reboot_driver.device.flash
-    assert reboot_driver.compare_config() == ""
-    with pytest.raises(MergeConfigException):
-        reboot_driver.commit_config()
 
 
 # --- rollback -----------------------------------------------------------------
-
-
-def test_rollback_after_merge(reboot_driver):
-    device = reboot_driver.device
-    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
-    reboot_driver.commit_config()
-    device.commands.clear()
-
-    reboot_driver.rollback()
-    assert device.commands == [
-        "dir /intflash -l",
-        "copy /intflash/napalm_rollback.cfg /intflash/config.cfg",
-        "y",
-        "reset -y",
-    ]
-    assert device.flash["/intflash/config.cfg"] == "running config"
-    assert device.rebooted
-
-
-def test_rollback_without_rollback_file(reboot_driver):
-    with pytest.raises(ReplaceConfigException, match="does not exist"):
-        reboot_driver.rollback()
-    assert not reboot_driver.device.rebooted
-
-
-def test_rollback_requires_allow_reboot(driver):
-    with pytest.raises(ReplaceConfigException, match="allow_reboot"):
-        driver.rollback()
-    assert not driver.device.rebooted
 
 
 # Real log message printed into an SSH session ("logging screen"), Fabric Engine 9.4 VM
@@ -431,21 +303,6 @@ def test_log_message_in_the_middle_of_a_line():
     split = row.index("1950") + 4  # interrupted right after a number
     output = f"PORT\n{row[:split]}{LOG_LINE}\n{row[split:]}\n1/2      193"
     assert FEDriver._send_command_postprocess(output) == f"PORT\n{row}\n1/2      193"
-
-
-def test_confirm_prompt_followed_by_log_message(reboot_driver):
-    device = reboot_driver.device
-    original = device.send_command_timing
-
-    def noisy(command, **kwargs):
-        output = original(command, **kwargs)
-        return f"{output}\n{LOG_LINE}" if output else output
-
-    device.send_command_timing = noisy
-    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
-    reboot_driver.commit_config()
-    reboot_driver.rollback()
-    assert device.rebooted  # both (y/n) prompts were answered
 
 
 def test_config_lines_are_not_log_messages():
@@ -638,17 +495,6 @@ def test_discard_merge_deletes_nothing(file_driver):
     assert not any(c.startswith("delete") for c in file_driver.device.commands)
 
 
-def test_discard_survives_failed_delete(reboot_driver):
-    reboot_driver.load_replace_candidate(config=FULL_CONFIG)
-
-    def broken(command, **kwargs):
-        raise OSError("Socket is closed")
-
-    reboot_driver.device.send_command_timing = broken
-    reboot_driver.discard_config()  # logged, not raised
-    assert reboot_driver.compare_config() == ""
-
-
 def test_driver_name():
     from napalm import get_network_driver
 
@@ -681,15 +527,13 @@ def test_transport_option():
 
 
 def test_failed_merge_message(driver):
-    """Says that nothing was rolled back and how to restore (like napalm-dellos10)."""
+    """Says that nothing was rolled back (like napalm-dellos10)."""
     driver.device.send_config_set = lambda lines, **kw: COMMUNITY_EXISTS
     driver.load_merge_candidate(config="foo")
     with pytest.raises(MergeConfigException) as exc:
         driver.commit_config()
     message = str(exc.value)
     assert "automatic rollback not available" in message
-    assert "/intflash/napalm_rollback.cfg" in message
-    assert "allow_reboot=True" in message
     assert "Error: The community entry already exists." in message
 
 
@@ -716,8 +560,7 @@ def test_https_merge_commit(monkeypatch):
         "exit",
         "end",
     ]
-    # rollback file first, then "save config" - both through the API
-    assert driver.api.saved == ["/intflash/napalm_rollback.cfg", None]
+    assert driver.api.saved == [None]  # "save config" through the API
     assert driver.device.commands == [] and driver.device.sent_config == []  # no SSH
 
 
@@ -740,7 +583,7 @@ def test_https_merge_error(monkeypatch, outputs):
     with pytest.raises(MergeConfigException, match="automatic rollback not available") as exc:
         driver.commit_config()
     assert "foo" in str(exc.value)
-    assert driver.api.saved == ["/intflash/napalm_rollback.cfg"]  # not saved
+    assert driver.api.saved == []  # not saved
 
 
 def test_https_save_failure(monkeypatch):
@@ -757,13 +600,6 @@ def test_https_save_failure(monkeypatch):
     with pytest.raises(CommandErrorException, match="Saving the configuration failed"):
         driver.commit_config()
 
-    driver.api.save_config = lambda name=None: (_ for _ in ()).throw(
-        CommandErrorException("HTTP 500")
-    )
-    driver.load_merge_candidate(config="foo")
-    with pytest.raises(MergeConfigException, match="napalm_rollback.cfg"):
-        driver.commit_config()
-
 
 def test_https_file_method(monkeypatch):
     driver = _https_driver(monkeypatch, config_method="file")
@@ -772,37 +608,6 @@ def test_https_file_method(monkeypatch):
     assert FakeTransfer.instances[0].kwargs["ssh_conn"] is driver.device
     driver.commit_config()
     assert "cli: source /intflash/napalm_merge.cfg debug" in driver.api.requests
-    assert driver.device.commands == []
-
-
-def test_https_replace_only_uploads_over_ssh(monkeypatch):
-    driver = _https_driver(monkeypatch, allow_reboot=True)
-    driver.load_replace_candidate(config="config terminal\nend")
-    assert FakeTransfer.instances[0].kwargs["ssh_conn"] is driver.device  # SCP
-    driver.commit_config()
-    # copy over the existing boot configuration and reset, both through the API
-    assert "cli: copy /intflash/napalm_candidate.cfg /intflash/config.cfg" in driver.api.requests
-    assert (
-        driver.device.flash["/intflash/config.cfg"]
-        == driver.device.flash["/intflash/napalm_candidate.cfg"]
-    )
-    assert "cli: reset -y" in driver.api.requests and driver.device.rebooted
-    assert driver.device.commands == []
-
-
-def test_https_rollback_and_discard(monkeypatch):
-    driver = _https_driver(monkeypatch, allow_reboot=True)
-    driver.load_merge_candidate(config="foo")
-    driver.commit_config()
-    driver.rollback()
-    assert "cli: copy /intflash/napalm_rollback.cfg /intflash/config.cfg" in driver.api.requests
-    assert driver.device.rebooted
-
-    driver = _https_driver(monkeypatch, allow_reboot=True)
-    driver.load_replace_candidate(config="config terminal\nend")
-    driver.discard_config()
-    assert "cli: delete /intflash/napalm_candidate.cfg" in driver.api.requests
-    assert "/intflash/napalm_candidate.cfg" not in driver.device.flash
     assert driver.device.commands == []
 
 

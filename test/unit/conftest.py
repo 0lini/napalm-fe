@@ -1,7 +1,6 @@
 """Test fixtures for the NAPALM getter tests (mocked device)."""
 
 import os
-import re
 from urllib.parse import urlencode
 
 import pytest
@@ -80,9 +79,8 @@ class FakeOpenApiSession(BaseTestDouble):
     ``/v0/state/forwarding/ip-arp?vr_name=TEST`` ->
     ``_v0_state_forwarding_ip_arp_vr_name_TEST.json``.
 
-    CLI commands return the CLI output files; the commands the SSH fake
-    simulates on its in-memory flash (``dir``, ``source``, the switch log)
-    and saving the configuration act on the same fake switch.
+    CLI commands return the CLI output files; ``source`` and saving the
+    configuration act on the same fake switch as the SSH fake.
     """
 
     token = "fake-token"
@@ -108,25 +106,11 @@ class FakeOpenApiSession(BaseTestDouble):
         return [self._output(command) for command in commands]
 
     def _output(self, command):
-        sent = len(self.switch.commands)
-        try:
-            if command.startswith(("copy ", "delete ", "reset")):
-                return self._confirmed(command)
-            if command.startswith(("dir ", "source ")):
-                return self.switch.send_command(command)
-        finally:
-            del self.switch.commands[sent:]  # ran through the API, not over SSH
+        if command.startswith("source "):
+            output = self.switch.send_command(command)
+            self.switch.commands.pop()  # ran through the API, not over SSH
+            return output
         return self.read_txt_file(self.find_file(self.sanitize_text(command) + ".txt"))
-
-    def _confirmed(self, command):
-        """The CLI operation confirms (y/n) questions itself (9.4): ``copy``
-        onto an existing file only echoes ``File [...] already existing,``,
-        ``delete`` and ``reset -in`` print nothing."""
-        output = self.switch.send_command_timing(command)
-        if self.switch._pending:
-            self.switch.send_command_timing("y")
-            return output.split(" overwrite")[0] if "already existing" in output else ""
-        return output
 
     def save_config(self, name=None):
         """POST operation/system/config/:save (no prompt, overwrites)."""
@@ -146,10 +130,9 @@ class _FakeRemoteConn:
 class FakeFEDevice(BaseTestDouble):
     """Netmiko replacement.
 
-    ``show`` commands return the content of the mocked_data files. File and
-    configuration commands (``save config file``, ``ls``, ``copy``, ``source``,
-    ``reset``) are simulated on an in-memory flash; their output follows real
-    Fabric Engine 9.4 output where it is known.
+    ``show`` commands return the content of the mocked_data files; ``source``
+    prints nothing (real output: see the tests), uploaded files land in an
+    in-memory flash.
     """
 
     remote_conn = _FakeRemoteConn()
@@ -159,8 +142,6 @@ class FakeFEDevice(BaseTestDouble):
         self.sent_config = []
         self.commands = []
         self.flash = {"/intflash/config.cfg": "startup config"}
-        self.rebooted = False
-        self._pending = None
 
     def write_channel(self, data):
         pass
@@ -170,85 +151,10 @@ class FakeFEDevice(BaseTestDouble):
 
     def send_command(self, command, **kwargs):
         self.commands.append(command)
-        if command == "y" and self._pending:
-            action, self._pending = self._pending, None
-            return action()
-        if self._pending:  # real switch: any other answer aborts
-            self._pending = None
-            return ""
-        if command.startswith("save config file "):
-            path = command.split()[-1]
-
-            def save():
-                self.flash[path] = "running config"
-                return (
-                    f"CP-1: Save config to file {path} successful.\n"
-                    'WARNING: Choice Primary Node Config file is "/intflash/config.cfg".'
-                )
-
-            if path not in self.flash:
-                return save()
-            self._pending = save
-            question = f"File [{path}] already existing, overwrite (y/n) ? "  # real (9.3)
-            # the driver must wait for it with expect_string, not for the prompt
-            assert re.search(kwargs.get("expect_string", "^$"), question)
-            return question
-        if command.startswith("dir ") and command.endswith(" -l"):
-            directory = command.split()[1].rstrip("/")
-            lines = [
-                "",
-                "       -------- INTFLASH --------",
-                "  size          date       time       name",
-                "--------       ------     ------    --------",
-            ]
-            for path, content in sorted(self.flash.items()):
-                if path.rsplit("/", 1)[0] == directory:
-                    lines.append(f"{len(content):8d}    Nov-17-2026  16:28   {path}")
-            lines.append(
-                "total: 6260543488       used: 202092544         free: 6058450944        bytes"
-            )
-            return "\n".join(lines)
         if command.startswith("source "):
             return ""
         filename = "{}.txt".format(self.sanitize_text(command))
         return self.read_txt_file(self.find_file(filename))
-
-    def send_command_timing(self, command, **kwargs):
-        self.commands.append(command)
-        if command == "y" and self._pending:
-            action, self._pending = self._pending, None
-            return action()
-        if self._pending:  # real switch: any other answer aborts
-            self._pending = None
-            return ""
-        if command.startswith("copy "):
-            _, src, dst = command.split()
-            if dst not in self.flash:  # real switch: no output for a new file
-                self.flash[dst] = self.flash[src]
-                return ""
-
-            def copy():
-                self.flash[dst] = self.flash[src]
-                return ""
-
-            self._pending = copy
-            return f"File [{dst}] already existing, overwrite (y/n) ? "
-        if command.startswith("delete "):
-            path = command.split()[1]
-
-            def delete():
-                self.flash.pop(path, None)
-                return ""
-
-            self._pending = delete
-            return "Are you sure (y/n) ? "  # real prompt (9.4)
-        if command == "reset":
-            self._pending = None  # real prompt; the driver must not need it
-            return "Are you sure you want to reset the switch (y/n) ? "
-        if command == "reset -y":
-            self.rebooted = True
-            raise OSError("Socket is closed")
-        return ""
 
     def send_config_set(self, config_commands, **kwargs):
         self.sent_config.extend(config_commands)
