@@ -204,3 +204,13 @@ def test_temperature_without_description():
     result = parsers.parse_sys_info_temperature(SYS_INFO_VM_TEMPERATURE)
     assert list(result) == ["Sensor 1", "Sensor 2", "Sensor 3"]
     assert result["Sensor 1"] == {"temperature": 0.0, "is_alert": False, "is_critical": False}
+
+
+def test_replace_diff():
+    running = "#\n# comment\nconfig terminal\nsys mtu 9600\nntp server 10.0.0.1\nend\n"
+    candidate = "config terminal\nsys mtu 9600\nntp server 10.0.0.2\nend\n"
+    assert parsers.replace_diff(running, candidate).splitlines() == [
+        "-ntp server 10.0.0.1",
+        "+ntp server 10.0.0.2",
+    ]
+    assert parsers.replace_diff(candidate, candidate) == ""

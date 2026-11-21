@@ -16,13 +16,14 @@ from napalm.base.exceptions import (
     CommandErrorException,
     ConnectionClosedException,
     MergeConfigException,
+    ReplaceConfigException,
 )
 from napalm.base.helpers import sanitize_configs
 from napalm.base.netmiko_helpers import netmiko_args
 from netmiko.exceptions import ConfigInvalidException
 
 from napalm_fe import parsers
-from napalm_fe.file_transfer import ExtremeVspFileTransfer
+from napalm_fe.file_transfer import ExtremeVspFileTransfer, parse_dir
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +113,16 @@ class FEDriver(NetworkDriver):
           in configuration mode. ``"file"`` works like the IOS driver: the
           candidate is copied to the switch with SCP on load and applied with
           ``source``.
-        * ``dest_file_system`` (default ``/intflash``) and ``merge_cfg`` (default
-          ``napalm_merge.cfg``): files on the switch.
+        * ``allow_reboot`` (bool, default ``False``): allow replace commits and
+          ``rollback()``. Fabric Engine has no ``configure replace``; like
+          ExtremeCloud IQ Site Engine's configuration restore, the driver
+          installs the file as the boot configuration and reboots the switch.
+        * ``dest_file_system`` (default ``/intflash``), ``candidate_cfg``
+          (default ``napalm_candidate.cfg``), ``merge_cfg`` (default
+          ``napalm_merge.cfg``) and ``rollback_cfg`` (default
+          ``napalm_rollback.cfg``): files on the switch. Like the IOS driver, the
+          running configuration is saved to ``rollback_cfg`` before every
+          commit.
         * ``startup_config_file`` (str, default ``/intflash/config.cfg``):
           the file returned as the ``startup`` configuration by ``get_config``.
         """
@@ -130,10 +139,14 @@ class FEDriver(NetworkDriver):
         if self.config_method not in ("cli", "file"):
             raise ValueError("config_method must be 'cli' or 'file'")
         self.dest_file_system = optional_args.get("dest_file_system", "/intflash").rstrip("/")
+        self.candidate_cfg = optional_args.get("candidate_cfg", "napalm_candidate.cfg")
         self.merge_cfg = optional_args.get("merge_cfg", "napalm_merge.cfg")
+        self.allow_reboot = bool(optional_args.get("allow_reboot", False))
+        self.rollback_cfg = optional_args.get("rollback_cfg", "napalm_rollback.cfg")
         self.netmiko_optional_args = netmiko_args(optional_args)
         self.device: Any = None
         self.candidate_config: Optional[str] = None
+        self.config_replace = False
         self.profile = [self.platform]
 
     # ------------------------------------------------------------------
@@ -190,6 +203,15 @@ class FEDriver(NetworkDriver):
             output, remove_log_messages=not LOG_DISPLAY_COMMAND_RE.match(command)
         )
 
+    def _send_command_timing(self, command: str) -> str:
+        """Send a command that prompts or has no fixed end (copy, delete, reset, y).
+
+        Log messages printed into the session (they may follow a prompt) are
+        removed.
+        """
+        output = str(self._ssh().send_command_timing(command, read_timeout=self.timeout))
+        return LOG_MESSAGE_RE.sub("", output)
+
     def _send_config(self, lines: List[str]) -> str:
         """Send lines in configuration mode; stop at the first rejected line.
 
@@ -213,6 +235,21 @@ class FEDriver(NetworkDriver):
         output = str(self._ssh().save_config())
         if not self._save_successful(output):
             raise exc_class(f"Saving the configuration failed:\n{output}")
+
+    def _save_config_file(self, path: str, exc_class: type = CommandErrorException) -> None:
+        """Save the running configuration to ``path`` (``save config file``).
+
+        If the file exists the switch asks
+        ``File [/intflash/napalm_rollback.cfg] already existing, overwrite (y/n) ?``
+        (Fabric Engine 9.3); any answer but ``y`` aborts the save. Saving takes
+        a few seconds, so this waits for the prompt, not for the output to settle.
+        """
+        prompt = re.escape(self._ssh().find_prompt())
+        output = self._send_command(f"save config file {path}", expect_string=rf"\(y/n\)|{prompt}")
+        if re.search(r"\(y/n\)", output):
+            output += "\n" + self._send_command("y", expect_string=prompt, cmd_verify=False)
+        if not self._save_successful(output):
+            raise exc_class(f"Could not save the configuration to {path}:\n{output}")
 
     def _source_file(self, path: str) -> str:
         """Run the configuration file ``path`` on the switch (``source <file> debug``).
@@ -489,12 +526,30 @@ class FEDriver(NetworkDriver):
             candidate = self._read_candidate(filename, config)
         except (OSError, ValueError) as exc:
             raise MergeConfigException(str(exc)) from exc
+        self.config_replace = False
         self.candidate_config = "\n".join(parsers.config_lines(candidate))
         if self.config_method == "file":
             try:
                 self._upload_config(self.candidate_config, self.merge_cfg)
             except CommandErrorException as exc:
                 raise MergeConfigException(str(exc)) from exc
+
+    def load_replace_candidate(
+        self, filename: Optional[str] = None, config: Optional[str] = None
+    ) -> None:
+        """Copy a full configuration to ``candidate_cfg`` on the switch.
+
+        ``commit_config`` installs it as the boot configuration and reboots the
+        switch (requires ``allow_reboot``), see ``commit_config``.
+        """
+        try:
+            candidate = self._read_candidate(filename, config)
+            self.config_replace = True
+            self.candidate_config = candidate.strip()
+            self._upload_config(self.candidate_config, self.candidate_cfg)
+        except (OSError, ValueError, CommandErrorException) as exc:
+            self.discard_config()
+            raise ReplaceConfigException(str(exc)) from exc
 
     def _gen_full_path(self, filename: str) -> str:
         if filename.startswith("/"):
@@ -533,23 +588,37 @@ class FEDriver(NetworkDriver):
     def compare_config(self) -> str:
         """Return the difference between the candidate and the running config.
 
-        Fabric Engine has no on-box config diff, so the driver compares: only
-        lines that would change something are shown (like the IOS driver's
-        incremental diff): ``+line`` is added, ``-line`` removed (``no ...``);
-        context lines (``interface ...``) are shown without a prefix.
+        Fabric Engine has no on-box config diff, so the driver compares:
+
+        * merge: only lines that would change something (like the IOS driver's
+          incremental diff): ``+line`` is added, ``-line`` removed (``no ...``);
+          context lines (``interface ...``) are shown without a prefix
+        * replace: ``-line`` / ``+line`` for every line that differs between the
+          running configuration and the candidate
         """
         if not self.candidate_config:
             return ""
         running = self._send_command("show running-config")
+        if self.config_replace:
+            return parsers.replace_diff(self._clean_config(running), self.candidate_config)
         return parsers.merge_diff(running, self.candidate_config)
 
     def commit_config(self, message: str = "", revert_in: Optional[int] = None) -> None:
-        """Apply the merge candidate (like the IOS driver).
+        """Apply the candidate (like the IOS driver).
+
+        The running configuration is always saved to ``rollback_cfg`` first.
+        For a merge:
 
         * ``config_method="cli"``: the lines are sent in configuration mode;
           the first rejected line stops the merge and raises
           ``MergeConfigException`` (lines before it stay applied)
         * ``config_method="file"``: the uploaded file is applied with ``source``
+
+        Replace (requires ``allow_reboot``): Fabric Engine cannot replace the
+        running configuration. Like ExtremeCloud IQ Site Engine's configuration
+        restore, the candidate is copied over the boot configuration
+        (``startup_config_file``) and the switch is rebooted. The connection is
+        closed; call ``open()`` again once the switch is up.
 
         A merge is saved with ``save config`` unless ``save_config`` is ``False``.
         ``revert_in`` (commit confirm) is not supported.
@@ -559,11 +628,22 @@ class FEDriver(NetworkDriver):
         if revert_in is not None:
             raise NotImplementedError("Commit confirm has not been implemented on this platform.")
         if not self.candidate_config:
-            raise MergeConfigException("No candidate configuration loaded")
+            exc_class = ReplaceConfigException if self.config_replace else MergeConfigException
+            raise exc_class("No candidate configuration loaded")
+
+        if self.config_replace:
+            self._check_reboot_allowed("A replace commit")
+            logger.info("%s: replacing the configuration (reboot)", self.hostname)
+            self._gen_rollback_cfg(ReplaceConfigException)
+            self._install_and_reboot(self._gen_full_path(self.candidate_cfg))
+            self.candidate_config = None
+            self.config_replace = False
+            return
 
         logger.info(
             "%s: merging %d line(s)", self.hostname, len(self.candidate_config.splitlines())
         )
+        self._gen_rollback_cfg(MergeConfigException)
         if self.config_method == "file":
             self._commit_from_file()
         else:
@@ -579,6 +659,10 @@ class FEDriver(NetworkDriver):
         if self.save_on_commit:
             self._copy_run_start(CommandErrorException)
         self.candidate_config = None
+
+    def _gen_rollback_cfg(self, exc_class: type = MergeConfigException) -> None:
+        """Save the running config to ``rollback_cfg`` (like the IOS driver)."""
+        self._save_config_file(self._gen_full_path(self.rollback_cfg), exc_class)
 
     @classmethod
     def _save_successful(cls, output: str) -> bool:
@@ -601,7 +685,10 @@ class FEDriver(NetworkDriver):
         """
         return MergeConfigException(
             "Configuration merge failed; automatic rollback not available, the "
-            f"switch may be left partly changed (not saved):\n{output.strip()}"
+            "switch may be left partly changed (not saved). The configuration "
+            f"before the commit is in {self._gen_full_path(self.rollback_cfg)}; "
+            "rollback() with optional_args allow_reboot=True restores it (reboot):\n"
+            f"{output.strip()}"
         )
 
     def _commit_from_file(self) -> None:
@@ -618,6 +705,78 @@ class FEDriver(NetworkDriver):
         if self._has_cli_error(output):
             raise self._merge_failed(output)
 
+    def _check_reboot_allowed(self, what: str, exc_class: type = ReplaceConfigException) -> None:
+        if not self.allow_reboot:
+            raise exc_class(
+                f"{what} reboots the switch (Fabric Engine has no configuration "
+                "replace); set optional_args allow_reboot=True to allow it"
+            )
+
+    def _confirm(self, command: str) -> str:
+        """Run a command and answer its (y/n) confirmation prompt.
+
+        e.g. ``copy`` to an existing file asks
+        ``File [/intflash/test2.cfg] already existing, overwrite (y/n) ?``
+        """
+        output = self._send_command_timing(command)
+        if re.search(r"\(y/n\)", output):
+            output += self._send_command_timing("y")
+        return output
+
+    def _file_exists(self, path: str) -> bool:
+        entry = parse_dir(self._send_command(f"dir {path.rsplit('/', 1)[0]} -l")).get(path)
+        return entry is not None and not entry["is_dir"]
+
+    def _install_and_reboot(self, config_file: str) -> None:
+        """Make ``config_file`` the boot configuration and reboot the switch."""
+        if not self._file_exists(config_file):
+            raise ReplaceConfigException(f"{config_file} does not exist on the switch")
+        output = self._confirm(f"copy {config_file} {self.startup_config_file}")
+        if self._has_cli_error(output):
+            raise ReplaceConfigException(
+                f"Could not copy {config_file} to {self.startup_config_file}:\n{output}"
+            )
+        logger.warning("%s: rebooting to load %s", self.hostname, config_file)
+        self._reboot()
+
+    def _reboot(self) -> None:
+        try:
+            # "-y" skips "Are you sure you want to reset the switch (y/n) ?"
+            self._send_command_timing("reset -y")
+        except Exception:  # noqa: BLE001 - the session ends when the switch reboots
+            pass
+        self.close()
+
+    def rollback(self) -> None:
+        """Restore the configuration saved before the last commit.
+
+        Like ExtremeCloud IQ Site Engine's configuration restore, the saved
+        ``rollback_cfg`` is copied over the boot configuration and the switch
+        is rebooted (requires ``allow_reboot``). The connection is closed.
+        """
+        self._check_reboot_allowed("rollback()")
+        self._install_and_reboot(self._gen_full_path(self.rollback_cfg))
+
     def discard_config(self) -> None:
-        """Discard the pending candidate."""
+        """Discard the pending candidate.
+
+        Like NAPALM's NX-OS drivers, a replace candidate uploaded to the switch
+        (``candidate_cfg``) is deleted as well.
+        """
+        if self.config_replace and self.candidate_config and self.device:
+            self._delete_file(self._gen_full_path(self.candidate_cfg))
         self.candidate_config = None
+        self.config_replace = False
+
+    def _delete_file(self, path: str) -> None:
+        """Delete a file on the switch (answers ``Are you sure (y/n) ?``).
+
+        Best effort: a failure is logged, not raised.
+        """
+        try:
+            output = self._confirm(f"delete {path}")
+        except Exception as exc:  # noqa: BLE001 - cleanup must not fail
+            logger.warning("%s: could not delete %s: %s", self.hostname, path, exc)
+            return
+        if self._has_cli_error(output) or re.search(r"can't|cannot|fail", output, re.I):
+            logger.warning("%s: could not delete %s: %s", self.hostname, path, output.strip())

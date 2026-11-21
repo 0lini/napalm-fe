@@ -5,6 +5,7 @@ Python data structures. Keeping them separate from the driver makes them easy
 to unit test without a device or a mocked SSH session.
 """
 
+import difflib
 import ipaddress
 import re
 from datetime import datetime
@@ -856,3 +857,14 @@ def config_lines(config: str) -> List[str]:
         for line in config.splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
+
+
+def replace_diff(running_config: str, candidate: str) -> str:
+    """Line diff for a replace: ``-line`` (removed) / ``+line`` (added).
+
+    ``running_config`` without banners (``FEDriver._clean_config``).
+    """
+    diff = difflib.unified_diff(
+        config_lines(running_config), config_lines(candidate), lineterm="", n=0
+    )
+    return "\n".join(line for line in diff if not line.startswith(("---", "+++", "@@")))
