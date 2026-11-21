@@ -338,7 +338,230 @@ def test_commit_updates_the_prompt(driver):
     assert driver.device.sent_config == ['prompt "sw1"'] and prompts == [1]
 
 
-def test_commit_confirm_not_supported(driver):
-    driver.load_merge_candidate(config=CONFIG)
-    with pytest.raises(NotImplementedError):
+# commit confirm (revert_in), like Site Engine: scheduled reset
+
+
+@pytest.fixture
+def reboot_driver():
+    driver = PatchedFEDriver("host", "user", "pass", optional_args={"allow_reboot": True})
+    driver.device.current_test = "test_get_config"
+    driver.device.current_test_case = "fabric_engine_9.4"
+    return driver
+
+
+LOG_QUERIES = [
+    "show logging file event-code 0x0003068e",
+    "show logging file event-code 0x0003068f",
+    "show logging file event-code 0x00034594",
+]
+
+
+@pytest.mark.parametrize(
+    "seconds, expected",
+    [(60, "1"), (300, "5"), (359, "5"), (3600, "01:00"), (5400, "01:30"), (90000, "1:01:00")],
+)
+def test_revert_time(seconds, expected):
+    from napalm_fe.fe import FEDriver
+
+    assert FEDriver._revert_time(seconds) == expected
+
+
+@pytest.mark.parametrize("seconds", [0, 59, 10 * 86400])
+def test_revert_time_out_of_range(seconds):
+    from napalm.base.exceptions import CommitConfirmException
+
+    from napalm_fe.fe import FEDriver
+
+    with pytest.raises(CommitConfirmException):
+        FEDriver._revert_time(seconds)
+
+
+def test_commit_with_revert_and_confirm(reboot_driver):
+    device = reboot_driver.device
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    reboot_driver.commit_config(revert_in=300)
+    # saved before the change, reset scheduled before applying, not saved after
+    assert device.commands == [
+        *LOG_QUERIES,  # no other revert pending
+        "save config",
+        "reset -in 5",
+        "y",
+        *LOG_QUERIES,  # until the log shows the scheduled reset
+    ]
+    assert device.sent_config == ["ntp server 192.0.2.99"]
+    assert device.scheduled_reset == "5"
+    assert reboot_driver.has_pending_commit()
+
+    reboot_driver.confirm_commit()
+    assert device.commands[-5:] == ["reset -cancel", *LOG_QUERIES, "save config"]
+    assert device.scheduled_reset is None
+    assert not reboot_driver.has_pending_commit()
+
+
+def test_confirm_after_the_switch_reverted(reboot_driver):
+    from napalm.base.exceptions import CommitConfirmException
+
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    reboot_driver.commit_config(revert_in=60)
+    reboot_driver.device.scheduled_reset = None  # the reset already happened
+    with pytest.raises(CommitConfirmException, match="No ongoing scheduled reset"):
+        reboot_driver.confirm_commit()
+    assert "save config" not in reboot_driver.device.commands[-1:]
+
+
+def test_no_new_commit_while_pending(reboot_driver):
+    from napalm.base.exceptions import CommitConfirmException
+
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    reboot_driver.commit_config(revert_in=300)
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.98")
+    with pytest.raises(CommitConfirmException):
+        reboot_driver.commit_config()
+
+
+def test_revert_requires_allow_reboot(driver):
+    from napalm.base.exceptions import CommitConfirmException
+
+    driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    with pytest.raises(CommitConfirmException, match="allow_reboot"):
         driver.commit_config(revert_in=300)
+    assert driver.device.sent_config == []
+    assert driver.device.scheduled_reset is None
+
+
+def test_confirm_without_pending_commit(driver):
+    from napalm.base.exceptions import CommitConfirmException
+
+    with pytest.raises(CommitConfirmException, match="No pending"):
+        driver.confirm_commit()
+
+
+def test_confirm_with_unexpected_cancel_output(reboot_driver):
+    from napalm.base.exceptions import CommitConfirmException
+
+    reboot_driver.load_merge_candidate(config="ntp server 192.0.2.99")
+    reboot_driver.commit_config(revert_in=300)
+    reboot_driver.device.send_command_timing = lambda command, **kw: "something else"
+    with pytest.raises(CommitConfirmException, match="cancelled"):
+        reboot_driver.confirm_commit()
+    assert reboot_driver.device.commands[-1] != "save config"  # nothing saved
+
+
+SCHEDULED = """\
+1 2026-11-17T16:33:05.861Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 10 minutes!
+1 2026-11-17T16:33:44.223Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 10 minutes!
+1 2026-11-17T16:34:55.339Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 10 minutes!
+1 2026-11-17T16:36:19.303Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in 0 days 0 hours 10 minutes!
+"""
+
+
+CANCELED = """\
+1 2026-11-17T16:33:14.081Z 5520-24T-FabricEngine CP1 - 0x0003068f - 00000000 GlobalRouter SW INFO Scheduled reset canceled!
+1 2026-11-17T16:34:17.781Z 5520-24T-FabricEngine CP1 - 0x0003068f - 00000000 GlobalRouter SW INFO Scheduled reset canceled!
+1 2026-11-17T16:35:36.193Z 5520-24T-FabricEngine CP1 - 0x0003068f - 00000000 GlobalRouter SW INFO Scheduled reset canceled!
+"""
+
+
+BOOT = """\
+1 2026-11-17T15:51:41.628Z 5520-24T-FabricEngine CP1 - 0x00034594 - 00000000 GlobalRouter SW INFO System boot
+"""
+
+
+def _log_switch(driver, scheduled, canceled, boot):
+    outputs = {"0x0003068e": scheduled, "0x0003068f": canceled, "0x00034594": boot}
+    driver.device.send_command = lambda cmd, **kw: outputs[cmd.split()[-1]]
+
+
+def test_pending_from_real_log(driver):
+    # the newest "enabled" (16:36:19) is newer than the newest cancel (16:35:36)
+    _log_switch(driver, SCHEDULED, CANCELED, BOOT)
+    assert driver.has_pending_commit()
+
+
+def test_not_pending_after_cancel(driver):
+    cancel = CANCELED + CANCELED.splitlines()[-1].replace("16:35:36", "16:37:00") + "\n"
+    _log_switch(driver, SCHEDULED, cancel, BOOT)
+    assert not driver.has_pending_commit()
+
+
+def test_not_pending_after_reboot(driver):
+    # the timer expired: the switch rebooted after the reset was scheduled
+    boot = BOOT.replace("15:51:41", "16:46:30")
+    _log_switch(driver, SCHEDULED, CANCELED, boot)
+    assert not driver.has_pending_commit()
+
+
+def test_not_pending_without_entries(driver):
+    _log_switch(driver, "", "", BOOT)
+    assert not driver.has_pending_commit()
+
+
+def test_confirm_commit_of_another_session(reboot_driver):
+    """A pending revert scheduled by another session is found in the log."""
+    device = reboot_driver.device
+    device.scheduled_reset = "5"
+    device._log("0x0003068e", "GlobalRouter SW INFO Scheduled reset enabled! ...")
+    assert not reboot_driver.pending_revert
+    reboot_driver.confirm_commit()
+    assert device.commands[-5:] == ["reset -cancel", *LOG_QUERIES, "save config"]
+
+
+def test_latest_log_time():
+    from datetime import datetime
+
+    from napalm_fe import parsers
+
+    assert parsers.latest_log_time(SCHEDULED) == datetime(2026, 11, 17, 16, 36, 19, 303000)
+    assert parsers.latest_log_time("") is None
+
+
+def test_not_pending_after_real_cancel(driver):
+    # real output a few minutes later: cancelled at 16:38:16, after the last enable
+    canceled = CANCELED + (
+        "1 2026-11-17T16:38:16.606Z 5520-24T-FabricEngine CP1 - 0x0003068f - 00000000 "
+        "GlobalRouter SW INFO Scheduled reset canceled!\n"
+    )
+    _log_switch(driver, SCHEDULED, canceled, BOOT)
+    assert not driver.has_pending_commit()
+
+
+def test_not_pending_after_real_revert_reboot(driver):
+    """Real outputs after a 'reset -in 1' ran out: the VM's log starts empty after
+    the reboot, apart from the new 'System boot' entry."""
+    banner = (
+        "*" * 84
+        + "\n                Command Execution Time: Tue Nov 17 16:47:12 2026 UTC\n"
+        + "*" * 84
+    )
+    boot = banner + (
+        "\n1 2026-11-17T16:42:58.329Z 5520-24T-FabricEngine CP1 - 0x00034594 - 00000000 "
+        "GlobalRouter SW INFO System boot"
+    )
+    _log_switch(driver, banner, banner, boot)
+    assert not driver.has_pending_commit()
+
+
+def test_commit_confirm_waits_for_the_log(reboot_driver, monkeypatch):
+    """The switch logs a scheduled reset a few seconds late (9.4, API)."""
+    from napalm_fe import fe
+
+    real = reboot_driver.has_pending_commit
+    # the pre-commit check, then the log is behind twice, then the real state
+    answers = iter([False, False, False])
+    monkeypatch.setattr(reboot_driver, "has_pending_commit", lambda: next(answers, real()))
+    sleeps = []
+    monkeypatch.setattr(fe.time, "sleep", sleeps.append)
+    reboot_driver.load_merge_candidate(config="foo")
+    reboot_driver.commit_config(revert_in=300)
+    assert sleeps == [1, 1]
+
+
+def test_log_wait_gives_up(reboot_driver, monkeypatch, caplog):
+    from napalm_fe import fe
+
+    monkeypatch.setattr(reboot_driver, "has_pending_commit", lambda: False)
+    clock = iter(range(0, 1000, 10))
+    monkeypatch.setattr(fe.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(fe.time, "sleep", lambda s: None)
+    reboot_driver._wait_for_log(pending=True)
+    assert "does not show the change yet" in caplog.text

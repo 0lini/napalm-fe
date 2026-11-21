@@ -856,3 +856,23 @@ def config_lines(config: str) -> List[str]:
         for line in config.splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
+
+
+# Timestamp of a "show logging file" entry (RFC 5424 format):
+#   1 2026-11-17T16:33:05.861Z 5520-24T-FabricEngine CP1 - 0x0003068e - 00000000 ...
+LOG_ENTRY_RE = re.compile(
+    r"^\s*1 (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(?:Z|[+-]\d{2}:?\d{2})? "
+    r"\S+ \S+ - 0x[0-9a-fA-F]+ - ",
+    re.M,
+)
+
+
+def latest_log_time(output: str) -> Optional[datetime]:
+    """Timestamp of the newest entry in ``show logging file`` output."""
+    times = [
+        datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%S").replace(
+            microsecond=int(fraction.ljust(6, "0")[:6]) if fraction else 0
+        )
+        for stamp, fraction in LOG_ENTRY_RE.findall(output)
+    ]
+    return max(times) if times else None
