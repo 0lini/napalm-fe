@@ -79,8 +79,7 @@ class FakeOpenApiSession(BaseTestDouble):
     ``/v0/state/forwarding/ip-arp?vr_name=TEST`` ->
     ``_v0_state_forwarding_ip_arp_vr_name_TEST.json``.
 
-    CLI commands return the CLI output files; ``source`` and saving the
-    configuration act on the same fake switch as the SSH fake.
+    CLI commands return the CLI output files.
     """
 
     token = "fake-token"
@@ -106,16 +105,11 @@ class FakeOpenApiSession(BaseTestDouble):
         return [self._output(command) for command in commands]
 
     def _output(self, command):
-        if command.startswith("source "):
-            output = self.switch.send_command(command)
-            self.switch.commands.pop()  # ran through the API, not over SSH
-            return output
         return self.read_txt_file(self.find_file(self.sanitize_text(command) + ".txt"))
 
     def save_config(self, name=None):
         """POST operation/system/config/:save (no prompt, overwrites)."""
         self.saved.append(name)
-        self.switch.flash[name or "/intflash/config.cfg"] = "running config"
 
 
 class _FakeTransport:
@@ -130,9 +124,7 @@ class _FakeRemoteConn:
 class FakeFEDevice(BaseTestDouble):
     """Netmiko replacement.
 
-    ``show`` commands return the content of the mocked_data files; ``source``
-    prints nothing (real output: see the tests), uploaded files land in an
-    in-memory flash.
+    ``show`` commands return the content of the mocked_data files.
     """
 
     remote_conn = _FakeRemoteConn()
@@ -141,7 +133,6 @@ class FakeFEDevice(BaseTestDouble):
         super().__init__()
         self.sent_config = []
         self.commands = []
-        self.flash = {"/intflash/config.cfg": "startup config"}
 
     def write_channel(self, data):
         pass
@@ -151,8 +142,6 @@ class FakeFEDevice(BaseTestDouble):
 
     def send_command(self, command, **kwargs):
         self.commands.append(command)
-        if command.startswith("source "):
-            return ""
         filename = "{}.txt".format(self.sanitize_text(command))
         return self.read_txt_file(self.find_file(filename))
 
