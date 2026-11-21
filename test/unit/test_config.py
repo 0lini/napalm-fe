@@ -11,7 +11,7 @@ from .conftest import PatchedFEDriver
 
 @pytest.fixture
 def driver():
-    driver = PatchedFEDriver("host", "user", "pass", optional_args={"transport": "ssh"})
+    driver = PatchedFEDriver("host", "user", "pass")
     # compare_config() reads the running config of the real Fabric Engine 9.4 capture
     driver.device.current_test = "test_get_config"
     driver.device.current_test_case = "fabric_engine_9.4"
@@ -317,31 +317,6 @@ def test_driver_name():
     assert get_network_driver("fe").__name__ == "FEDriver"
 
 
-def test_transport_option():
-    from napalm.base.exceptions import ConnectionException
-
-    from .conftest import PatchedFEDriver
-
-    # ssh is the default (every release); "port" is the port of the transport
-    ssh = PatchedFEDriver("h", "u", "p")
-    assert (ssh.transport, ssh.port) == ("ssh", 22)
-    api = PatchedFEDriver("h", "u", "p", optional_args={"transport": "https"})
-    assert (api.transport, api.port, api.ssl_verify) == ("https", 9443, False)
-    api = PatchedFEDriver(
-        "h",
-        "u",
-        "p",
-        optional_args={"transport": "https", "port": "8443", "ssl_verify": "/etc/ca.pem"},
-    )
-    assert (api.port, api.ssl_verify) == (8443, "/etc/ca.pem")
-    # the SSH connection of the https transport uses port 22 (like NX-OS)
-    assert api.netmiko_optional_args["port"] == 22
-    ssh = PatchedFEDriver("h", "u", "p", optional_args={"transport": "ssh", "port": 2222})
-    assert (ssh.transport, ssh.port, ssh.netmiko_optional_args["port"]) == ("ssh", 2222, 2222)
-    with pytest.raises(ConnectionException, match="Unknown transport: netconf"):
-        PatchedFEDriver("h", "u", "p", optional_args={"transport": "netconf"})
-
-
 def test_failed_merge_message(driver):
     """Says that nothing was rolled back (like napalm-dellos10)."""
     driver.device.send_config_set = lambda lines, **kw: COMMUNITY_EXISTS
@@ -351,85 +326,6 @@ def test_failed_merge_message(driver):
     message = str(exc.value)
     assert "automatic rollback not available" in message
     assert "Error: The community entry already exists." in message
-
-
-# transport="https": configuration lines and saving go through the API, SCP
-# and commands with a (y/n) prompt over SSH
-
-
-def _https_driver(monkeypatch, **optional_args):
-    driver = PatchedFEDriver(
-        "host", "user", "pass", optional_args={"transport": "https", **optional_args}
-    )
-    for fake in (driver.device, driver.api):
-        fake.current_test = "test_get_config"
-        fake.current_test_case = "fabric_engine_9.4"
-    driver.api.current_test = "test_get_config"
-    driver.api.current_test_case = "fabric_engine_9.4"
-    return driver
-
-
-def test_https_merge_commit(monkeypatch):
-    driver = _https_driver(monkeypatch)
-    driver.load_merge_candidate(config=CONFIG)
-    assert driver.compare_config() == 'interface gigabitEthernet 1/2\n+name "new port"\nexit'
-    driver.commit_config()
-    assert driver.api.config == [
-        "configure terminal",
-        "interface gigabitEthernet 1/2",
-        'name "new port"',
-        "exit",
-        "end",
-    ]
-    assert driver.api.saved == [None]  # "save config" through the API
-    assert driver.device.commands == [] and driver.device.sent_config == []  # no SSH
-
-
-# Real reply of the API's CLI operation (Fabric Engine 9.4) for a rejected command
-API_INVALID_INPUT = "        ^\n% Invalid input detected at '^' marker.\n"
-
-
-@pytest.mark.parametrize(
-    "outputs",
-    [
-        ["", API_INVALID_INPUT, "", ""],  # error output (continue_on_failure)
-        ["", API_INVALID_INPUT],  # the switch skipped the rest
-        ["", "something with Error"],  # skipped after a line the switch counts as failed
-    ],
-)
-def test_https_merge_error(monkeypatch, outputs):
-    driver = _https_driver(monkeypatch, save_config=True)
-    driver.api.cli = lambda commands, continue_on_failure=True, timeout=None: outputs
-    driver.load_merge_candidate(config="foo\nbar")
-    with pytest.raises(MergeConfigException, match="automatic rollback not available") as exc:
-        driver.commit_config()
-    assert "foo" in str(exc.value)
-    assert driver.api.saved == []  # not saved
-
-
-def test_https_save_failure(monkeypatch):
-    from napalm.base.exceptions import CommandErrorException
-
-    driver = _https_driver(monkeypatch)
-
-    def save_config(name=None):
-        if name is None:
-            raise CommandErrorException("OpenAPI POST ... failed: HTTP 500")
-
-    driver.api.save_config = save_config
-    driver.load_merge_candidate(config="foo")
-    with pytest.raises(CommandErrorException, match="Saving the configuration failed"):
-        driver.commit_config()
-
-
-def test_https_merge_stops_at_vlan_error(monkeypatch):
-    """Real error output of the API (9.4) starts with a BEL; "end" is skipped."""
-    driver = _https_driver(monkeypatch)
-    error = "\n\x07Error: The specified VLAN ID is invalid or already in use \n\n"
-    driver.api.cli = lambda commands, **kw: ["Enter configuration commands...\n", error]
-    driver.load_merge_candidate(config="vlan create 10 type port-mstprstp 0")
-    with pytest.raises(MergeConfigException, match="already in use"):
-        driver.commit_config()
 
 
 def test_commit_updates_the_prompt(driver):

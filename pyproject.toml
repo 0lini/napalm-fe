@@ -31,7 +31,6 @@ classifiers = [
 dependencies = [
     "napalm>=5.0.0,<6",
     "netmiko>=4.1.0,<5",
-    "requests>=2.25",
 ]
 
 [project.optional-dependencies]
