@@ -1,0 +1,32 @@
+{
+  "ro": {
+    "level": 1,
+    "password": "<0000000000000000000001ffffffffffffffffffff>",
+    "sshkeys": []
+  },
+  "rw": {
+    "level": 14,
+    "password": "<0000000000000000000002ffffffffffffffffffff>",
+    "sshkeys": []
+  },
+  "rwa": {
+    "level": 15,
+    "password": "<0000000000000000000003ffffffffffffffffffff>",
+    "sshkeys": []
+  },
+  "l1": {
+    "level": 2,
+    "password": "<0000000000000000000004ffffffffffffffffffff>",
+    "sshkeys": []
+  },
+  "l2": {
+    "level": 3,
+    "password": "<0000000000000000000005ffffffffffffffffffff>",
+    "sshkeys": []
+  },
+  "l3": {
+    "level": 4,
+    "password": "<0000000000000000000006ffffffffffffffffffff>",
+    "sshkeys": []
+  }
+}

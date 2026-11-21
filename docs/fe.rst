@@ -121,6 +121,7 @@ Method                         ``https``                                        
 ``get_vlans``                  ``v0/configuration/vlan``, ``v1/state/vlan``              ``show vlan basic``, ``show vlan members``
 ``get_ntp_servers``            ``v0/configuration/ntp``                                  ``show running-config``
 ``get_snmp_information``       ``v0/configuration/snmp``, ``v0/state/system``            ``show sys-info``
+``get_users``                  ``v0/configuration/accounts``                             - (not available, see below)
 ``get_config``                 CLI through the API                                       ``show running-config [verbose]``, ``more <startup file>``
 ``cli``                        CLI through the API                                       any command
 ============================== ========================================================= ==========================================================
@@ -286,8 +287,22 @@ templates, verified on Fabric Engine 9.4:
 * :code:`delete_snmp_config` (same variables) - ``no snmp-server location``,
   ``no snmp-server contact``, ``no snmp-server community <community>``.
 
-There are no NTP peer, probe or user templates (no NTP peers on Fabric
-Engine; users come with ``get_users``).
+There are no NTP peer, probe or user templates. Fabric Engine has no NTP
+peers. ``set_users`` / ``delete_users`` cannot be written as configuration
+lines: ``username <name> level <level>`` renames one of the fixed accounts
+after a (y/n) question and the password is only asked interactively.
+
+
+Users
+~~~~~
+
+Fabric Engine has six fixed accounts: ``ro``, ``l1``, ``l2``, ``l3``, ``rw``
+and ``rwa`` (they can be renamed). ``get_users`` needs ``transport="https"``:
+only the API (``v0/configuration/accounts``) lists them; no CLI command shows
+them, so over ``ssh`` it raises ``NotImplementedError``. The access level is
+mapped to NAPALM's privilege level: ``rwa`` 15, ``rw`` 14, ``l3`` 4, ``l2``
+3, ``l1`` 2, ``ro`` 1. ``password`` is the encrypted secret as the switch
+stores it; SSH keys are not reported (``sshkeys`` is empty).
 
 
 Known gotchas

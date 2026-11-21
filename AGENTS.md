@@ -130,6 +130,12 @@ Run all of them before every commit, and only commit when they pass
 - Only send read-only commands (`show`, `dir`, `ls`, `more`, `file-checksum`), except
   through `TestFEDriver.py` (step 5) or when the user explicitly allows
   writing on a lab switch.
+- Never send commands that ask for a password (`username <name> level <l>`,
+  `cli password ...`) through the OpenAPI CLI operation: on 9.4 the main
+  process `cbcp-main.x` crashed and the switch rebooted (core file in
+  `/intflash/coreFiles/1/`, 2026-11-21). The CLI operation answers (y/n)
+  questions itself, but not password prompts. The driver must never send
+  such commands over `https`.
 - Never ask for CLI help (`reset ?` etc.) over SSH: the line stays in the
   input buffer and a later newline runs it (9.4: `reset ?` became `reset`
   with its (y/n) question; the next command was taken as the answer).
@@ -249,7 +255,14 @@ read-only, `v1v2grp` read-write; `snmp-server community <c> group <g> index
 index). Open: over `https`, `get_snmp_information` lists every community once
 per context (`c`, `c::1`, `c::512` - VRF contexts), as the API returns it.
 
-Not implemented yet (NotImplementedError, skipped in tests): BGP, users,
+Users (2026-11-21, 9.4): six fixed accounts (`ro`, `l1`, `l2`, `l3`, `rw`,
+`rwa`); `username <name> level <l>` does not add a user but renames the
+default account of that level after `Do you want to change username for the
+default RO user ? (y/n) ?`, then asks for the password. No CLI command lists
+the accounts (not in the running config, not in `show cli password`), so
+`get_users` is `https` only (`configuration/accounts`); no user templates.
+
+Not implemented yet (NotImplementedError, skipped in tests): BGP,
 optics, route table, NTP stats/peers, network instances, ping/traceroute,
 IPv6 neighbours. Implement them with real captures only.
 

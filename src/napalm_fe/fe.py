@@ -654,6 +654,21 @@ class FEDriver(NetworkDriver):
             "community": {},
         }
 
+    def get_users(self) -> Dict[str, models.UsersDict]:
+        """Return the user accounts (``transport="https"`` only).
+
+        Fabric Engine has six fixed accounts (``ro``, ``l1``, ``l2``, ``l3``,
+        ``rw``, ``rwa``; they can be renamed). Only the API lists them with
+        their access level, mapped to NAPALM's privilege level (``rwa`` 15,
+        ``rw`` 14, ``l3`` 4, ``l2`` 3, ``l1`` 2, ``ro`` 1); no CLI command
+        shows them.
+        """
+        if self.transport != "https":
+            raise NotImplementedError(
+                "get_users needs transport='https': the CLI does not list the accounts"
+            )
+        return openapi_parsers.users(self._api_get("/v0/configuration/accounts"))  # type: ignore[return-value]
+
     def get_config(
         self,
         retrieve: str = "all",
