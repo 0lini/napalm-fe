@@ -2,7 +2,6 @@
 
 import os
 import re
-from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 import pytest
@@ -113,7 +112,7 @@ class FakeOpenApiSession(BaseTestDouble):
         try:
             if command.startswith(("copy ", "delete ", "reset")):
                 return self._confirmed(command)
-            if command.startswith(("dir ", "source ", "show logging file event-code ")):
+            if command.startswith(("dir ", "source ")):
                 return self.switch.send_command(command)
         finally:
             del self.switch.commands[sent:]  # ran through the API, not over SSH
@@ -161,28 +160,7 @@ class FakeFEDevice(BaseTestDouble):
         self.commands = []
         self.flash = {"/intflash/config.cfg": "startup config"}
         self.rebooted = False
-        self.scheduled_reset = None
         self._pending = None
-        # switch log: (code, message); the first entry is the boot
-        self.log = [("0x00034594", "GlobalRouter SW INFO System boot")]
-
-    def _log(self, code, message):
-        self.log.append((code, message))
-
-    def _log_output(self, code):
-        """``show logging file event-code`` in the real format, oldest first."""
-        start = datetime(2026, 11, 17, 15, 51, 41)
-        lines = [
-            "*" * 84,
-            "                Command Execution Time: Tue Nov 17 16:37:13 2026 UTC",
-            "*" * 84,
-        ]
-        for index, (entry_code, message) in enumerate(self.log):
-            if entry_code != code:
-                continue
-            stamp = (start + timedelta(seconds=index)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-            lines.append(f"1 {stamp} 5520-24T-FabricEngine CP1 - {entry_code} - 00000000 {message}")
-        return "\n".join(lines)
 
     def write_channel(self, data):
         pass
@@ -232,8 +210,6 @@ class FakeFEDevice(BaseTestDouble):
             return "\n".join(lines)
         if command.startswith("source "):
             return ""
-        if command.startswith("show logging file event-code "):
-            return self._log_output(command.split()[-1])
         filename = "{}.txt".format(self.sanitize_text(command))
         return self.read_txt_file(self.find_file(filename))
 
@@ -271,38 +247,7 @@ class FakeFEDevice(BaseTestDouble):
             return "Are you sure you want to reset the switch (y/n) ? "
         if command == "reset -y":
             self.rebooted = True
-            self.scheduled_reset = None
-            self._log("0x00034594", "GlobalRouter SW INFO System boot")
             raise OSError("Socket is closed")
-        if command.startswith("reset -in "):
-            when = command.split()[-1]
-
-            def schedule():
-                self.scheduled_reset = when
-                self._log(
-                    "0x0003068e",
-                    "GlobalRouter SW INFO Scheduled reset enabled! Unit will reset in "
-                    f"0 days 0 hours {when} minutes!",
-                )
-                # real output (9.4): only a log message after the prompt
-                return (
-                    "1 2026-11-17T16:33:05.861Z 5520-24T-FabricEngine CP1 - 0x0003068e - "
-                    "00000000 GlobalRouter SW INFO Scheduled reset enabled! Unit will reset "
-                    "in 0 days 0 hours 10 minutes!"
-                )
-
-            self._pending = schedule
-            return "Are you sure you want to perform a scheduled reset? (y/n) ? "
-        if command == "reset -cancel":
-            if self.scheduled_reset is None:
-                return "Warning! No ongoing scheduled reset!"
-            self.scheduled_reset = None
-            self._log("0x0003068f", "GlobalRouter SW INFO Scheduled reset canceled!")
-            return (  # real output (9.4)
-                "Scheduled reset successfully canceled!\n"
-                "1 2026-11-17T16:33:14.081Z 5520-24T-FabricEngine CP1 - 0x0003068f - "
-                "00000000 GlobalRouter SW INFO Scheduled reset canceled!"
-            )
         return ""
 
     def send_config_set(self, config_commands, **kwargs):

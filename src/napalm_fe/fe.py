@@ -11,13 +11,11 @@ import logging
 import os
 import re
 import tempfile
-import time
 from typing import Any, Dict, List, Optional, Union
 
 from napalm.base import NetworkDriver, models
 from napalm.base.exceptions import (
     CommandErrorException,
-    CommitConfirmException,
     ConnectionClosedException,
     ConnectionException,
     MergeConfigException,
@@ -63,15 +61,6 @@ LOG_MESSAGE_RE = re.compile(
 # Commands that display the log: their output consists of log messages, so the
 # filter above must not be applied to them.
 LOG_DISPLAY_COMMAND_RE = re.compile(r"^\s*show\s+log", re.I)
-
-# Log event codes (Fabric Engine 9.4) used to find a scheduled reset
-EVENT_RESET_SCHEDULED = "0x0003068e"  # Scheduled reset enabled! Unit will reset in ...
-EVENT_RESET_CANCELED = "0x0003068f"  # Scheduled reset canceled!
-EVENT_SYSTEM_BOOT = "0x00034594"  # System boot
-
-# The switch writes these log entries a few seconds after the command (9.4:
-# up to ~5 s through the API); seconds to wait until the log shows the change.
-LOG_DELAY = 30
 
 # Output that shows that the CLI rejected a command. Fabric Engine 9.4 also
 # reports errors as e.g. "Error: The community entry already exists." (no
@@ -190,7 +179,6 @@ class FEDriver(NetworkDriver):
         self.api: Optional[OpenApiSession] = None
         self.candidate_config: Optional[str] = None
         self.config_replace = False
-        self.pending_revert = False
         self.profile = [self.platform]
 
     # ------------------------------------------------------------------
@@ -805,25 +793,12 @@ class FEDriver(NetworkDriver):
           The connection is closed; call ``open()`` again once the switch is up.
 
         A merge is saved with ``save config`` unless ``save_config`` is ``False``.
-
-        ``revert_in`` (seconds, merge only, requires ``allow_reboot``) works like
-        ExtremeCloud IQ Site Engine: the current configuration is saved
-        (``save config``), a reset is scheduled (``reset -in``, rounded down to
-        whole minutes like the IOS driver) and the change is applied without
-        saving. If ``confirm_commit()`` is not called in time - e.g. because
-        the change made the switch unreachable - the switch reboots into the
-        saved configuration.
+        ``revert_in`` (commit confirm) is not supported.
         """
         if message:
             raise NotImplementedError("Commit message not implemented for this platform")
-        if self.pending_revert or (revert_in is not None and self.has_pending_commit()):
-            raise CommitConfirmException("A commit is waiting for confirm_commit() or rollback()")
-        revert_time = None
         if revert_in is not None:
-            if self.config_replace:
-                raise NotImplementedError("revert_in is not supported for a replace commit")
-            self._check_reboot_allowed("revert_in", CommitConfirmException)
-            revert_time = self._revert_time(revert_in)
+            raise NotImplementedError("Commit confirm has not been implemented on this platform.")
         if not self.candidate_config:
             exc_class = ReplaceConfigException if self.config_replace else MergeConfigException
             raise exc_class("No candidate configuration loaded")
@@ -844,10 +819,6 @@ class FEDriver(NetworkDriver):
             self.config_method,
         )
         self._gen_rollback_cfg(MergeConfigException)
-        if revert_time:
-            # the switch reboots into this saved configuration unless confirmed
-            self._copy_run_start(CommitConfirmException)
-            self._schedule_reset(revert_time)
         if self.config_method == "file":
             self._commit_from_file()
         else:
@@ -860,98 +831,9 @@ class FEDriver(NetworkDriver):
             except AttributeError:
                 pass
 
-        if self.save_on_commit and not revert_time:
+        if self.save_on_commit:
             self._copy_run_start(CommandErrorException)
         self.candidate_config = None
-
-    # Maximum of "reset -in": 9 days, 23 hours, 59 minutes
-    REVERT_MAX_MINUTES = 9 * 1440 + 23 * 60 + 59
-
-    @classmethod
-    def _revert_time(cls, revert_in: int) -> str:
-        """Seconds -> ``reset -in`` time (``mm``, ``hh:mm`` or ``d:hh:mm``)."""
-        minutes = int(revert_in) // 60
-        if not 1 <= minutes <= cls.REVERT_MAX_MINUTES:
-            raise CommitConfirmException(
-                "revert_in is rounded down to whole minutes and must be between "
-                f"60 and {cls.REVERT_MAX_MINUTES * 60} seconds"
-            )
-        days, rest = divmod(minutes, 1440)
-        hours, mins = divmod(rest, 60)
-        if days:
-            return f"{days}:{hours:02d}:{mins:02d}"
-        if hours:
-            return f"{hours:02d}:{mins:02d}"
-        return str(mins)
-
-    def _schedule_reset(self, revert_time: str) -> None:
-        """Schedule the revert reboot.
-
-        Over SSH the switch asks ``Are you sure you want to perform a scheduled
-        reset? (y/n) ?``; any other answer than ``y`` aborts with ``Scheduled
-        reset operation aborted!``. On success the switch prints nothing itself
-        (only the log message "Scheduled reset enabled! ..."). The API's CLI
-        operation confirms itself. (Its ``reboot/:schedule`` is not used: it
-        only accepts 10 to 360 minutes.)
-        """
-        output = self._confirm(f"reset -in {revert_time}")
-        if self._has_cli_error(output) or re.search(r"aborted", output, re.I):
-            raise CommitConfirmException(f"Could not schedule the revert reset:\n{output}")
-        self.pending_revert = True
-        logger.info("%s: revert reset scheduled in %s", self.hostname, revert_time)
-        self._wait_for_log(pending=True)
-
-    def has_pending_commit(self) -> bool:
-        """Whether a reset is scheduled on the switch (like IOS, asks the switch).
-
-        Fabric Engine has no command that shows a scheduled reset, but logs
-        scheduling, cancelling and booting. A reset is pending if the newest
-        "Scheduled reset enabled" entry is newer than the newest "Scheduled
-        reset canceled" and "System boot" entries (an expired timer reboots
-        the switch, which logs "System boot"). So a commit with ``revert_in``
-        made by another session is found too.
-        """
-        scheduled, canceled, booted = (
-            parsers.latest_log_time(self._send_command(f"show logging file event-code {code}"))
-            for code in (EVENT_RESET_SCHEDULED, EVENT_RESET_CANCELED, EVENT_SYSTEM_BOOT)
-        )
-        if scheduled is None:
-            return False
-        return all(scheduled > other for other in (canceled, booted) if other)
-
-    def confirm_commit(self) -> None:
-        """Cancel the scheduled revert reset and save the configuration."""
-        if not (self.pending_revert or self.has_pending_commit()):
-            raise CommitConfirmException("No pending configuration")
-        output = self._send_command_timing("reset -cancel")
-        self.pending_revert = False
-        if re.search(r"No ongoing scheduled reset", output, re.I):
-            raise CommitConfirmException(
-                "No scheduled reset on the switch any more - it may already have "
-                f"reverted the configuration:\n{output.strip()}"
-            )
-        # Fabric Engine 9.4: "Scheduled reset successfully canceled!"
-        if not re.search(r"successfully cancel", output, re.I):
-            raise CommitConfirmException(
-                f"Could not confirm that the revert reset was cancelled:\n{output.strip()}"
-            )
-        self._wait_for_log(pending=False)
-        self._copy_run_start(CommitConfirmException)
-
-    def _wait_for_log(self, pending: bool) -> None:
-        """Wait until ``has_pending_commit()`` shows the reset just (un)scheduled.
-
-        The switch logs "Scheduled reset enabled / canceled" a few seconds
-        after the command; without waiting, ``has_pending_commit()`` right
-        after a commit or confirm would still report the old state. The
-        command itself succeeded, so a timeout is only logged.
-        """
-        deadline = time.monotonic() + LOG_DELAY
-        while self.has_pending_commit() != pending:
-            if time.monotonic() > deadline:
-                logger.warning("%s: the switch log does not show the change yet", self.hostname)
-                return
-            time.sleep(1)
 
     def _gen_rollback_cfg(self, exc_class: type = MergeConfigException) -> None:
         """Save the running config to ``rollback_cfg`` (like the IOS driver)."""
@@ -1046,17 +928,8 @@ class FEDriver(NetworkDriver):
         Like ExtremeCloud IQ Site Engine's configuration restore, the saved
         ``rollback_cfg`` is copied over the boot configuration and the switch
         is rebooted (requires ``allow_reboot``). The connection is closed.
-
-        While a commit with ``revert_in`` is pending, the revert happens now
-        (``reset -y``): the switch reboots into the configuration saved before
-        that commit (like IOS ``configure revert now``).
         """
         self._check_reboot_allowed("rollback()")
-        if self.pending_revert or self.has_pending_commit():
-            logger.warning("%s: reverting the pending commit now (reboot)", self.hostname)
-            self.pending_revert = False
-            self._reboot()
-            return
         self._install_and_reboot(self._gen_full_path(self.rollback_cfg))
 
     def discard_config(self) -> None:
