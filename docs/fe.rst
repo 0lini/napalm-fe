@@ -111,8 +111,10 @@ Known gotchas
 _____________
 
 * VRF names are stored in lower case (``ip vrf TEST`` becomes ``test``).
-* Log messages printed into the session (``logging screen``) are removed
-  from all output except ``show logging ...``.
+* Log messages do not appear in the driver's output: ``logging screen`` is a
+  setting of the CLI session (on for the serial console, off for every new
+  SSH session, not stored in the configuration), and the driver never
+  enables it.
 * A new system name (``prompt "<name>"`` or ``sys name``) changes the SSH
   prompt; the driver updates Netmiko's base prompt after a commit (like
   NX-OS).

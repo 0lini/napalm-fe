@@ -236,14 +236,25 @@ Findings there:
    empty log), so nothing is reported pending. Still to check: that an unsaved
    change is really gone after the revert reboot, and the log on hardware
    (does it keep entries across a reboot?).
-7. **Log messages in the session** (`logging screen`, switch-wide): the driver
-   removes them from every output (`LOG_MESSAGE_RE`, RFC 5424 format; they
-   appear identically on the serial console and in SSH sessions). Only seen on
-   the serial console, so not handled: the `reset -in` countdown (`20 seconds
-   remaining until unit resets.`) and an older log format (`CP1  [11/17/26
-   16:41:43.000] ...`, while the switch shuts down). Still to check: whether
-   a switch with `syslog-rfc5424-format false` prints the older format in SSH
-   sessions (then it needs handling again, with a real capture).
+7. **Log messages in the session**: settled - `logging screen` is a setting
+   of the CLI login session, like Cisco's `terminal monitor`, although it is
+   entered in config mode. Verified on 9.1.0.0, 9.2.0.0, 9.3.0.0, 9.3.1.0 and
+   9.4.0.0 (GNS3 VMs, three of them factory default; 2026-11-22), with the
+   log entries of a second SSH login / logout as test messages
+   (`show logging config` shows the session's own value):
+   - serial console: `screen : on` by default, gets every message (also at
+     the `Login:` prompt); after `no logging screen` none
+   - SSH: every new session starts with `screen : off` and gets none; after
+     `logging screen` in that session it gets them (whole lines between
+     commands), other sessions still show `off`
+   - not stored: `show running-config` / `verbose` do not change, so `save
+     config` cannot keep it; after logout and login the console is back to
+     `on`
+   The driver never sends `logging screen`, so it never sees log messages;
+   the former filter (`LOG_MESSAGE_RE`, with an exception for `show logging`)
+   was removed. Earlier notes that messages appear in SSH sessions came from
+   the serial console or a session that had enabled it. Still to check:
+   hardware, Telnet sessions.
 8. **Enhanced secure mode** (`boot config flags enhancedsecure-mode true`):
    prompt / login behaviour has not been tested.
 

@@ -27,26 +27,6 @@ logger = logging.getLogger(__name__)
 # Netmiko still calls it "extreme_vsp".
 NETMIKO_DEVICE_TYPE = "extreme_vsp"
 
-# Log messages printed into the session when "logging screen" is enabled
-# (a switch-wide setting the driver does not change), RFC 5424 format (seen
-# on the serial console and in SSH sessions):
-#   1 2026-11-17T16:11:12.756Z <host> CP1 - 0x000305ca - 00000000 GlobalRouter SW INFO ...
-# They arrive asynchronously: on their own line, right after a prompt in any
-# mode ("switch:1>", "switch:1(config)#") or in the middle of a line of
-# output. The message and its line break are removed, which also joins a line
-# that was split by a message. The RFC 5424 version is always "1", so digits
-# right before a message are not taken as part of it.
-LOG_MESSAGE_RE = re.compile(
-    r"(?:^\S+:\d+(?:\([^)\s]*\))?[>#])?"
-    r"1 \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2}) "
-    r"\S+ CP\d+ - 0x[0-9a-fA-F]+ - [^\n]*\n?",
-    re.M,
-)
-
-# Commands that display the log: their output consists of log messages, so the
-# filter above must not be applied to them.
-LOG_DISPLAY_COMMAND_RE = re.compile(r"^\s*show\s+log", re.I)
-
 # Output that shows that the CLI rejected a command. Fabric Engine 9.4 also
 # reports errors as e.g. "Error: The community entry already exists." (no
 # "%"), sometimes after a BEL ("\x07Error: The specified VLAN ID is invalid or
@@ -171,9 +151,7 @@ class FEDriver(NetworkDriver):
             output = str(device.send_command(command, **kwargs))
         except (OSError, EOFError) as exc:
             raise ConnectionClosedException(str(exc)) from exc
-        return self._send_command_postprocess(
-            output, remove_log_messages=not LOG_DISPLAY_COMMAND_RE.match(command)
-        )
+        return self._send_command_postprocess(output)
 
     def _send_config(self, lines: List[str]) -> str:
         """Send lines in configuration mode; stop at the first rejected line.
@@ -200,16 +178,17 @@ class FEDriver(NetworkDriver):
             raise exc_class(f"Saving the configuration failed:\n{output}")
 
     @staticmethod
-    def _send_command_postprocess(output: str, remove_log_messages: bool = True) -> str:
+    def _send_command_postprocess(output: str) -> str:
         """Remove CLI noise from command output (like the IOS driver).
 
-        Removes log messages printed into the session ("logging screen") -
-        except for commands that display the log ("show logging ...") - and
-        the "Please widen the terminal" hint. The "Command Execution Time"
-        banner is kept: it is used to compute ``last_flapped``.
+        Removes the "Please widen the terminal" hint. The "Command Execution
+        Time" banner is kept: it is used to compute ``last_flapped``.
+
+        Log messages need no handling: ``logging screen`` is a setting of the
+        CLI session (on for the serial console, off for every new SSH
+        session, not stored in the configuration), and the driver never
+        enables it.
         """
-        if remove_log_messages:
-            output = LOG_MESSAGE_RE.sub("", output)
         output = re.sub(r"^Please widen the terminal.*$", "", output, flags=re.M)
         return output.strip()
 

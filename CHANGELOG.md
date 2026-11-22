@@ -22,6 +22,4 @@ Tested on Fabric Engine 9.1 - 9.4 (GNS3 VMs, see `docs/fe.rst`).
 - Configuration merge like the IOS driver: `load_merge_candidate`,
   incremental `compare_config`, `commit_config` (saves with `save config`
   unless `save_config=False`), `discard_config`.
-- Log messages printed into the session (`logging screen`) are removed from all
-  output.
 - `docs/fe.rst`: caveats in the format of NAPALM's driver docs.
