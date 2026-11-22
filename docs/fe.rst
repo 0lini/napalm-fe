@@ -57,8 +57,8 @@ Commands per getter
 ============================== ==========================================================
 Method                         CLI commands
 ============================== ==========================================================
-``get_facts``                  ``show sys-info``, ``show interfaces gigabitEthernet``,
-                               ``show running-config | include domain-name``
+``get_facts``                  ``show sys-info``, ``show interfaces gigabitEthernet name``,
+                               ``show ip dns``
 ``get_environment``            ``show sys-info``, ``show khi performance cpu|memory``
 ``get_interfaces``             ``show interfaces gigabitEthernet``
 ``get_interfaces_ip``          ``show ip interface vrfids 0-512``,
@@ -69,7 +69,7 @@ Method                         CLI commands
 ``get_arp_table``              ``show ip arp [vrf <name>]``
 ``get_mac_address_table``      ``show vlan mac-address-entry``
 ``get_vlans``                  ``show vlan basic``, ``show vlan members``
-``get_ntp_servers``            ``show running-config``
+``get_ntp_servers``            ``show ntp server``
 ``get_snmp_information``       ``show sys-info``
 ``get_config``                 ``show running-config [verbose]``, ``more <startup file>``
 ``cli``                        any command; CLI errors are returned as output

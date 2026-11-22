@@ -252,13 +252,14 @@ class FEDriver(NetworkDriver):
     def get_facts(self) -> models.FactsDict:
         """Return a set of facts about the device."""
         sys_info = parsers.parse_sys_info(self._send_command("show sys-info"))
-        interfaces = parsers.parse_interfaces(self._send_command("show interfaces gigabitEthernet"))
+        # only the port list is needed: the "name" table, not all 13 tables
+        interfaces = parsers.parse_interfaces_name(
+            self._send_command("show interfaces gigabitEthernet name")
+        )
 
         hostname = sys_info.get("SysName", "")
         model = sys_info.get("ModelName") or sys_info.get("Chassis", "")
-        domain = parsers.parse_domain_name(
-            self._send_command("show running-config | include domain-name")
-        )
+        domain = parsers.parse_domain_name(self._send_command("show ip dns"))
         return {
             "hostname": hostname,
             "fqdn": f"{hostname}.{domain}" if hostname and domain else hostname,
@@ -381,9 +382,13 @@ class FEDriver(NetworkDriver):
         }
 
     def get_ntp_servers(self) -> Dict[str, models.NTPServerDict]:
-        """Return the configured NTP servers."""
-        running = self._send_command("show running-config")
-        return {server: {} for server in parsers.parse_ntp_servers(running)}
+        """Return the NTP servers the switch uses.
+
+        ``show ntp server`` also lists servers that are not in the running
+        configuration, such as the one the cloud agent sets.
+        """
+        output = self._send_command("show ntp server")
+        return {server: {} for server in parsers.parse_ntp_servers(output)}
 
     def get_snmp_information(self) -> models.SNMPDict:
         """Return SNMP information.

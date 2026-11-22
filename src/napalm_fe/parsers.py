@@ -617,9 +617,15 @@ def parse_vlan_members(output: str) -> Dict[int, List[str]]:
     return members
 
 
-def parse_ntp_servers(running_config: str) -> List[str]:
-    """Extract configured NTP servers from the running configuration."""
-    return list(dict.fromkeys(re.findall(r"^\s*ntp server (\S+)", running_config, re.M)))
+def parse_ntp_servers(output: str) -> List[str]:
+    """Parse the ``NTP Server`` table of ``show ntp server``.
+
+    Columns: Server Address, Enabled, Auth, Key Id, Auth Type. The table also
+    lists servers that are not in the running configuration, e.g. the one the
+    cloud agent sets.
+    """
+    servers = (row.split()[0] for row in _rows_of(output, "NTP Server") if row.strip())
+    return list(dict.fromkeys(servers))
 
 
 def split_sections(output: str) -> Dict[str, List[str]]:
@@ -746,9 +752,13 @@ def parse_khi_memory(output: str) -> Dict[str, int]:
     return {"used_ram": used, "available_ram": used + free}
 
 
-def parse_domain_name(running_config: str) -> str:
-    """Extract ``ip domain-name "example.com"`` from (a part of) the config."""
-    match = re.search(r'^\s*ip domain-name\s+"?([^"\s]+)"?', running_config, re.M)
+def parse_domain_name(output: str) -> str:
+    """Parse the default domain name from ``show ip dns``.
+
+    ``DNS Default Domain Name : example.com`` (empty after the colon when no
+    domain is set); the ``DNS Default Domain Name Origin`` line is ignored.
+    """
+    match = re.search(r"^\s*DNS Default Domain Name\s*:[ \t]*(\S*)", output, re.M)
     return match.group(1) if match else ""
 
 
