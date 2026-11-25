@@ -197,6 +197,11 @@ def command_execution_time(output: str) -> Optional[datetime]:
     return _switch_time(output, r"Command Execution Time:\s+")
 
 
+def parse_clock(output: str) -> Optional[datetime]:
+    """Parse ``show clock`` (``Fri Nov 20 16:31:55 2026 UTC``, Fabric Engine 9.4)."""
+    return _switch_time(output, r"^\s*")
+
+
 def _rows_of(output: str, title: str) -> List[str]:
     """Rows of the tables titled ``title``; all rows if no table has a title."""
     tables = list(iter_tables(output))
@@ -208,70 +213,6 @@ def _rows_of(output: str, title: str) -> List[str]:
 def table_rows(output: str) -> List[str]:
     """Return the data lines of every table in ``output``."""
     return [row for _, _, data in iter_tables(output) for row in data]
-
-
-def parse_sys_info(output: str) -> Dict[str, str]:
-    """Parse ``show sys-info`` (``Key : Value`` lines; the first occurrence wins)."""
-    result: Dict[str, str] = {}
-    for line in output.splitlines():
-        match = re.match(r"^\s*([^:]+?)\s*:\s?(.*)$", line)
-        if not match:
-            continue
-        key, value = match.group(1).strip(), match.group(2).strip()
-        if key and key not in result:
-            result[key] = value
-    return result
-
-
-def parse_uptime(uptime: str) -> float:
-    """Convert ``12 day(s), 03:14:15`` into seconds."""
-    seconds = 0.0
-    days = re.search(r"(\d+)\s*day", uptime)
-    if days:
-        seconds += int(days.group(1)) * 86400
-    hms = re.search(r"(\d+):(\d+):(\d+)", uptime)
-    if hms:
-        hours, minutes, secs = (int(x) for x in hms.groups())
-        seconds += hours * 3600 + minutes * 60 + secs
-    if not days and not hms:
-        return -1.0
-    return float(seconds)
-
-
-def _split_port(port: str) -> Tuple[str, int]:
-    prefix, _, last = port.rpartition("/")
-    return prefix, int(last)
-
-
-def expand_port_list(ports: str) -> List[str]:
-    """Expand a Fabric Engine port list into individual ports.
-
-    ``"1/1-1/3,1/5,1/49/1-1/49/2"`` ->
-    ``["1/1", "1/2", "1/3", "1/5", "1/49/1", "1/49/2"]``
-    """
-    result: List[str] = []
-    ports = ports.strip()
-    if not ports or ports in ("-", "none", "N/A"):
-        return result
-    for item in ports.split(","):
-        item = item.strip()
-        if not item:
-            continue
-        if "-" in item:
-            start, end = (x.strip() for x in item.split("-", 1))
-            try:
-                start_prefix, start_num = _split_port(start)
-                end_prefix, end_num = _split_port(end)
-            except ValueError:
-                result.append(item)
-                continue
-            if start_prefix != end_prefix or end_num < start_num:
-                result.extend([start, end])
-                continue
-            result.extend(f"{start_prefix}/{num}" for num in range(start_num, end_num + 1))
-        else:
-            result.append(item)
-    return result
 
 
 def _to_int(value: str, default: int = -1) -> int:
@@ -442,192 +383,6 @@ def parse_interface_counters(output: str) -> Dict[str, Dict[str, int]]:
     return result
 
 
-def _parse_lldp_capabilities(raw: str) -> Tuple[List[str], List[str]]:
-    raw = re.sub(r"\(.*?\)", "", raw).strip()
-    if "/" in raw:
-        supported, enabled = (x.strip() for x in raw.split("/", 1))
-    else:
-        supported = enabled = raw
-
-    def _letters(value: str) -> List[str]:
-        return sorted({LLDP_CAPABILITIES[c] for c in value if c in LLDP_CAPABILITIES})
-
-    return _letters(supported), _letters(enabled)
-
-
-def parse_lldp_neighbors(output: str) -> List[Dict[str, str]]:
-    """Parse ``show lldp neighbor`` (detailed, per neighbor blocks).
-
-    Returns a list of dicts with the raw fields plus ``local_port``.
-    """
-    neighbors: List[Dict[str, str]] = []
-    current: Optional[Dict[str, str]] = None
-    for line in output.splitlines():
-        port_match = re.match(r"^\s*Port\s*:\s*(\S+)(.*)$", line)
-        if port_match:
-            current = {"local_port": port_match.group(1)}
-            neighbors.append(current)
-            rest = port_match.group(2)
-            index = re.search(r"Index\s*:\s*(\S+)", rest)
-            if index:
-                current["Index"] = index.group(1)
-            continue
-        if _is_rule(line, "-") or _is_rule(line, "="):
-            current = None  # a rule ends the neighbor block
-            continue
-        if current is None:
-            continue
-        kv = re.match(r"^\s*([A-Za-z][\w ]*?)\s*:\s*(.*)$", line)
-        if kv:
-            current.setdefault(kv.group(1).strip(), kv.group(2).strip())
-    return neighbors
-
-
-def lldp_neighbor_to_napalm(raw: Dict[str, str]) -> Dict:
-    """Convert a raw LLDP neighbor block into a NAPALM detail dict."""
-
-    def _last_token(value: str) -> str:
-        tokens = value.split()
-        return tokens[-1] if tokens else ""
-
-    supported, enabled = _parse_lldp_capabilities(raw.get("SysCap", ""))
-    return {
-        "parent_interface": "",
-        "remote_port": _last_token(raw.get("PortId", "")),
-        "remote_port_description": raw.get("PortDescr", ""),
-        "remote_chassis_id": _last_token(raw.get("ChassisId", "")),
-        "remote_system_name": raw.get("SysName", ""),
-        "remote_system_description": raw.get("SysDescr", ""),
-        "remote_system_capab": supported,
-        "remote_system_enable_capab": enabled,
-    }
-
-
-def parse_arp_table(output: str) -> List[Dict]:
-    """Parse ``show ip arp``.
-
-    Columns: IP_ADDRESS, MAC_ADDRESS, VLAN, PORT, TYPE, TTL, TUNNEL.
-    """
-    entries: List[Dict] = []
-    for row in table_rows(output):
-        match = re.match(
-            r"^(?P<ip>" + IPV4_RE + r")\s+(?P<mac>" + MAC_RE + r")\s+"
-            r"(?P<vlan>\S+)\s+(?P<port>\S+)",
-            row.strip(),
-        )
-        if not match:
-            continue
-        if match.group("mac").lower() == "ff:ff:ff:ff:ff:ff":
-            continue
-        port, vlan = match.group("port"), match.group("vlan")
-        if port in ("-", "--") and vlan.isdigit():
-            interface = f"Vlan{vlan}"
-        elif port in ("-", "--"):
-            interface = ""
-        else:
-            interface = port
-        entries.append(
-            {
-                "interface": interface,
-                "mac": match.group("mac"),
-                "ip": match.group("ip"),
-                "age": -1.0,
-            }
-        )
-    return entries
-
-
-def parse_mac_address_table(output: str) -> List[Dict]:
-    """Parse ``show vlan mac-address-entry``.
-
-    Columns: VLAN ID, STATUS, MAC ADDRESS, INTERFACE, SMLT REMOTE, TUNNEL.
-    Interfaces like ``Port-1/56`` or ``c1:1/3`` are normalised to ``1/56`` / ``1/3``.
-    """
-    entries: List[Dict] = []
-    for row in table_rows(output):
-        tokens = row.split()
-        if len(tokens) < 4 or not tokens[0].isdigit() or not re.fullmatch(MAC_RE, tokens[2]):
-            continue
-        mac_type, mac, port = tokens[1], tokens[2], tokens[3]
-        port = re.sub(r"^(?:[cu]\d*:|Port-)", "", port)
-        if port in ("-", "--"):
-            port = ""
-        entries.append(
-            {
-                "mac": mac,
-                "interface": port,
-                "vlan": int(tokens[0]),
-                "static": mac_type.lower() != "learned",
-                "active": True,
-                "moves": -1,
-                "last_move": -1.0,
-            }
-        )
-    return entries
-
-
-def parse_vlan_basic(output: str) -> Dict[int, str]:
-    """Parse ``show vlan basic``.
-
-    VLAN names may contain spaces, so the number of columns after NAME is
-    taken from the header.
-    """
-    vlans: Dict[int, str] = {}
-    for _, header, data in iter_tables(output):
-        columns = header_columns(header)
-        if "NAME" not in columns:
-            continue
-        after_name = len(columns) - columns.index("NAME") - 1
-        for row in data:
-            tokens = row.split()
-            if len(tokens) < after_name + 2 or not tokens[0].isdigit():
-                continue
-            vlans[int(tokens[0])] = " ".join(tokens[1 : len(tokens) - after_name])
-    return vlans
-
-
-def parse_vlan_members(output: str) -> Dict[int, List[str]]:
-    """Parse ``show vlan members``.
-
-    Port lists can be long and wrap onto continuation lines, so the column
-    positions of the header are used to find the "PORT MEMBER" column.
-    """
-    members: Dict[int, List[str]] = {}
-    for _, header, data in iter_tables(output):
-        if not header:
-            continue
-        first = header[0]
-        start = first.find("PORT")
-        end = first.find("ACTIVE")
-        if start < 0:
-            continue
-        if end <= start:
-            end = None  # type: ignore[assignment]
-        current: Optional[int] = None
-        for row in data:
-            vlan_match = re.match(r"^(\d+)\s", row)
-            if vlan_match:
-                current = int(vlan_match.group(1))
-                members.setdefault(current, [])
-            if current is None:
-                continue
-            column = row[start:end].strip() if len(row) > start else ""
-            if column:
-                members[current].extend(expand_port_list(column.rstrip(",")))
-    return members
-
-
-def parse_ntp_servers(output: str) -> List[str]:
-    """Parse the ``NTP Server`` table of ``show ntp server``.
-
-    Columns: Server Address, Enabled, Auth, Key Id, Auth Type. The table also
-    lists servers that are not in the running configuration, e.g. the one the
-    cloud agent sets.
-    """
-    servers = (row.split()[0] for row in _rows_of(output, "NTP Server") if row.strip())
-    return list(dict.fromkeys(servers))
-
-
 def split_sections(output: str) -> Dict[str, List[str]]:
     """Split ``show sys-info`` into its sections.
 
@@ -750,16 +505,6 @@ def parse_khi_memory(output: str) -> Dict[str, int]:
     if not found:
         return {"used_ram": -1, "available_ram": -1}
     return {"used_ram": used, "available_ram": used + free}
-
-
-def parse_domain_name(output: str) -> str:
-    """Parse the default domain name from ``show ip dns``.
-
-    ``DNS Default Domain Name : example.com`` (empty after the colon when no
-    domain is set); the ``DNS Default Domain Name Origin`` line is ignored.
-    """
-    match = re.search(r"^\s*DNS Default Domain Name\s*:[ \t]*(\S*)", output, re.M)
-    return match.group(1) if match else ""
 
 
 # Commands that enter a configuration context which is left with "exit".

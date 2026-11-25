@@ -5,7 +5,9 @@ start with ``test_``, so the normal test run (and CI) does not collect it.
 Run it explicitly against a LAB switch::
 
     NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<password> \\
-    NAPALM_OPTIONAL_ARGS='{"port": 22}' pytest test/unit/TestFEDriver.py
+    NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestFEDriver.py
+
+The driver only uses the switch's API (default port 9443).
 
 The tests only change ``snmp-server location`` and restore the original value
 afterwards. ``save_config`` is disabled, so nothing is written to the startup
@@ -28,8 +30,8 @@ def read_file(name):
         return handle.read().strip()
 
 
-class TestConfig(unittest.TestCase):
-    """Merge, typo and discard tests."""
+class _ConfigTests:
+    """Merge tests."""
 
     device: FEDriver
     original_location: str
@@ -97,3 +99,7 @@ class TestConfig(unittest.TestCase):
         self.device.discard_config()
         self.assertEqual(self.device.compare_config(), "")
         self.assertEqual(self.device.get_snmp_information()["location"], self.original_location)
+
+
+class TestConfig(_ConfigTests, unittest.TestCase):
+    """Merge by sending the lines in configuration mode through the API."""

@@ -1,8 +1,10 @@
 """NAPALM driver for Extreme Networks Fabric Engine (formerly VOSS / VSP).
 
-Like NAPALM's IOS driver, the driver talks to the switch over SSH (Netmiko,
-device type ``extreme_vsp``) and parses the CLI output; it works on every
-release.
+The driver talks to the switch's API (OpenAPI over HTTPS, Fabric Engine
+9.4.2 or later without a license, 9.3.1 or later with a Premier license). It
+never opens an SSH connection: getters read the API's JSON where it has the
+data, everything else (and all configuration) goes through the API's CLI
+operation.
 """
 
 import logging
@@ -16,22 +18,16 @@ from napalm.base.exceptions import (
     MergeConfigException,
 )
 from napalm.base.helpers import sanitize_configs
-from napalm.base.netmiko_helpers import netmiko_args
-from netmiko.exceptions import ConfigInvalidException
 
-from napalm_fe import parsers
+from napalm_fe import openapi_parsers, parsers
+from napalm_fe.openapi import DEFAULT_PORT, OpenApiSession
 
 logger = logging.getLogger(__name__)
-
-# Extreme renamed VOSS (VSP Operating System Software) to Fabric Engine;
-# Netmiko still calls it "extreme_vsp".
-NETMIKO_DEVICE_TYPE = "extreme_vsp"
 
 # Output that shows that the CLI rejected a command. Fabric Engine 9.4 also
 # reports errors as e.g. "Error: The community entry already exists." (no
 # "%"), sometimes after a BEL ("\x07Error: The specified VLAN ID is invalid or
-# already in use"). Also passed to Netmiko's
-# send_config_set(error_pattern=...), which applies it with re.M as well.
+# already in use", OpenAPI CLI operation).
 CLI_ERROR_RE = re.compile(
     r"% (?:Invalid input|Incomplete command|Ambiguous command|Unrecognized command|Cannot |Error)"
     r"|^[\s\x07]*Error\s*:",
@@ -64,6 +60,10 @@ SANITIZE_FILTERS = {
 }
 
 
+class ConfigRejected(Exception):
+    """The switch rejected or skipped a configuration line."""
+
+
 class FEDriver(NetworkDriver):
     """NAPALM driver for Extreme Networks Fabric Engine."""
 
@@ -79,9 +79,11 @@ class FEDriver(NetworkDriver):
     ) -> None:
         """Constructor.
 
-        Supported ``optional_args`` (in addition to the Netmiko arguments such
-        as ``port``, ``secret``, ``key_file``, ``ssh_config_file``...):
+        Supported ``optional_args``:
 
+        * ``port`` (default ``9443``): port of the switch's API.
+        * ``ssl_verify`` (default ``False``, like NX-OS): check the API's TLS
+          certificate; ``True`` or the path of a CA bundle.
         * ``save_config`` (bool, default ``True``): run ``save config`` after
           a successful ``commit_config``.
         * ``startup_config_file`` (str, default ``/intflash/config.cfg``):
@@ -93,11 +95,12 @@ class FEDriver(NetworkDriver):
         self.timeout = timeout
         optional_args = optional_args or {}
 
+        self.port = int(optional_args.get("port", DEFAULT_PORT))
+        self.ssl_verify: Union[bool, str] = optional_args.get("ssl_verify", False)
         self.save_on_commit = bool(optional_args.get("save_config", True))
         self.startup_config_file = optional_args.get("startup_config_file", "/intflash/config.cfg")
-        self.force_no_enable = bool(optional_args.get("force_no_enable", False))
-        self.netmiko_optional_args = netmiko_args(optional_args)
-        self.device: Any = None
+
+        self.api: Optional[OpenApiSession] = None
         self.candidate_config: Optional[str] = None
         self.profile = [self.platform]
 
@@ -106,76 +109,74 @@ class FEDriver(NetworkDriver):
     # ------------------------------------------------------------------
 
     def open(self) -> None:
-        """Open the SSH connection to the device."""
-        self.device = self._netmiko_open(
-            NETMIKO_DEVICE_TYPE, netmiko_optional_args=self.netmiko_optional_args
+        """Open the API session (gets a token)."""
+        self.api = OpenApiSession(
+            self.hostname,
+            self.username,
+            self.password,
+            port=self.port,
+            verify=self.ssl_verify,
+            timeout=self.timeout,
         )
+        self.api.open()
 
     def close(self) -> None:
-        """Close the connection to the device."""
-        if self.device is not None:
-            self._netmiko_close()
-            self.device = None
+        """Close the API session."""
+        if self.api is not None:
+            self.api.close()
+            self.api = None
 
     def is_alive(self) -> models.AliveDict:
-        """Return whether the SSH connection is still usable."""
-        if self.device is None:
-            return {"is_alive": False}
-        try:
-            # Send an ASCII NUL to keep the session alive, then ask the transport
-            self.device.write_channel(chr(0))
-            return {"is_alive": bool(self.device.remote_conn.transport.is_active())}
-        except (OSError, EOFError, AttributeError):
-            return {"is_alive": False}
+        """Return whether the session holds a token (no request, like the EOS
+        and NX-OS drivers)."""
+        return {"is_alive": self.api is not None and self.api.token is not None}
 
     # ------------------------------------------------------------------
-    # Transport primitives (like NAPALM's NX-OS drivers): everything that
-    # talks to Netmiko is here.
+    # Transport primitives: everything that talks to the API is here.
     # ------------------------------------------------------------------
 
-    def _ssh(self) -> Any:
-        """The Netmiko session."""
-        if self.device is None:
+    def _api(self) -> OpenApiSession:
+        if self.api is None:
             raise ConnectionClosedException("Not connected to the device, call open() first")
-        return self.device
+        return self.api
 
-    def _send_command(self, command: str, **kwargs: Any) -> str:
-        """Send a command (Netmiko ``send_command``, ``kwargs`` are passed on)
-        and return its post-processed output."""
-        device = self._ssh()
-        # Large tables (running-config, FDB on a chassis) can take longer than
-        # Netmiko's 10 second default; use the driver timeout instead.
-        kwargs.setdefault("read_timeout", self.timeout)
+    def _api_get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """GET an OpenAPI path (below ``/rest/openapi``)."""
+        return self._api().get(path, params)
+
+    def _send_command(self, command: str) -> str:
+        """Run a CLI command through ``POST /v0/operation/system/cli`` and
+        return its post-processed output."""
         logger.debug("%s: sending %r", self.hostname, command)
-        try:
-            output = str(device.send_command(command, **kwargs))
-        except (OSError, EOFError) as exc:
-            raise ConnectionClosedException(str(exc)) from exc
-        return self._send_command_postprocess(output)
+        return self._send_command_postprocess(self._api().cli([command])[0])
 
     def _send_config(self, lines: List[str]) -> str:
-        """Send lines in configuration mode; stop at the first rejected line.
+        """``POST /v0/operation/system/cli`` with configuration lines.
 
-        Raises ``ConfigInvalidException`` (Netmiko) for a rejected line.
+        Each request starts in privileged EXEC mode, hence ``configure
+        terminal`` / ``end``. Without ``continue_on_failure`` the switch skips
+        every command after the first one it counts as failed (any output
+        containing "Error"), so the merge stops at a rejected line (Fabric
+        Engine 9.4). Raises ``ConfigRejected`` for a rejected or skipped line.
         """
-        try:
-            return str(
-                self._ssh().send_config_set(
-                    lines, cmd_verify=False, error_pattern=CLI_ERROR_RE.pattern
-                )
-            )
-        except ConfigInvalidException:
-            try:
-                self.device.exit_config_mode()
-            except Exception:  # pragma: no cover - best effort
-                pass
-            raise
+        commands = ["configure terminal", *lines, "end"]
+        outputs = self._api().cli(commands, continue_on_failure=False)
+        ran = list(zip(commands, outputs, strict=False))
+        transcript = "\n".join(f"{c}\n{o}".rstrip() for c, o in ran)
+        failed = next((c for c, o in ran if self._has_cli_error(o)), None)
+        if failed:
+            raise ConfigRejected(f"Invalid input detected at command: {failed}\n{transcript}")
+        if len(outputs) < len(commands):
+            last = ran[-1][0] if ran else commands[0]
+            raise ConfigRejected(f"The switch skipped the commands after: {last}\n{transcript}")
+        return transcript
 
     def _copy_run_start(self, exc_class: type = CommandErrorException) -> None:
         """Save the running configuration (``save config``)."""
-        output = str(self._ssh().save_config())
-        if not self._save_successful(output):
-            raise exc_class(f"Saving the configuration failed:\n{output}")
+        try:
+            self._api().save_config()
+        except CommandErrorException as exc:
+            raise exc_class(f"Saving the configuration failed: {exc}") from exc
 
     @staticmethod
     def _send_command_postprocess(output: str) -> str:
@@ -230,25 +231,11 @@ class FEDriver(NetworkDriver):
 
     def get_facts(self) -> models.FactsDict:
         """Return a set of facts about the device."""
-        sys_info = parsers.parse_sys_info(self._send_command("show sys-info"))
-        # only the port list is needed: the "name" table, not all 13 tables
-        interfaces = parsers.parse_interfaces_name(
-            self._send_command("show interfaces gigabitEthernet name")
+        return openapi_parsers.facts(  # type: ignore[return-value]
+            self._api_get("/v0/state/system"),
+            self._api_get("/v0/configuration/dns"),
+            self._api_get("/v1/state/ports"),
         )
-
-        hostname = sys_info.get("SysName", "")
-        model = sys_info.get("ModelName") or sys_info.get("Chassis", "")
-        domain = parsers.parse_domain_name(self._send_command("show ip dns"))
-        return {
-            "hostname": hostname,
-            "fqdn": f"{hostname}.{domain}" if hostname and domain else hostname,
-            "vendor": "Extreme Networks",
-            "model": model,
-            "serial_number": sys_info.get("Serial#", ""),
-            "os_version": parsers.parse_os_version(sys_info.get("SysDescr", "")),
-            "uptime": parsers.parse_uptime(sys_info.get("SysUpTime", "")),
-            "interface_list": list(interfaces.keys()),
-        }
 
     def get_environment(self) -> models.EnvironmentDict:
         """Return fans, temperatures, power supplies, CPU and memory.
@@ -273,6 +260,8 @@ class FEDriver(NetworkDriver):
         interfaces = parsers.parse_interfaces(output)
         names = parsers.parse_interfaces_name(output)
         now = parsers.command_execution_time(output)
+        if now is None:  # the API's CLI output has no banner: use the switch's clock
+            now = parsers.parse_clock(self._send_command("show clock"))
         state_changes = parsers.parse_port_state(output)
 
         result: Dict[str, models.InterfaceDict] = {}
@@ -329,60 +318,47 @@ class FEDriver(NetworkDriver):
 
     def get_lldp_neighbors_detail(self, interface: str = "") -> models.LLDPNeighborsDetailDict:
         """Return detailed LLDP neighbor information."""
-        detail: Dict[str, List] = {}
-        command = f"show lldp neighbor port {interface}" if interface else "show lldp neighbor"
-        for raw in parsers.parse_lldp_neighbors(self._send_command(command)):
-            detail.setdefault(raw["local_port"], []).append(parsers.lldp_neighbor_to_napalm(raw))
+        detail = openapi_parsers.lldp_neighbors_detail(self._api_get("/v0/state/lldp"))
         if interface:
             detail = {port: n for port, n in detail.items() if port == interface}
         return detail  # type: ignore[return-value]
 
     def get_arp_table(self, vrf: str = "") -> List[models.ARPTableDict]:
         """Return the ARP table, optionally for a given VRF."""
-        command = "show ip arp"
-        if vrf:
-            command += f" vrf {vrf}"
-        output = self._send_command(command)
-        if self._has_cli_error(output):
-            raise CommandErrorException(f"Command '{command}' failed: {output.strip()}")
-        return parsers.parse_arp_table(output)
+        # all VRFs in one response; vr_name=... would be case-sensitive
+        arp = self._api_get("/v0/state/forwarding/ip-arp")
+        if vrf and vrf.lower() not in {t.get("vrName", "").lower() for t in arp}:
+            configured = self._api_get("/v0/configuration/vrf")
+            if vrf.lower() not in {v.get("name", "").lower() for v in configured}:
+                raise CommandErrorException(f"VRF {vrf!r} does not exist")
+        return openapi_parsers.arp_table(arp, vrf)  # type: ignore[return-value]
 
     def get_mac_address_table(self) -> List[models.MACAdressTable]:
         """Return the MAC address table."""
-        return parsers.parse_mac_address_table(self._send_command("show vlan mac-address-entry"))
+        return openapi_parsers.mac_address_table(  # type: ignore[return-value]
+            self._api_get("/v0/state/forwarding/mac-fdb")
+        )
 
     def get_vlans(self) -> Dict[str, models.VlanDict]:
         """Return the configured VLANs and their member ports."""
-        names = parsers.parse_vlan_basic(self._send_command("show vlan basic"))
-        members = parsers.parse_vlan_members(self._send_command("show vlan members"))
-        return {
-            vlan_id: {"name": name, "interfaces": members.get(vlan_id, [])}  # type: ignore[misc]
-            for vlan_id, name in names.items()
-        }
+        return openapi_parsers.vlans(  # type: ignore[return-value]
+            self._api_get("/v0/configuration/vlan"), self._api_get("/v1/state/vlan")
+        )
 
     def get_ntp_servers(self) -> Dict[str, models.NTPServerDict]:
         """Return the NTP servers the switch uses.
 
-        ``show ntp server`` also lists servers that are not in the running
-        configuration, such as the one the cloud agent sets.
+        The API also lists servers that are not in the running configuration,
+        such as the one the cloud agent sets.
         """
-        output = self._send_command("show ntp server")
-        return {server: {} for server in parsers.parse_ntp_servers(output)}
+        return openapi_parsers.ntp_servers(self._api_get("/v0/configuration/ntp"))  # type: ignore[return-value]
 
     def get_snmp_information(self) -> models.SNMPDict:
-        """Return SNMP information.
-
-        ``community`` is always empty: Fabric Engine never displays SNMPv1/v2c
-        community strings (stored encrypted outside the configuration, masked
-        in ``show snmp-server community``).
-        """
-        sys_info = parsers.parse_sys_info(self._send_command("show sys-info"))
-        return {
-            "chassis_id": sys_info.get("Serial#", ""),
-            "contact": sys_info.get("SysContact", ""),
-            "location": sys_info.get("SysLocation", ""),
-            "community": {},
-        }
+        """Return SNMP information, including the SNMPv1/v2c community strings
+        (the CLI never displays them, the API does)."""
+        return openapi_parsers.snmp_information(  # type: ignore[return-value]
+            self._api_get("/v0/configuration/snmp"), self._api_get("/v0/state/system")
+        )
 
     def get_config(
         self,
@@ -472,30 +448,10 @@ class FEDriver(NetworkDriver):
             "%s: merging %d line(s)", self.hostname, len(self.candidate_config.splitlines())
         )
         self._commit_from_cli()
-        if self.device is not None:
-            # a new hostname ("prompt", set_hostname template) changes the SSH
-            # prompt; update Netmiko's base prompt like the NX-OS driver
-            try:
-                self.device.set_base_prompt()
-            except AttributeError:
-                pass
 
         if self.save_on_commit:
             self._copy_run_start(CommandErrorException)
         self.candidate_config = None
-
-    @classmethod
-    def _save_successful(cls, output: str) -> bool:
-        """Check the output of ``save config [file ...]``.
-
-        Success looks like::
-
-            CP-1: Save config to file /intflash/test2.cfg successful.
-            WARNING: Choice Primary Node Config file is "/intflash/config.cfg".
-        """
-        return not cls._has_cli_error(output) and bool(
-            re.search(r"Save config to file \S+ successful", output, re.I)
-        )
 
     def _merge_failed(self, output: str) -> MergeConfigException:
         """The error for a failed merge (wording like napalm-dellos10).
@@ -512,7 +468,7 @@ class FEDriver(NetworkDriver):
         lines = (self.candidate_config or "").splitlines()
         try:
             output = self._send_config(lines)
-        except ConfigInvalidException as exc:
+        except ConfigRejected as exc:
             raise self._merge_failed(str(exc)) from exc
         if self._has_cli_error(output):
             raise self._merge_failed(output)

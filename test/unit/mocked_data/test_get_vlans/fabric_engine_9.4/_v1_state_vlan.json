@@ -1,0 +1,346 @@
+[
+  {
+    "vlanId": 1,
+    "name": "Default",
+    "state": "DOWN",
+    "memberInterfaces": [],
+    "dynamicInterfaces": [],
+    "activeInterfaces": [],
+    "upInterfaces": [],
+    "blockedInterfaces": [],
+    "ipArpInspectionOrigin": "CONFIG"
+  },
+  {
+    "vlanId": 10,
+    "name": "napalm-grt",
+    "state": "UP",
+    "memberInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:2"
+      }
+    ],
+    "dynamicInterfaces": [],
+    "activeInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:2"
+      }
+    ],
+    "upInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:2"
+      }
+    ],
+    "blockedInterfaces": [],
+    "ipArpInspectionOrigin": "CONFIG"
+  },
+  {
+    "vlanId": 20,
+    "name": "napalm-vrf",
+    "state": "UP",
+    "memberInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:3"
+      }
+    ],
+    "dynamicInterfaces": [],
+    "activeInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:3"
+      }
+    ],
+    "upInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:3"
+      }
+    ],
+    "blockedInterfaces": [],
+    "ipArpInspectionOrigin": "CONFIG"
+  },
+  {
+    "vlanId": 4048,
+    "name": "onboarding-vlan",
+    "state": "DOWN",
+    "memberInterfaces": [],
+    "dynamicInterfaces": [],
+    "activeInterfaces": [],
+    "upInterfaces": [],
+    "blockedInterfaces": [],
+    "ipArpInspectionOrigin": "CONFIG"
+  },
+  {
+    "vlanId": 4051,
+    "name": "VLAN-4051",
+    "state": "UP",
+    "memberInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:1"
+      }
+    ],
+    "dynamicInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:1"
+      }
+    ],
+    "activeInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:1"
+      }
+    ],
+    "upInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:1"
+      }
+    ],
+    "blockedInterfaces": [],
+    "ipArpInspectionOrigin": "CONFIG"
+  },
+  {
+    "vlanId": 4052,
+    "name": "VLAN-4052",
+    "state": "UP",
+    "memberInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:1"
+      }
+    ],
+    "dynamicInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:1"
+      }
+    ],
+    "activeInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:1"
+      }
+    ],
+    "upInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:1"
+      }
+    ],
+    "blockedInterfaces": [],
+    "ipArpInspectionOrigin": "CONFIG"
+  },
+  {
+    "vlanId": 4092,
+    "name": "Mgmt",
+    "state": "DOWN",
+    "memberInterfaces": [],
+    "dynamicInterfaces": [],
+    "activeInterfaces": [],
+    "upInterfaces": [],
+    "blockedInterfaces": [],
+    "ipArpInspectionOrigin": "NONE"
+  },
+  {
+    "vlanId": 4094,
+    "name": "Null",
+    "state": "DOWN",
+    "memberInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:4"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:5"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:6"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:7"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:8"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:9"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:10"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:11"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:12"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:13"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:14"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:15"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:16"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:17"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:18"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:19"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:20"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:21"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:22"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:23"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:24"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:25"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:26"
+      }
+    ],
+    "dynamicInterfaces": [
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:4"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:5"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:6"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:7"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:8"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:9"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:10"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:11"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:12"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:13"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:14"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:15"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:16"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:17"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:18"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:19"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:20"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:21"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:22"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:23"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:24"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:25"
+      },
+      {
+        "interfaceType": "PORT",
+        "interfaceName": "1:26"
+      }
+    ],
+    "activeInterfaces": [],
+    "upInterfaces": [],
+    "blockedInterfaces": [],
+    "ipArpInspectionOrigin": "NONE"
+  }
+]

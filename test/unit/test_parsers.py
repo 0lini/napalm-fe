@@ -8,33 +8,6 @@ from napalm_fe import parsers
 
 
 @pytest.mark.parametrize(
-    "ports, expected",
-    [
-        ("1/1", ["1/1"]),
-        ("1/1-1/3", ["1/1", "1/2", "1/3"]),
-        ("1/1,1/3-1/4", ["1/1", "1/3", "1/4"]),
-        ("1/49/1-1/49/3", ["1/49/1", "1/49/2", "1/49/3"]),
-        ("", []),
-        ("-", []),
-    ],
-)
-def test_expand_port_list(ports, expected):
-    assert parsers.expand_port_list(ports) == expected
-
-
-@pytest.mark.parametrize(
-    "uptime, expected",
-    [
-        ("12 day(s), 03:14:15", 1048455.0),
-        ("0 day(s), 00:00:05", 5.0),
-        ("garbage", -1.0),
-    ],
-)
-def test_parse_uptime(uptime, expected):
-    assert parsers.parse_uptime(uptime) == expected
-
-
-@pytest.mark.parametrize(
     "descr, expected",
     [
         ("5520-24T (9.0.0.0_B020) BoxType: 5520-24T", "9.0.0.0_B020"),
@@ -48,18 +21,6 @@ def test_parse_os_version(descr, expected):
 def test_netmask_to_prefixlen():
     assert parsers.netmask_to_prefixlen("255.255.255.0") == 24
     assert parsers.netmask_to_prefixlen("255.255.255.255") == 32
-
-
-def test_lldp_capabilities():
-    # Fabric Engine: R = Repeater, r = Router
-    assert parsers._parse_lldp_capabilities("Br / r   (Supported/Enabled)") == (
-        ["bridge", "router"],
-        ["router"],
-    )
-    assert parsers._parse_lldp_capabilities("BT / BT") == (
-        ["bridge", "telephone"],
-        ["bridge", "telephone"],
-    )
 
 
 def test_iter_tables_multiple():
@@ -93,33 +54,6 @@ def _mocked(test, case, name):
     with open(os.path.join(MOCKED_DATA, test, case, name)) as handle:
         return handle.read()
 
-
-# real output (Fabric Engine 9.4) of a switch without entries
-ARP_EMPTY = """\
-************************************************************************************
-                Command Execution Time: Tue Nov 17 11:13:05 2026 CET
-************************************************************************************
-
-========================================================================================================================
-                                                 IP Arp - GlobalRouter
-========================================================================================================================
-IP_ADDRESS      MAC_ADDRESS        VLAN  PORT                 TYPE    TTL(10 Sec) TUNNEL             L3 ACCESS
-------------------------------------------------------------------------------------------------------------------------
-
-========================================================================================================================
-                                               IP Arp Extn - GlobalRouter
-========================================================================================================================
-MULTICAST-MAC-FLOODING    AGING(Minutes)       ARP-THRESHOLD
-------------------------------------------------------------------------------------------------------------------------
-disable                   360                  500
-
-c: customer vid   u: untagged-traffic
-
-0 out of 0 ARP entries displayed
-
-
-ARPs on TX-NNI: Current = 0, re-ARP count = 0
-"""
 
 # real output (Fabric Engine 9.4) of a switch without entries
 IP_INTERFACE_EMPTY = """\
@@ -159,7 +93,6 @@ IPV6 ADDRESS/PREFIX LENGTH                   VID/BID/TID  TYPE    ORIGIN    STAT
 
 def test_empty_real_outputs():
     """Real outputs without entries parse to empty results."""
-    assert parsers.parse_arp_table(ARP_EMPTY) == []
     assert parsers.parse_ip_interfaces(IP_INTERFACE_EMPTY) == {}
     assert parsers.parse_ipv6_interfaces(IPV6_ADDRESS_EMPTY) == {}
 

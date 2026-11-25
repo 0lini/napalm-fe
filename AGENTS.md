@@ -5,14 +5,18 @@ Read `README.md` first for the user-facing behaviour.
 
 ## Branches
 
-`main` is the core: SSH only (like NAPALM's IOS driver), the getters and the
-merge workflow. Features are developed on their own branches, each `main` plus
+`main` was the core with SSH only (like NAPALM's IOS driver). Since 2026-11-25 the
+driver is **API only** (OpenAPI over HTTPS, no SSH at all): Fabric Engine 9.4.2
+needs no license for it any more. The branches below were made when `main` was
+SSH only (and `feature/openapi` is now part of the core); they still use Netmiko
+and must be ported to the API primitives (`_send_command`, `_send_config`,
+`_copy_run_start`, `_api_get`) when merged. Features are developed on their own branches, each `main` plus
 exactly that feature (created by reverting its "Remove ..." commit on `main`);
 merge one back when it is ready:
 
 | Branch | Feature |
 |--------|---------|
-| `feature/openapi` | `transport="https"` (OpenAPI, Fabric Engine 9.3.1+, Premier license) |
+| `feature/openapi` | the old `transport="https"` variant next to SSH; obsolete (the core is API only now) |
 | `feature/file-method` | `config_method="file"` (SCP upload + `source`), `ExtremeVspFileTransfer` for Netmiko |
 | `feature/replace-rollback` | replace + `rollback()` (boot config + reboot, `allow_reboot`); needs the SCP upload, so it contains `feature/file-method` |
 | `feature/commit-confirm` | `revert_in`, `confirm_commit`, `has_pending_commit` (`reset -in`, switch log) |
@@ -30,8 +34,10 @@ of a feature (README, `docs/fe.rst`, CHANGELOG) come back with its merge
 | Path | What |
 |------|------|
 | `src/napalm_fe/fe.py` | The driver (`FEDriver`): connection, getters, config management |
+| `src/napalm_fe/openapi.py` | HTTP session (`requests`): token, GET, CLI operation, save config |
+| `src/napalm_fe/openapi_parsers.py` | Pure converters from the API's JSON to NAPALM data |
 | `src/napalm_fe/parsers.py` | Pure text parsers, one per CLI output; no device access |
-| `test/unit/mocked_data/<test>/<case>/` | Getter test data: raw output per command + `expected_result.json` (same layout as NAPALM's IOS tests) |
+| `test/unit/mocked_data/<test>/<case>/` | Getter test data: raw CLI output per command (`<command>.txt`) and API response per path (`<path>.json`, e.g. `_v0_state_system.json`) + `expected_result.json` |
 | `test/unit/test_getters.py` | NAPALM's getter test suite, run for every case in `mocked_data` |
 | `test/unit/test_*.py` | Unit tests for parsers and config management |
 | `docs/fe.rst` | User docs / caveats in the format of NAPALM's `docs/support/<driver>.rst` (keep in sync with the code) |
@@ -53,11 +59,11 @@ Run all of them before every commit, and only commit when they pass
 
 - Follow NAPALM's Cisco drivers for behaviour and naming where Fabric Engine
   allows it: IOS (`napalm/ios/ios.py`) for the CLI workflow and NX-OS
-  (`napalm/nxos/nxos.py`, `nxos_ssh`) for the structure. Like NX-OS, all
-  transport specific code is in a few primitives (`open`, `close`, `is_alive`,
-  `_send_command`, `_send_config`, `_copy_run_start`; they reach SSH through
-  `_ssh`), so that a second transport (`feature/openapi`) only implements
-  those. A reference checkout of NAPALM may be in `napalm/` (ignored by git).
+  (`napalm/nxos/nxos.py`) for the structure. All transport specific code is
+  in a few primitives (`open`, `close`, `is_alive`, `_api_get`, `_send_command`,
+  `_send_config`, `_copy_run_start`); there is no SSH and no Netmiko, so
+  nothing may open an SSH connection (also not for file uploads).
+  A reference checkout of NAPALM may be in `napalm/` (ignored by git).
   Known deviations: a failed
   merge is not rolled back automatically (rollback reboots the switch). IOS and
   NX-OS roll back because their devices can do it without a reboot; community
@@ -121,7 +127,7 @@ Run all of them before every commit, and only commit when they pass
 
    ```bash
    NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<pw> \
-   NAPALM_OPTIONAL_ARGS='{"port": 22}' pytest test/unit/TestFEDriver.py -v
+   NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestFEDriver.py -v
    ```
 
    Runs merge, typo and discard tests. It only changes `snmp-server
@@ -137,14 +143,12 @@ Run all of them before every commit, and only commit when they pass
   process `cbcp-main.x` crashed and the switch rebooted (core file in
   `/intflash/coreFiles/1/`, 2026-11-21). The CLI operation answers (y/n)
   questions itself, but not password prompts. The driver must never send
-  such commands over `https`.
-- Never ask for CLI help (`reset ?` etc.) over SSH: the line stays in the
-  input buffer and a later newline runs it (9.4: `reset ?` became `reset`
+  such commands.
+- Never ask for CLI help (`reset ?` etc.): over SSH the line stayed in the
+  input buffer and a later newline ran it (9.4: `reset ?` became `reset`
   with its (y/n) question; the next command was taken as the answer).
 - Never save the configuration (`save_config=False`) and never run
   `save config`, `boot`, `reset`, `delete`, `copy` or `source` by hand.
-- `config_method="file"` leaves `napalm_merge.cfg` and `napalm_rollback.cfg`
-  in `/intflash`.
 
 ## Open items (verify on a real switch)
 
@@ -309,14 +313,16 @@ Not implemented yet (NotImplementedError, skipped in tests): BGP, users,
 optics, route table, NTP stats/peers, network instances, ping/traceroute,
 IPv6 neighbours. Implement them with real captures only.
 
-## OpenAPI transport (`transport="https"`, branch `feature/openapi`)
+## OpenAPI (the only transport)
 
-One driver with a `transport` option like EOS / NX-OS; `ssh` (default) is
-the CLI over Netmiko, `https` the switch's OpenAPI. History (never
-released): `transport="openapi"` with `openapi_port` / `verify`; then
-`https` as the default; back to `ssh` as the default on 2026-11-20 after the
-version matrix showed that OpenAPI only exists from 9.3.1 (with a Premier
-license). Without OpenAPI the login error says what is needed.
+The driver talks to the switch's OpenAPI only; SSH / Netmiko were removed on
+2026-11-25 because Fabric Engine 9.4.2 needs no license for the OpenAPI any
+more (the user's information; not verified on a 9.4.2 switch yet, the findings
+below are from 9.4.0.0 with a Premier license). History (never released):
+`transport="openapi"`, then a `transport` option (`ssh` default, `https`); the
+SSH code is in the git history before this change. Without OpenAPI the login
+error says what is needed. The sections above that mention SSH (lab results,
+`config_method="file"`, users, templates) describe the feature branches.
 
 Verified on the Fabric Engine 9.4.0.0 VM (GNS3 image FEGNS3.9.4.0.0, OpenAPI
 server 0.1.13.12, schema "Extreme NOS API" 0.2.0, OpenAPI 3.0.3):

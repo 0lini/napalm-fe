@@ -9,75 +9,72 @@ Engine (formerly VOSS), in the format of NAPALM's driver caveats
 Minimum Version
 ~~~~~~~~~~~~~~~
 
-Fabric Engine 9.x.
-
-Tested releases (GNS3 VMs of Extreme, 2026-11; hardware not tested):
-
-=================== ======================== =========================
-Release             NAPALM getter suite      config tests
-=================== ======================== =========================
-VOSS 8.10.1.0       pass [#v1]_              pass [#v1]_
-Fabric Engine 9.1   pass                     pass
-Fabric Engine 9.2   pass                     pass
-Fabric Engine 9.3   pass                     pass
-Fabric Engine 9.3.1 pass                     pass
-Fabric Engine 9.4   pass                     pass
-=================== ======================== =========================
-
-.. [#v1] VOSS 8.10 only offers the SSH host key types ``ssh-rsa`` and
-   ``ssh-dss``, which paramiko 4 and later reject (``Incompatible ssh peer
-   (no acceptable host key)``); it works with paramiko 3.x. VOSS 8.x is end
-   of life and not supported.
+Fabric Engine 9.4.2 (the OpenAPI needs no license from this release on).
+Fabric Engine 9.3.1 and 9.4.0 also work with a Premier (Pilot / Extreme
+Platform ONE) license; 9.3.0 refuses the OpenAPI and 9.1 / 9.2 do not have it.
+Older VOSS releases are not supported.
 
 
 Prerequisites
 _____________
 
-Like NAPALM's IOS driver, the driver connects over SSH (Netmiko device type
-``extreme_vsp``) and parses the CLI output. ``show running-config`` needs
-privileged mode, which the driver enters after the login (``enable``).
+The driver uses the switch's API only, there is no SSH. Enable it with::
+
+    application
+    openapi local-mgmt enable
+
+The server then listens on TCP 9443 (TLS 1.2, self-signed certificate by
+default); it can take up to about 3 minutes until ``show application openapi``
+shows ``Server State Local Port : Enabled``. The user needs a role that may
+run the CLI commands (``rwa``).
 
 
 Optional arguments
 __________________
 
+* :code:`port` - Port of the API (default: ``9443``).
+* :code:`ssl_verify` - Check the API's TLS certificate: ``True`` or the path of a CA bundle (default: ``False``).
 * :code:`save_config` - Run ``save config`` after a successful commit (default: ``True``).
 * :code:`startup_config_file` - File returned as ``startup`` by ``get_config()`` (default: ``/intflash/config.cfg``).
-* :code:`force_no_enable` - Do not enter privileged mode (``enable``). ``show running-config`` needs it (default: ``False``).
 
-All Netmiko arguments (``port``, ``secret``, ``key_file``, ``use_keys``,
-``ssh_config_file``, ``conn_timeout``, ...) are passed to the SSH connection.
-The driver ``timeout`` (default 60 s) is also the read timeout of every
-command.
+The driver ``timeout`` (default 60 s) is the timeout of every request. The
+session token (valid 24 hours) is requested on ``open()`` and renewed once
+on a ``401``.
 
 
-Commands per getter
-~~~~~~~~~~~~~~~~~~~
+Data per getter
+~~~~~~~~~~~~~~~
 
-============================== ==========================================================
-Method                         CLI commands
-============================== ==========================================================
-``get_facts``                  ``show sys-info``, ``show interfaces gigabitEthernet name``,
-                               ``show ip dns``
-``get_environment``            ``show sys-info``, ``show khi performance cpu|memory``
-``get_interfaces``             ``show interfaces gigabitEthernet``
-``get_interfaces_ip``          ``show ip interface vrfids 0-512``,
-                               ``show ipv6 address interface``
-``get_interfaces_counters``    ``show interfaces gigabitEthernet statistics|statistics
-                               verbose|error``
-``get_lldp_neighbors[_detail]`` ``show lldp neighbor [port <port>]``
-``get_arp_table``              ``show ip arp [vrf <name>]``
-``get_mac_address_table``      ``show vlan mac-address-entry``
-``get_vlans``                  ``show vlan basic``, ``show vlan members``
-``get_ntp_servers``            ``show ntp server``
-``get_snmp_information``       ``show sys-info``
-``get_config``                 ``show running-config [verbose]``, ``more <startup file>``
-``cli``                        any command; CLI errors are returned as output
-============================== ==========================================================
+====================================== ==============================================================
+Method                                 Source
+====================================== ==============================================================
+``get_facts``                          API ``state/system``, ``configuration/dns``, ``state/ports``
+``get_environment``                    CLI ``show sys-info``, ``show khi performance cpu|memory``
+``get_interfaces``                     CLI ``show interfaces gigabitEthernet``, ``show clock``
+``get_interfaces_ip``                  CLI ``show ip interface vrfids 0-512``,
+                                       ``show ipv6 address interface``
+``get_interfaces_counters``            CLI ``show interfaces gigabitEthernet statistics|statistics
+                                       verbose|error``
+``get_lldp_neighbors[_detail]``        API ``state/lldp``
+``get_arp_table``                      API ``state/forwarding/ip-arp``
+``get_mac_address_table``              API ``state/forwarding/mac-fdb``
+``get_vlans``                          API ``configuration/vlan``, ``state/vlan``
+``get_ntp_servers``                    API ``configuration/ntp``
+``get_snmp_information``               API ``configuration/snmp``, ``state/system``
+``get_config``                         CLI ``show running-config [verbose]``, ``more <startup file>``
+``cli``                                any command (``POST operation/system/cli``); CLI errors are
+                                       returned as output
+====================================== ==============================================================
 
-``get_snmp_information`` returns an empty ``community``: the CLI never
-displays SNMPv1/v2c community strings (``show snmp-server community`` masks
-them).
+The API has no CPU, memory, temperature or counter data, so those getters use
+the CLI operation. Its output is the CLI's, without the ``Command Execution
+Time`` banner; pipes (``| include``) are rejected.
+
+``get_snmp_information`` returns the SNMPv1/v2c community strings in plain
+text (the CLI never displays them), so treat its result as a secret. The API
+lists a community once per VRF context (``c``, ``c::1``, ``c::512``).
+``get_ntp_servers`` also lists the server the cloud agent sets, which the
+running configuration does not show.
 
 
 Notes on configuration merging
@@ -111,13 +108,12 @@ Known gotchas
 _____________
 
 * VRF names are stored in lower case (``ip vrf TEST`` becomes ``test``).
-* Log messages do not appear in the driver's output: ``logging screen`` is a
-  setting of the CLI session (on for the serial console, off for every new
-  SSH session, not stored in the configuration), and the driver never
-  enables it.
-* A new system name (``prompt "<name>"`` or ``sys name``) changes the SSH
-  prompt; the driver updates Netmiko's base prompt after a commit (like
-  NX-OS).
+* Every API request starts in privileged EXEC mode. Configuration lines are
+  sent as one request (``configure terminal`` ... ``end``) and the switch
+  skips the commands after the first one it counts as failed.
+* Commands that ask for a password (``username``, ``cli password``) must not
+  be sent through the CLI operation: on 9.4 this crashed the switch's main
+  process.
 * Values the switch does not report are ``-1`` / ``-1.0`` / ``""``, never
   guessed (NAPALM convention), e.g. ``tx_errors`` in
   ``get_interfaces_counters``.

@@ -1,10 +1,7 @@
 """Tests for the configuration management workflow."""
 
-import re
-
 import pytest
 from napalm.base.exceptions import MergeConfigException
-from netmiko.exceptions import ConfigInvalidException
 
 from .conftest import PatchedFEDriver
 
@@ -13,8 +10,8 @@ from .conftest import PatchedFEDriver
 def driver():
     driver = PatchedFEDriver("host", "user", "pass")
     # compare_config() reads the running config of the real Fabric Engine 9.4 capture
-    driver.device.current_test = "test_get_config"
-    driver.device.current_test_case = "fabric_engine_9.4"
+    driver.api.current_test = "test_get_config"
+    driver.api.current_test_case = "fabric_engine_9.4"
     return driver
 
 
@@ -24,19 +21,6 @@ interface gigabitEthernet 1/2
 name "new port"
 exit
 """
-
-
-def test_merge_compare_commit(driver):
-    driver.load_merge_candidate(config=CONFIG)
-    # interface exists already (case-insensitive match), only the name changes
-    assert driver.compare_config() == 'interface gigabitEthernet 1/2\n+name "new port"\nexit'
-    driver.commit_config()
-    assert driver.device.sent_config == [
-        "interface gigabitEthernet 1/2",
-        'name "new port"',
-        "exit",
-    ]
-    assert driver.compare_config() == ""
 
 
 def test_merge_from_file(driver, tmp_path):
@@ -92,41 +76,6 @@ def test_commit_without_candidate(driver):
         driver.commit_config()
 
 
-def test_commit_error(driver):
-    def fail(lines, **kwargs):
-        assert kwargs.get("error_pattern")
-        raise ConfigInvalidException("foo\n% Invalid input detected at '^' marker.")
-
-    driver.device.send_config_set = fail
-    driver.load_merge_candidate(config="foo")
-    with pytest.raises(MergeConfigException):
-        driver.commit_config()
-
-
-def test_commit_no_save(driver):
-    driver.save_on_commit = False
-    driver.device.save_config = lambda *a, **kw: pytest.fail("save_config must not be called")
-    driver.load_merge_candidate(config="ntp server 10.0.0.1")
-    driver.commit_config()
-
-
-def test_netmiko_device_type():
-    from netmiko.ssh_dispatcher import CLASS_MAPPER
-
-    from napalm_fe.fe import NETMIKO_DEVICE_TYPE
-
-    assert NETMIKO_DEVICE_TYPE in CLASS_MAPPER
-
-
-def test_save_failure_detected(driver):
-    from napalm.base.exceptions import CommandErrorException
-
-    driver.device.save_config = lambda *a, **kw: "save config\nSave config failed."
-    driver.load_merge_candidate(config="ntp server 192.0.2.99")
-    with pytest.raises(CommandErrorException):
-        driver.commit_config()
-
-
 def test_sanitize_filters():
     from napalm.base.helpers import sanitize_config
 
@@ -158,15 +107,6 @@ def test_sanitize_filters():
     ]
 
 
-# --- rollback file (like the IOS driver: saved before every commit) --------
-
-
-# --- replace (Site Engine style: install as boot config + reboot) ----------
-
-
-# --- rollback -----------------------------------------------------------------
-
-
 # Real output of a rejected config line (Fabric Engine 9.4 VM)
 COMMUNITY_EXISTS = """\
 snmp-server community "napalm-ro" index first secname readgrp
@@ -175,54 +115,74 @@ Error: The community entry already exists.
 """
 
 
-def test_config_error_pattern_matches_real_errors():
-
-    from napalm_fe.fe import CLI_ERROR_RE
-
-    pattern = CLI_ERROR_RE.pattern  # as passed to Netmiko, which applies re.M
-    assert re.search(pattern, COMMUNITY_EXISTS, flags=re.M)
-    assert re.search(pattern, "% Invalid input detected at '^' marker.", flags=re.M)
-    # log lines with severity ERROR are not config errors
-    log = (
-        "1 2026-11-17T15:51:40.608Z 5520-24T-FabricEngine CP1 - 0x00030606 - 00000000 "
-        "GlobalRouter SW ERROR Could not open primary config file /intflash/config.cfg"
-    )
-    assert not re.search(pattern, log, flags=re.M)
-
-
-def test_merge_fails_on_error_without_percent(driver):
-    driver.device.send_config_set = lambda lines, **kw: COMMUNITY_EXISTS
-    driver.load_merge_candidate(
-        config='snmp-server community "napalm-ro" index first secname readgrp'
-    )
-    with pytest.raises(MergeConfigException, match="already exists"):
-        driver.commit_config()
-
-
-def test_get_config_without_saved_config(driver):
-    """Real output of a switch that never saved its configuration (9.4 VM)."""
-    original = driver.device.send_command
-
-    def send_command(command, **kwargs):
-        if command.startswith("more "):
-            return 'Can\'t open "/intflash/config.cfg" 0x2 to read'
-        return original(command, **kwargs)
-
-    driver.device.send_command = send_command
-    config = driver.get_config()
-    assert config["startup"] == ""
-    assert config["running"]
-
-
 def test_driver_name():
     from napalm import get_network_driver
 
     assert get_network_driver("fe").__name__ == "FEDriver"
 
 
+def test_merge_compare_commit(driver):
+    driver.load_merge_candidate(config=CONFIG)
+    # interface exists already (case-insensitive match), only the name changes
+    assert driver.compare_config() == 'interface gigabitEthernet 1/2\n+name "new port"\nexit'
+    driver.commit_config()
+    assert driver.api.config == [
+        "configure terminal",
+        "interface gigabitEthernet 1/2",
+        'name "new port"',
+        "exit",
+        "end",
+    ]
+    assert driver.api.saved == [None]  # "save config" through the API
+
+
+def test_commit_no_save(driver):
+    driver.save_on_commit = False
+    driver.load_merge_candidate(config="ntp server 10.0.0.1")
+    driver.commit_config()
+    assert driver.api.saved == []
+
+
+def test_get_config_without_saved_config(driver):
+    """Real output of a switch that never saved its configuration (9.4 VM)."""
+    original = driver.api.cli
+
+    def cli(commands, **kwargs):
+        if commands[0].startswith("more "):
+            return ['Can\'t open "/intflash/config.cfg" 0x2 to read']
+        return original(commands, **kwargs)
+
+    driver.api.cli = cli
+    config = driver.get_config()
+    assert config["startup"] == ""
+    assert config["running"]
+
+
+def test_config_error_pattern_matches_real_errors():
+    from napalm_fe.fe import CLI_ERROR_RE
+
+    assert CLI_ERROR_RE.search(COMMUNITY_EXISTS)
+    assert CLI_ERROR_RE.search("% Invalid input detected at '^' marker.")
+    # log lines with severity ERROR are not config errors
+    log = (
+        "1 2026-11-17T15:51:40.608Z 5520-24T-FabricEngine CP1 - 0x00030606 - 00000000 "
+        "GlobalRouter SW ERROR Could not open primary config file /intflash/config.cfg"
+    )
+    assert not CLI_ERROR_RE.search(log)
+
+
+def test_options():
+    driver = PatchedFEDriver("h", "u", "p")
+    assert (driver.port, driver.ssl_verify) == (9443, False)
+    driver = PatchedFEDriver(
+        "h", "u", "p", optional_args={"port": "8443", "ssl_verify": "/etc/ca.pem"}
+    )
+    assert (driver.port, driver.ssl_verify) == (8443, "/etc/ca.pem")
+
+
 def test_failed_merge_message(driver):
     """Says that nothing was rolled back (like napalm-dellos10)."""
-    driver.device.send_config_set = lambda lines, **kw: COMMUNITY_EXISTS
+    driver.api.cli = lambda commands, **kw: ["", COMMUNITY_EXISTS, ""]
     driver.load_merge_candidate(config="foo")
     with pytest.raises(MergeConfigException) as exc:
         driver.commit_config()
@@ -231,14 +191,47 @@ def test_failed_merge_message(driver):
     assert "Error: The community entry already exists." in message
 
 
-def test_commit_updates_the_prompt(driver):
-    """A new system name (prompt "...") changes the SSH prompt: Netmiko's base
-    prompt is updated after the commit, like the NX-OS driver does."""
-    prompts = []
-    driver.device.set_base_prompt = lambda: prompts.append(1)
-    driver.load_merge_candidate(config='prompt "sw1"')
-    driver.commit_config()
-    assert driver.device.sent_config == ['prompt "sw1"'] and prompts == [1]
+# Real reply of the API's CLI operation (Fabric Engine 9.4) for a rejected command
+API_INVALID_INPUT = "        ^\n% Invalid input detected at '^' marker.\n"
+
+
+@pytest.mark.parametrize(
+    "outputs",
+    [
+        ["", API_INVALID_INPUT, "", ""],  # error output (continue_on_failure)
+        ["", API_INVALID_INPUT],  # the switch skipped the rest
+        ["", "something with Error"],  # skipped after a line the switch counts as failed
+    ],
+)
+def test_merge_error(driver, outputs):
+    driver.api.cli = lambda commands, continue_on_failure=True, timeout=None: outputs
+    driver.load_merge_candidate(config="foo\nbar")
+    with pytest.raises(MergeConfigException, match="automatic rollback not available") as exc:
+        driver.commit_config()
+    assert "foo" in str(exc.value)
+    assert driver.api.saved == []  # not saved
+
+
+def test_save_failure(driver):
+    from napalm.base.exceptions import CommandErrorException
+
+    def save_config(name=None):
+        if name is None:
+            raise CommandErrorException("OpenAPI POST ... failed: HTTP 500")
+
+    driver.api.save_config = save_config
+    driver.load_merge_candidate(config="foo")
+    with pytest.raises(CommandErrorException, match="Saving the configuration failed"):
+        driver.commit_config()
+
+
+def test_merge_stops_at_vlan_error(driver):
+    """Real error output of the API (9.4) starts with a BEL; "end" is skipped."""
+    error = "\n\x07Error: The specified VLAN ID is invalid or already in use \n\n"
+    driver.api.cli = lambda commands, **kw: ["Enter configuration commands...\n", error]
+    driver.load_merge_candidate(config="vlan create 10 type port-mstprstp 0")
+    with pytest.raises(MergeConfigException, match="already in use"):
+        driver.commit_config()
 
 
 def test_commit_confirm_not_supported(driver):

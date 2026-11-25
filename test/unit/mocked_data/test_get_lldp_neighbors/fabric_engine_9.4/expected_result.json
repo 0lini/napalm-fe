@@ -1,14 +1,8 @@
 {
     "1/1": [
         {
-            "hostname": "dect-base-07",
-            "port": "00:01:3e:30:5e:b2"
-        }
-    ],
-    "1/56": [
-        {
-            "hostname": "fe-sw-001",
-            "port": "1/56"
+            "hostname": "5520-24T-FabricEngine",
+            "port": "1/2"
         }
     ]
 }

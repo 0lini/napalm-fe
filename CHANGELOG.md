@@ -6,14 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-First release (0.1.0). Requires Python 3.10+, NAPALM 5 and Netmiko 4.
-Tested on Fabric Engine 9.1 - 9.4 (GNS3 VMs, see `docs/fe.rst`).
+First release (0.1.0). Requires Python 3.10+ and NAPALM 5.
+Tested on Fabric Engine 9.4 (GNS3 VM, see `docs/fe.rst`).
 
 ### Added
 
 - NAPALM driver `fe` for Extreme Networks Fabric Engine (formerly VOSS):
-  `get_network_driver("fe")`. SSH (Netmiko `extreme_vsp`), like NAPALM's IOS
-  driver.
+  `get_network_driver("fe")`. API only (OpenAPI over HTTPS, no SSH): Fabric
+  Engine 9.4.2 or later needs no license (9.3.1 / 9.4.0: Premier license).
 - Getters: `get_facts`, `get_environment`, `get_interfaces`,
   `get_interfaces_ip`, `get_interfaces_counters`, `get_lldp_neighbors`,
   `get_lldp_neighbors_detail`, `get_arp_table`, `get_mac_address_table`,

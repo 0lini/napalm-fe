@@ -2,29 +2,11 @@
     "1/1": [
         {
             "parent_interface": "",
-            "remote_port": "00:01:3e:30:5e:b2",
-            "remote_port_description": "LAN Port",
-            "remote_chassis_id": "254.128.0.0",
-            "remote_system_name": "dect-base-07",
-            "remote_system_description": "IPBL[13.1.10], Bootcode[13.1.10], Hardware[IPBL1-AA/5A]",
-            "remote_system_capab": [
-                "bridge",
-                "telephone"
-            ],
-            "remote_system_enable_capab": [
-                "bridge",
-                "telephone"
-            ]
-        }
-    ],
-    "1/56": [
-        {
-            "parent_interface": "",
-            "remote_port": "1/56",
-            "remote_port_description": "Extreme Networks 5320-48P-8XE-FabricEngine - 10GbCX Port 1/56",
-            "remote_chassis_id": "ac:4d:d9:38:30:00",
-            "remote_system_name": "fe-sw-001",
-            "remote_system_description": "5320-48P-8XE-FabricEngine (9.3.1.0)",
+            "remote_port": "1/2",
+            "remote_port_description": "Extreme Networks 5520-24T-FabricEngine - 1000BaseTX Port 1/2",
+            "remote_chassis_id": "00:01:02:03:00:00",
+            "remote_system_name": "5520-24T-FabricEngine",
+            "remote_system_description": "5520-24T-FabricEngine (9.3.0.0)",
             "remote_system_capab": [
                 "bridge",
                 "router"

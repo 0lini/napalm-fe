@@ -5,10 +5,11 @@
 Software). It works with any switch running Fabric Engine / VOSS; the CLI is the
 same across hardware platforms, so there is no model-specific code.
 
-Like NAPALM's IOS driver, it connects over SSH
-([Netmiko](https://github.com/ktbyers/netmiko) `extreme_vsp`) and parses the
-CLI output. Tested (GNS3 VMs): Fabric Engine 9.1, 9.2, 9.3, 9.3.1 and 9.4;
-VOSS 8.10 works with paramiko 3.x. Details in
+The driver only uses the switch's API (OpenAPI over HTTPS); it never opens an
+SSH connection. Getters read the API's JSON where it has the data, everything
+else (and all configuration) goes through the API's CLI operation. The API needs
+Fabric Engine 9.4.2 or later (no license needed) or 9.3.1 / 9.4.0 with a Premier
+license, and `openapi local-mgmt enable`. Details in
 [docs/fe.rst](docs/fe.rst#minimum-version).
 
 > **Status: beta.** The getters are tested against real device output (see
@@ -17,9 +18,8 @@ VOSS 8.10 works with paramiko 3.x. Details in
 > CLI output (see [Reporting parsing problems](#reporting-parsing-problems)).
 
 Caveats and the optional arguments are in [docs/fe.rst](docs/fe.rst) (same
-format as NAPALM's driver caveats). Features in development (OpenAPI transport,
-replace / rollback, commit confirm, SCP merge, templates, user management) live
-on `feature/*` branches.
+format as NAPALM's driver caveats). Features in development (replace / rollback,
+commit confirm, templates, user management) live on `feature/*` branches.
 
 ## Installation
 
@@ -27,7 +27,7 @@ on `feature/*` branches.
 pip install napalm-fe
 ```
 
-Requires Python 3.10+, NAPALM 5 and Netmiko 4.
+Requires Python 3.10+ and NAPALM 5.
 
 ## Usage
 
@@ -35,7 +35,7 @@ Requires Python 3.10+, NAPALM 5 and Netmiko 4.
 from napalm import get_network_driver
 
 driver = get_network_driver("fe")
-with driver("192.0.2.10", "admin", "secret", optional_args={"port": 22}) as device:
+with driver("192.0.2.10", "admin", "secret", optional_args={"ssl_verify": False}) as device:
     print(device.get_facts())
     print(device.get_lldp_neighbors())
 
@@ -50,10 +50,8 @@ Optional arguments (details in [docs/fe.rst](docs/fe.rst#optional-arguments)):
 |-----------------------|------------------------|-------------|
 | `save_config`         | `True`                 | Run `save config` after a successful commit |
 | `startup_config_file` | `/intflash/config.cfg` | File returned as `startup` by `get_config()` |
-| `force_no_enable`     | `False`                | Do not enter privileged mode |
-
-All Netmiko connection arguments (`port`, `secret`, `key_file`, ...) are passed
-through.
+| `port`                | `9443`                 | Port of the API |
+| `ssl_verify`          | `False`                | Check the API's TLS certificate (`True` or a CA bundle path) |
 
 ## Support matrix
 
@@ -96,7 +94,8 @@ Tests are organised like NAPALM's IOS driver tests:
 - `test/unit/test_getters.py` runs NAPALM's getter test suite against mocked
   device output in `test/unit/mocked_data/<test>/<case>/` (one file per command
   plus `expected_result.json`). `fabric_engine_*` cases are real, anonymised
-  output; `synthetic` cases are hand-written.
+  output; `synthetic` cases are hand-written. Getters that read the API's JSON have
+  the (anonymised) responses in the case as `<path>.json`.
 - `test/unit/test_parsers.py` and `test_config.py` are unit tests for parsers
   and configuration management.
 - `test/unit/TestFEDriver.py` runs configuration tests against a live
@@ -104,7 +103,7 @@ Tests are organised like NAPALM's IOS driver tests:
 
   ```bash
   NAPALM_HOSTNAME=<ip> NAPALM_USERNAME=<user> NAPALM_PASSWORD=<password> \
-  NAPALM_OPTIONAL_ARGS='{"port": 22}' pytest test/unit/TestFEDriver.py
+  NAPALM_OPTIONAL_ARGS='{"ssl_verify": false}' pytest test/unit/TestFEDriver.py
   ```
 
 Releases: bump `version` in `pyproject.toml`, update `CHANGELOG.md`, push a tag

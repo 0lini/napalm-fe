@@ -11,7 +11,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 authors = [{ name = "Oliver Elsner" }]
-keywords = ["napalm", "netmiko", "extreme", "fabric engine", "voss", "vsp", "network automation"]
+keywords = ["napalm", "openapi", "extreme", "fabric engine", "voss", "vsp", "network automation"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: System Administrators",
@@ -30,7 +30,7 @@ classifiers = [
 ]
 dependencies = [
     "napalm>=5.0.0,<6",
-    "netmiko>=4.1.0,<5",
+    "requests>=2.25",
 ]
 
 [project.optional-dependencies]
